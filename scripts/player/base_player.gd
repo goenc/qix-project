@@ -4,22 +4,24 @@ class_name BasePlayer
 @export var move_speed := 240.0
 @export var half_extent := Vector2(12.0, 12.0)
 @export var trail_point_min_distance := 8.0
-@export var safe_color := Color(1.0, 1.0, 1.0, 1.0)
+@export var border_color := Color(1.0, 1.0, 1.0, 1.0)
 @export var drawing_color := Color(1.0, 0.45, 0.2, 1.0)
+@export var border_tolerance := 1.0
 
 @onready var body: Polygon2D = $Body
 @onready var pick_area: Area2D = $PickArea
 @onready var trail_line: Line2D = $TrailLine
 
 enum MoveState {
-	SAFE,
+	BORDER,
 	DRAWING
 }
 
 var playfield_rect := Rect2()
-var move_state: MoveState = MoveState.SAFE
+var move_state: MoveState = MoveState.BORDER
 var trail_points: PackedVector2Array = PackedVector2Array()
-var has_left_boundary := false
+var has_left_border := false
+var border_progress := 0.0
 
 
 func _ready() -> void:
@@ -33,18 +35,23 @@ func _ready() -> void:
 	_apply_state_visuals()
 
 
-func set_playfield(rect: Rect2) -> void:
+func set_playfield_rect(rect: Rect2) -> void:
 	playfield_rect = rect.abs()
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
 		return
-	if position == Vector2.ZERO:
+	if position == Vector2.ZERO or !playfield_rect.has_point(position):
 		position = Vector2(playfield_rect.get_center().x, playfield_rect.position.y)
 	else:
-		position = _project_to_boundary(position)
+		position = _snap_point_to_border(position)
+	border_progress = _point_to_border_progress(position)
 	if move_state == MoveState.DRAWING:
-		move_state = MoveState.SAFE
+		move_state = MoveState.BORDER
 	_apply_state_visuals()
-	_clamp_to_viewport()
+	_apply_movement_constraints()
+
+
+func set_playfield(rect: Rect2) -> void:
+	set_playfield_rect(rect)
 
 
 func _process(delta: float) -> void:
@@ -59,27 +66,29 @@ func _process(delta: float) -> void:
 		direction = direction.normalized()
 
 	match move_state:
-		MoveState.SAFE:
-			_process_safe(direction, delta)
+		MoveState.BORDER:
+			_process_border(direction, delta)
 		MoveState.DRAWING:
 			_process_drawing(direction, delta)
 
-	_clamp_to_viewport()
+	_apply_movement_constraints()
 
 
 func get_state_text() -> String:
-	if move_state == MoveState.DRAWING:
-		return "DRAWING"
-	if trail_points.size() >= 2:
-		return "TRAIL_READY"
-	return "SAFE"
+	return "DRAWING" if move_state == MoveState.DRAWING else "BORDER"
 
 
-func _process_safe(direction: Vector2, delta: float) -> void:
-	position += direction * move_speed * delta
-	position = _project_to_boundary(position)
+func get_debug_status() -> Dictionary:
+	return {
+		"state": get_state_text(),
+		"position": position,
+		"is_on_border": _is_on_border(position)
+	}
 
-	if Input.is_action_just_pressed("qix_draw") and _is_on_boundary(position):
+
+func _process_border(direction: Vector2, delta: float) -> void:
+	_move_along_border(direction, delta)
+	if Input.is_action_just_pressed("qix_draw") and _is_on_border(position):
 		_start_drawing()
 
 
@@ -88,25 +97,28 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 	position = _clamp_to_playfield(position)
 
 	_append_trail_point_if_needed(false)
-	if !has_left_boundary and !_is_on_boundary(position):
-		has_left_boundary = true
+	if !has_left_border and !_is_on_border(position):
+		has_left_border = true
 
-	if has_left_boundary and _is_on_boundary(position):
+	if has_left_border and _is_on_border(position):
 		_finish_drawing()
 
 
 func _start_drawing() -> void:
 	move_state = MoveState.DRAWING
-	has_left_boundary = false
+	has_left_border = false
+	position = _snap_point_to_border(position)
+	border_progress = _point_to_border_progress(position)
 	trail_points = PackedVector2Array([position])
 	_update_trail_line()
 	_apply_state_visuals()
 
 
 func _finish_drawing() -> void:
+	position = _snap_point_to_border(position)
 	_append_trail_point_if_needed(true)
-	move_state = MoveState.SAFE
-	position = _project_to_boundary(position)
+	border_progress = _point_to_border_progress(position)
+	move_state = MoveState.BORDER
 	_apply_state_visuals()
 
 
@@ -129,10 +141,10 @@ func _update_trail_line() -> void:
 
 func _apply_state_visuals() -> void:
 	if is_instance_valid(body):
-		body.color = drawing_color if move_state == MoveState.DRAWING else safe_color
+		body.color = drawing_color if move_state == MoveState.DRAWING else border_color
 
 
-func _clamp_to_viewport() -> void:
+func _apply_movement_constraints() -> void:
 	var viewport_rect := get_viewport_rect()
 	position = Vector2(
 		clampf(position.x, viewport_rect.position.x + half_extent.x, viewport_rect.end.x - half_extent.x),
@@ -142,10 +154,11 @@ func _clamp_to_viewport() -> void:
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
 		return
 
-	if move_state == MoveState.SAFE:
-		position = _project_to_boundary(position)
-	else:
+	if move_state == MoveState.DRAWING:
 		position = _clamp_to_playfield(position)
+	else:
+		position = _snap_point_to_border(position)
+		border_progress = _point_to_border_progress(position)
 
 
 func _clamp_to_playfield(point: Vector2) -> Vector2:
@@ -155,7 +168,7 @@ func _clamp_to_playfield(point: Vector2) -> Vector2:
 	)
 
 
-func _project_to_boundary(point: Vector2) -> Vector2:
+func _snap_point_to_border(point: Vector2) -> Vector2:
 	var clamped := _clamp_to_playfield(point)
 	var left_dist := absf(clamped.x - playfield_rect.position.x)
 	var right_dist := absf(playfield_rect.end.x - clamped.x)
@@ -174,11 +187,105 @@ func _project_to_boundary(point: Vector2) -> Vector2:
 	return clamped
 
 
-func _is_on_boundary(point: Vector2) -> bool:
-	var tolerance := 0.5
+func _is_on_border(point: Vector2) -> bool:
+	var clamped := _clamp_to_playfield(point)
+	if clamped.distance_to(point) > border_tolerance:
+		return false
 	return (
-		absf(point.x - playfield_rect.position.x) <= tolerance
-		or absf(point.x - playfield_rect.end.x) <= tolerance
-		or absf(point.y - playfield_rect.position.y) <= tolerance
-		or absf(point.y - playfield_rect.end.y) <= tolerance
+		absf(clamped.x - playfield_rect.position.x) <= border_tolerance
+		or absf(clamped.x - playfield_rect.end.x) <= border_tolerance
+		or absf(clamped.y - playfield_rect.position.y) <= border_tolerance
+		or absf(clamped.y - playfield_rect.end.y) <= border_tolerance
 	)
+
+
+func _move_along_border(direction: Vector2, delta: float) -> void:
+	var cw_dir := _border_tangent_cw(border_progress + 0.01)
+	var ccw_dir := _border_tangent_ccw(border_progress - 0.01)
+	var cw_amount := maxf(0.0, direction.dot(cw_dir))
+	var ccw_amount := maxf(0.0, direction.dot(ccw_dir))
+
+	if cw_amount <= 0.0 and ccw_amount <= 0.0:
+		position = _border_progress_to_point(border_progress)
+		return
+
+	var step := move_speed * delta
+	if cw_amount >= ccw_amount:
+		border_progress = _wrap_border_progress(border_progress + step * cw_amount)
+	else:
+		border_progress = _wrap_border_progress(border_progress - step * ccw_amount)
+	position = _border_progress_to_point(border_progress)
+
+
+func _point_to_border_progress(point: Vector2) -> float:
+	var snapped := _snap_point_to_border(point)
+	var left := playfield_rect.position.x
+	var top := playfield_rect.position.y
+	var width := playfield_rect.size.x
+	var height := playfield_rect.size.y
+	var right := playfield_rect.end.x
+	var bottom := playfield_rect.end.y
+
+	if absf(snapped.y - top) <= border_tolerance:
+		return clampf(snapped.x - left, 0.0, width)
+	if absf(snapped.x - right) <= border_tolerance:
+		return width + clampf(snapped.y - top, 0.0, height)
+	if absf(snapped.y - bottom) <= border_tolerance:
+		return width + height + clampf(right - snapped.x, 0.0, width)
+	return width + height + width + clampf(bottom - snapped.y, 0.0, height)
+
+
+func _border_progress_to_point(progress: float) -> Vector2:
+	var left := playfield_rect.position.x
+	var top := playfield_rect.position.y
+	var width := playfield_rect.size.x
+	var height := playfield_rect.size.y
+	var right := playfield_rect.end.x
+	var bottom := playfield_rect.end.y
+	var perimeter := _perimeter_length()
+	var t := _wrap_border_progress(progress)
+
+	if t <= width:
+		return Vector2(left + t, top)
+	t -= width
+	if t <= height:
+		return Vector2(right, top + t)
+	t -= height
+	if t <= width:
+		return Vector2(right - t, bottom)
+	t -= width
+	return Vector2(left, bottom - minf(t, height))
+
+
+func _border_tangent_cw(progress: float) -> Vector2:
+	var width := playfield_rect.size.x
+	var height := playfield_rect.size.y
+	var t := _wrap_border_progress(progress)
+
+	if t < width:
+		return Vector2.RIGHT
+	t -= width
+	if t < height:
+		return Vector2.DOWN
+	t -= height
+	if t < width:
+		return Vector2.LEFT
+	return Vector2.UP
+
+
+func _border_tangent_ccw(progress: float) -> Vector2:
+	return -_border_tangent_cw(progress)
+
+
+func _perimeter_length() -> float:
+	return playfield_rect.size.x * 2.0 + playfield_rect.size.y * 2.0
+
+
+func _wrap_border_progress(progress: float) -> float:
+	var perimeter := _perimeter_length()
+	if perimeter <= 0.0:
+		return 0.0
+	var wrapped := fmod(progress, perimeter)
+	if wrapped < 0.0:
+		wrapped += perimeter
+	return wrapped

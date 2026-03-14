@@ -27,13 +27,20 @@ text = "QIX BASE"
 [node name="HelpLabel" type="Label" parent="Ui/Root"]
 offset_left = 16.0
 offset_top = 52.0
-offset_right = 320.0
+offset_right = 520.0
 offset_bottom = 96.0
-text = "MOVE: ARROWS/WASD  DRAW: Z  ESC: TITLE"
+text = "MOVE: ARROWS/WASD  DRAW: Z/SHIFT  ESC: TITLE"
 
 [node name="StatusLabel" type="Label" parent="Ui/Root"]
 offset_left = 16.0
 offset_top = 96.0
 offset_right = 208.0
 offset_bottom = 124.0
-text = "SAFE"
+text = "BORDER"
+
+[node name="PositionLabel" type="Label" parent="Ui/Root"]
+offset_left = 16.0
+offset_top = 126.0
+offset_right = 560.0
+offset_bottom = 154.0
+text = "POS: (-, -)  MODE: WAITING"

@@ -9,6 +9,7 @@ const TITLE_SCENE_PATH := "res://scenes/title_main.tscn"
 
 @onready var base_player: BasePlayer = $BasePlayer
 @onready var status_label: Label = $Ui/Root/StatusLabel
+@onready var position_label: Label = $Ui/Root/PositionLabel
 
 var playfield_rect := Rect2()
 
@@ -23,7 +24,7 @@ func _ready() -> void:
 	if is_instance_valid(viewport) and !viewport.size_changed.is_connected(_on_viewport_size_changed):
 		viewport.size_changed.connect(_on_viewport_size_changed)
 	queue_redraw()
-	_sync_status_label()
+	_sync_debug_labels()
 
 
 func _unhandled_input(_event: InputEvent) -> void:
@@ -38,20 +39,32 @@ func is_pause_toggle_allowed() -> bool:
 
 func set_paused_from_debug(enabled: bool) -> void:
 	get_tree().paused = enabled
-	_sync_status_label()
+	_sync_debug_labels()
 
 
 func _process(_delta: float) -> void:
-	_sync_status_label()
+	_sync_debug_labels()
 
 
-func _sync_status_label() -> void:
+func _sync_debug_labels() -> void:
 	if get_tree().paused:
 		status_label.text = "PAUSED"
-	elif is_instance_valid(base_player):
-		status_label.text = base_player.get_state_text()
-	else:
-		status_label.text = "SAFE"
+		position_label.text = "POS: (-, -)  MODE: PAUSED"
+		return
+
+	if !is_instance_valid(base_player):
+		status_label.text = "BORDER"
+		position_label.text = "POS: (-, -)  MODE: WAITING"
+		return
+
+	var debug_status := base_player.get_debug_status()
+	var state_text := str(debug_status.get("state", "BORDER"))
+	var current_pos: Vector2 = debug_status.get("position", base_player.position)
+	var on_border := bool(debug_status.get("is_on_border", true))
+	var mode_text := "DRAWING_INSIDE" if state_text == "DRAWING" else ("BORDER_ONLY" if on_border else "TRANSITION")
+
+	status_label.text = state_text
+	position_label.text = "POS: (%.1f, %.1f)  MODE: %s" % [current_pos.x, current_pos.y, mode_text]
 
 
 func _register_input_map() -> void:
@@ -95,7 +108,7 @@ func _on_viewport_size_changed() -> void:
 	_recalculate_playfield_rect()
 	_apply_playfield_to_player()
 	queue_redraw()
-	_sync_status_label()
+	_sync_debug_labels()
 
 
 func _recalculate_playfield_rect() -> void:
@@ -111,4 +124,4 @@ func _recalculate_playfield_rect() -> void:
 
 func _apply_playfield_to_player() -> void:
 	if is_instance_valid(base_player):
-		base_player.set_playfield(playfield_rect)
+		base_player.set_playfield_rect(playfield_rect)

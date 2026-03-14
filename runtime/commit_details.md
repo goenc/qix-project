@@ -1,15 +1,14 @@
-日時: 2026-03-14 21:20:54 JST
-対象: base_mainとbase_playerのQIXベース導線実装
-summary: タイトル遷移とpause復帰を維持したままQIXの最低限プレイ基盤を追加した
-変更:
-・base_mainにplayfield_rect計算と_draw外枠描画とviewportリサイズ再計算を追加した
-・base_mainの入力登録にqix_drawを追加しStatusLabelをBasePlayer状態連動へ変更した
-・base_playerをSAFEとDRAWINGの2状態移動へ置換しTrailLine描線開始終了処理を追加した
-・base_mainとbase_playerのscene文言とTrailLineノードを最小変更で更新した
-確認:
-・godot_console --path . --headless --quit が終了コード0で成功した
-・tools/run.ps1 の起動確認が成功した
+日時: 2026-03-14 21:36:46 JST
+対象: QIXベースの外周移動と描線状態遷移
+summary: base_mainとBasePlayerを最小変更で更新し外周移動と描線開始終了の基本挙動を実装した
+code_changes:
+・base_main.gdでplayfield_rectの再計算と外枠描画を維持しつつBasePlayerへのset_playfield_rect連携と状態表示更新を追加した
+・base_main.tscnでHelpLabel文言を更新しStatusLabel初期値をBORDERへ変更してPositionLabelを追加した
+・base_player.gdで自由移動を廃止しBORDERとDRAWINGの2状態と外周拘束移動と描線開始終了処理およびget_debug_statusを実装した
+・base_player.tscnでTrailLineの初期points空配列を明示した
 verification:
-・headless実行で構文エラーが出ないことを確認した
-・run.ps1起動でプロジェクトが立ち上がることを確認した
-
+・tools/run.ps1の起動確認を実施しプロセス開始を確認した
+・godot_console --headless --path C:\Users\gonec\GameProjects\Godot\qix-project --quit が終了コード0で完了した
+確認:
+・base_mainで外周矩形描画とStatusLabelとPositionLabelの更新が行われる構成になっていることを確認した
+・BasePlayerがBORDER時は外周拘束移動でqix_draw開始時のみDRAWINGへ遷移し外周再到達でBORDERへ戻る実装を確認した
