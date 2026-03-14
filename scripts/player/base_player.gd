@@ -39,7 +39,7 @@ func set_playfield_rect(rect: Rect2) -> void:
 	playfield_rect = rect.abs()
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
 		return
-	if position == Vector2.ZERO or !playfield_rect.has_point(position):
+	if position == Vector2.ZERO or !_is_inside_or_on_playfield(position):
 		position = Vector2(playfield_rect.get_center().x, playfield_rect.position.y)
 	else:
 		position = _snap_point_to_border(position)
@@ -242,7 +242,6 @@ func _border_progress_to_point(progress: float) -> Vector2:
 	var height := playfield_rect.size.y
 	var right := playfield_rect.end.x
 	var bottom := playfield_rect.end.y
-	var perimeter := _perimeter_length()
 	var t := _wrap_border_progress(progress)
 
 	if t <= width:
@@ -289,3 +288,8 @@ func _wrap_border_progress(progress: float) -> float:
 	if wrapped < 0.0:
 		wrapped += perimeter
 	return wrapped
+
+
+func _is_inside_or_on_playfield(point: Vector2) -> bool:
+	var clamped := _clamp_to_playfield(point)
+	return clamped.distance_to(point) <= border_tolerance

@@ -1,7 +1,5 @@
-QIX最小ベースの外周移動と描線遷移を実装
+外周初期配置判定を安定化
 
-・base_mainで外周矩形管理とBasePlayer連携と状態表示更新を追加
-・base_main.tscnでQIX用ラベル文言とPositionLabelを追加
-・base_playerでBORDERとDRAWINGの2状態移動と描線開始終了とdebug status返却を実装
-・TrailLine初期pointsを空配列として明示
-・tools/run.ps1起動確認とheadless起動確認で動作確認
+・境界上位置を許容するプレイフィールド内判定を追加
+・set_playfield_rectの初期再配置条件を補強
+・headless起動確認とrun起動確認を再実施

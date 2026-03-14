@@ -1,14 +1,9 @@
-日時: 2026-03-14 21:36:46 JST
-対象: QIXベースの外周移動と描線状態遷移
-summary: base_mainとBasePlayerを最小変更で更新し外周移動と描線開始終了の基本挙動を実装した
+日時: 2026-03-14 21:39:29 JST
+対象: 外周初期配置判定の安定化
+summary: 外周上位置を含むプレイフィールド内判定へ調整して初期再配置の安定性を向上した
 code_changes:
-・base_main.gdでplayfield_rectの再計算と外枠描画を維持しつつBasePlayerへのset_playfield_rect連携と状態表示更新を追加した
-・base_main.tscnでHelpLabel文言を更新しStatusLabel初期値をBORDERへ変更してPositionLabelを追加した
-・base_player.gdで自由移動を廃止しBORDERとDRAWINGの2状態と外周拘束移動と描線開始終了処理およびget_debug_statusを実装した
-・base_player.tscnでTrailLineの初期points空配列を明示した
+・base_player.gdのset_playfield_rectで境界上も有効とする内部判定関数を使用するように変更した
+・未使用変数を除去して外周進行変換処理を整理した
 verification:
-・tools/run.ps1の起動確認を実施しプロセス開始を確認した
 ・godot_console --headless --path C:\Users\gonec\GameProjects\Godot\qix-project --quit が終了コード0で完了した
-確認:
-・base_mainで外周矩形描画とStatusLabelとPositionLabelの更新が行われる構成になっていることを確認した
-・BasePlayerがBORDER時は外周拘束移動でqix_draw開始時のみDRAWINGへ遷移し外周再到達でBORDERへ戻る実装を確認した
+・run.ps1起動確認でプロセス開始を確認した
