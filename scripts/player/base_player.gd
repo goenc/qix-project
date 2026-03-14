@@ -101,7 +101,8 @@ func _process_border(direction: Vector2, delta: float) -> void:
 func _process_drawing(direction: Vector2, delta: float) -> void:
 	var current_position := position
 	var next_position := _clamp_to_playfield(position + direction * move_speed * delta)
-	var should_block_border_movement := !has_left_border and _is_on_border(current_position) and _is_on_border(next_position)
+	var is_waiting_to_leave_border := !has_left_border and _is_on_border(current_position)
+	var should_block_border_movement := is_waiting_to_leave_border and _is_on_border(next_position)
 
 	if !should_block_border_movement:
 		position = next_position
