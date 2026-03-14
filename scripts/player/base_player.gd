@@ -15,7 +15,7 @@ class_name BasePlayer
 enum PlayerState {
 	BORDER,
 	DRAWING,
-	ROLLBACK
+	REWINDING
 }
 
 var playfield_rect: Rect2 = Rect2()
@@ -23,8 +23,8 @@ var state: int = PlayerState.BORDER
 var trail_points: PackedVector2Array = PackedVector2Array()
 var has_left_border: bool = false
 var border_progress := 0.0
-var rollback_speed := move_speed
-var rollback_index: int = -1
+var rewind_speed := move_speed
+var rewind_index: int = -1
 var drawing_input_sequence: int = 0
 var drawing_input_order: Dictionary = {
 	&"move_left": 0,
@@ -56,7 +56,7 @@ func set_playfield_rect(rect: Rect2) -> void:
 			playfield_rect.position.y
 		)
 		position = _snap_point_to_border(position)
-	elif state == PlayerState.DRAWING or state == PlayerState.ROLLBACK:
+	elif state == PlayerState.DRAWING or state == PlayerState.REWINDING:
 		position = _clamp_to_playfield(position)
 	else:
 		position = _snap_point_to_border(position)
@@ -78,7 +78,7 @@ func _process(delta: float) -> void:
 		Input.get_axis("move_left", "move_right"),
 		Input.get_axis("move_up", "move_down")
 	)
-	var drawing_direction := _get_drawing_direction()
+	var drawing_direction := _restrict_drawing_direction(direction)
 	if direction.length_squared() > 1.0:
 		direction = direction.normalized()
 
@@ -87,8 +87,8 @@ func _process(delta: float) -> void:
 			_process_border(direction, delta)
 		PlayerState.DRAWING:
 			_process_drawing(drawing_direction, delta)
-		PlayerState.ROLLBACK:
-			_process_rollback(delta)
+		PlayerState.REWINDING:
+			_process_rewinding(delta)
 
 	_apply_movement_constraints()
 
@@ -97,8 +97,8 @@ func get_state_text() -> String:
 	match state:
 		PlayerState.DRAWING:
 			return "DRAWING"
-		PlayerState.ROLLBACK:
-			return "ROLLBACK"
+		PlayerState.REWINDING:
+			return "REWINDING"
 		_:
 			return "BORDER"
 
@@ -121,7 +121,7 @@ func _process_border(direction: Vector2, delta: float) -> void:
 
 func _process_drawing(direction: Vector2, delta: float) -> void:
 	if !Input.is_action_pressed("qix_draw"):
-		_start_rollback()
+		_start_rewinding()
 		return
 
 	var current_position := position
@@ -144,7 +144,7 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 func _start_drawing() -> void:
 	state = PlayerState.DRAWING
 	has_left_border = false
-	rollback_index = -1
+	rewind_index = -1
 	drawing_segment_direction = Vector2.ZERO
 	position = _snap_point_to_border(position)
 	border_progress = _point_to_border_progress(position)
@@ -160,29 +160,26 @@ func _finish_drawing() -> void:
 	border_progress = _point_to_border_progress(position)
 	drawing_segment_direction = Vector2.ZERO
 	state = PlayerState.BORDER
+	trail_points = PackedVector2Array()
+	has_left_border = false
+	rewind_index = -1
+	_update_trail_line()
 	_apply_state_visuals()
 
 
-func _start_rollback() -> void:
-	rollback_speed = move_speed
-	if trail_points.is_empty():
-		trail_points.append(position)
-	else:
-		var last_point: Vector2 = trail_points[trail_points.size() - 1]
-		if !last_point.is_equal_approx(position):
-			trail_points.append(position)
-		else:
-			trail_points[trail_points.size() - 1] = position
+func _start_rewinding() -> void:
+	rewind_speed = move_speed
+	_ensure_trail_endpoint(position)
 
 	drawing_segment_direction = Vector2.ZERO
-	state = PlayerState.ROLLBACK
+	state = PlayerState.REWINDING
 	position = trail_points[trail_points.size() - 1]
-	rollback_index = trail_points.size() - 2
+	rewind_index = trail_points.size() - 2
 	if trail_points.size() <= 1:
-		_finish_rollback()
+		_finish_rewinding()
 		return
 
-	_update_rollback_trail_line()
+	_update_trail_line()
 	_apply_state_visuals()
 
 
@@ -213,7 +210,7 @@ func _remember_drawing_input(action_name: StringName) -> void:
 	drawing_input_order[action_name] = drawing_input_sequence
 
 
-func _get_drawing_direction() -> Vector2:
+func _restrict_drawing_direction(_direction: Vector2) -> Vector2:
 	var horizontal := _get_prioritized_axis(&"move_left", &"move_right")
 	var vertical := _get_prioritized_axis(&"move_up", &"move_down")
 
@@ -280,38 +277,69 @@ func _append_trail_corner_point(point: Vector2) -> void:
 
 func _update_trail_line() -> void:
 	if is_instance_valid(trail_line):
-		trail_line.points = trail_points
+		trail_line.points = _build_visible_trail_points()
 
 
-func _update_rollback_trail_line() -> void:
-	if !is_instance_valid(trail_line):
+func _build_visible_trail_points() -> PackedVector2Array:
+	var visible_points := PackedVector2Array()
+	for point in trail_points:
+		visible_points.append(point)
+
+	if state == PlayerState.REWINDING:
+		visible_points = PackedVector2Array()
+		for i in range(rewind_index + 1):
+			visible_points.append(trail_points[i])
+
+	if (
+		(state == PlayerState.DRAWING or state == PlayerState.REWINDING)
+		and (visible_points.is_empty() or !visible_points[visible_points.size() - 1].is_equal_approx(position))
+	):
+		visible_points.append(position)
+
+	return visible_points
+
+
+func _process_rewinding(delta: float) -> void:
+	if Input.is_action_just_pressed("qix_draw"):
+		_interrupt_rewinding()
 		return
 
-	var visible_points := PackedVector2Array()
-	for i in range(rollback_index + 1):
-		visible_points.append(trail_points[i])
-	visible_points.append(position)
-	trail_line.points = visible_points
+	_process_rewinding_step(delta)
+	_update_trail_line()
 
 
-func _process_rollback(delta: float) -> void:
-	var target_point: Vector2 = trail_points[rollback_index]
-	position = position.move_toward(target_point, rollback_speed * delta)
+func _process_rewinding_step(delta: float) -> void:
+	var target_point: Vector2 = trail_points[rewind_index]
+	position = position.move_toward(target_point, rewind_speed * delta)
 	if position.distance_to(target_point) <= border_epsilon:
 		position = target_point
-		rollback_index -= 1
-		if rollback_index < 0:
-			_finish_rollback()
+		rewind_index -= 1
+		if rewind_index < 0:
+			_finish_rewinding()
 			return
 
-	_update_rollback_trail_line()
+
+func _interrupt_rewinding() -> void:
+	var rebuilt_trail := PackedVector2Array()
+	for i in range(rewind_index + 1):
+		rebuilt_trail.append(trail_points[i])
+	if rebuilt_trail.is_empty() or !rebuilt_trail[rebuilt_trail.size() - 1].is_equal_approx(position):
+		rebuilt_trail.append(position)
+
+	trail_points = rebuilt_trail
+	state = PlayerState.DRAWING
+	has_left_border = !_is_on_border(position)
+	rewind_index = -1
+	_update_drawing_segment_from_trail()
+	_update_trail_line()
+	_apply_state_visuals()
 
 
-func _finish_rollback() -> void:
+func _finish_rewinding() -> void:
 	position = _snap_point_to_border(position)
 	border_progress = _point_to_border_progress(position)
 	trail_points = PackedVector2Array()
-	rollback_index = -1
+	rewind_index = -1
 	has_left_border = false
 	drawing_segment_direction = Vector2.ZERO
 	state = PlayerState.BORDER
@@ -321,18 +349,43 @@ func _finish_rollback() -> void:
 
 func _apply_state_visuals() -> void:
 	if is_instance_valid(body):
-		body.color = drawing_color if state == PlayerState.DRAWING or state == PlayerState.ROLLBACK else border_color
+		body.color = drawing_color if state == PlayerState.DRAWING or state == PlayerState.REWINDING else border_color
 
 
 func _apply_movement_constraints() -> void:
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
 		return
 
-	if state == PlayerState.DRAWING or state == PlayerState.ROLLBACK:
+	if state == PlayerState.DRAWING or state == PlayerState.REWINDING:
 		position = _clamp_to_playfield(position)
 	else:
 		position = _snap_point_to_border(position)
 		border_progress = _point_to_border_progress(position)
+
+
+func _ensure_trail_endpoint(point: Vector2) -> void:
+	if trail_points.is_empty():
+		trail_points.append(point)
+		return
+
+	var last_index := trail_points.size() - 1
+	if trail_points[last_index].is_equal_approx(point):
+		trail_points[last_index] = point
+		return
+
+	trail_points.append(point)
+
+
+func _update_drawing_segment_from_trail() -> void:
+	drawing_segment_direction = Vector2.ZERO
+	if trail_points.size() < 2:
+		return
+
+	var last_segment := trail_points[trail_points.size() - 1] - trail_points[trail_points.size() - 2]
+	if absf(last_segment.x) > absf(last_segment.y):
+		drawing_segment_direction = Vector2(signf(last_segment.x), 0.0)
+	elif absf(last_segment.y) > 0.0:
+		drawing_segment_direction = Vector2(0.0, signf(last_segment.y))
 
 
 func _clamp_to_playfield(point: Vector2) -> Vector2:

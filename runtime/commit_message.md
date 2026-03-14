@@ -1,6 +1,5 @@
-Shift中の内部移動を4方向化して斜め軌跡を防止
+プレイヤーの内部移動巻き戻し再開を追加
 
-・DRAWING専用の入力方向決定を追加し、最後に押した方向の軸だけを残すようにした
-・軸切り替え時にコーナーポイントを追加し、trailの各区間が水平線か垂直線だけになるようにした
-・godot_console --headless --path . -s res://runtime/verify_drawing_lock.gd で内部移動の軸固定と軌跡の直交性を確認した
-・tools/run.ps1 で Godot 4.6.1 の起動を確認した
+・REWINDING 状態を追加して Shift 離し時の逆順巻き戻しと再押下時の途中再開を実装
+・内部移動を最後に押した方向優先の四方向入力に制限
+・trail_points と TrailLine の表示同期を巻き戻し中と再開後も維持
