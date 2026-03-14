@@ -99,6 +99,10 @@ func _process_border(direction: Vector2, delta: float) -> void:
 
 
 func _process_drawing(direction: Vector2, delta: float) -> void:
+	if !Input.is_action_pressed("qix_draw"):
+		_cancel_drawing_to_border()
+		return
+
 	var current_position := position
 	var next_position := _clamp_to_playfield(position + direction * move_speed * delta)
 	var is_waiting_to_leave_border := !has_left_border and _is_on_border(current_position)
@@ -130,6 +134,16 @@ func _finish_drawing() -> void:
 	position = _snap_point_to_border(position)
 	_append_trail_point_if_needed(true)
 	border_progress = _point_to_border_progress(position)
+	state = PlayerState.BORDER
+	_apply_state_visuals()
+
+
+func _cancel_drawing_to_border() -> void:
+	trail_points = PackedVector2Array()
+	_update_trail_line()
+	position = _snap_point_to_border(position)
+	border_progress = _point_to_border_progress(position)
+	has_left_border = false
 	state = PlayerState.BORDER
 	_apply_state_visuals()
 
