@@ -11,3 +11,11 @@ verification:
 ・godot_console --headless --path . --scene res://scenes/base_main.tscn --quit-after 2 が成功した
 ・godot_console --headless --path . --scene res://scenes/title_main.tscn --quit-after 2 が成功した
 ・tools/run.ps1 の起動を確認し Godot プロセスを停止して終了した
+日時: 2026-03-15 01:40:58 +09:00
+summary: Shift押下直後は白線上をなぞれず内側への侵入だけ許可するよう描画開始条件を調整
+対象:
+res://scripts/player/base_player.gd
+code_changes:
+・DRAWING 開始直後でまだ border から離れていない間は current_position と next_position の両方が border 上なら position 更新を抑止する条件を追加した
+verification:
+・tools/run.ps1 を起動し少なくとも起動直後の異常終了が発生しないことを確認した
