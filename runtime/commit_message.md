@@ -1,7 +1,5 @@
-debug pause と base_player 選択を修正
+base_player の当たり判定デバッグ表示を修正
 
-・title_main と base_main の両方で debug pause が成立するように修正
-・base_player に物理ピック用の Area2D と CollisionShape2D を追加し、object inspector でクリック選択できるように修正
-・base_player を PROCESS_MODE_PAUSABLE にして pause 中の移動を停止
-・DebugManager の pause controller 呼び出しを安全化
-・tools/run.ps1 の起動継続と headless 実行の正常終了を確認
+・BasePlayer を debug_player_collision グループに登録して既存 PickArea の CollisionShape2D を Hitbox Overlay の描画対象に含めた
+・headless 検証で object select の候補取得と当たり判定の移動追従を確認した
+・tools/run.ps1 でプロジェクト起動確認を行い 新規エラーがないことを確認した

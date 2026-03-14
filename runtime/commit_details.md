@@ -1,11 +1,12 @@
-日時: 2026-03-14 20:29:44 +09:00
-対象: QIX 初期プロジェクトの debug pause と object inspector 選択修正
-summary: title_main と base_main の両方で debug pause が成立し、base_player を object inspector でクリック選択できるように修正
+日時: 2026-03-14 20:56:17 JST
+対象: base_player の当たり判定デバッグ表示
+summary: base_player の Hitbox Overlay 表示対象漏れを修正した
 code_changes:
-・base_player に Area2D と CollisionShape2D を追加し、debug_pick_owner メタで選択対象を BasePlayer ルートへ解決するようにした
-・base_player を PROCESS_MODE_PAUSABLE にして、base_main が常時処理でも pause 中の十字移動が止まるようにした
-・title_main に set_paused_from_debug と is_pause_toggle_allowed を追加し、タイトル中も debug pause を受けられるようにした
-・DebugManager の pause controller 呼び出し前に has_method を確認し、不在時や解決揺れで不正終了しないようにした
+・BasePlayer ルートを debug_player_collision グループに登録し 既存の PickArea と CollisionShape2D を Overlay 描画対象に含めた
 verification:
-・tools/run.ps1 を実行し、タイムアウトまで起動継続することを確認した
-・godot_console --headless --path . --quit-after 120 が exit code 0 で終了し、新規エラー出力がないことを確認した
+・headless 検証で BasePlayer のグループ登録 PickArea の debug_pick_owner object select の候補取得 移動時の CollisionShape2D 追従を確認した
+・tools/run.ps1 起動確認で title_main を起点にプロジェクトが正常起動し 即時クラッシュや新規エラーがないことを確認した
+変更:
+・BasePlayer の scene ルートに debug_player_collision グループを追加した
+確認:
+・Hitbox Overlay の描画条件と object select の利用条件を既存実装のまま満たすことを確認した
