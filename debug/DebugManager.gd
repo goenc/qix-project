@@ -57,7 +57,7 @@ func set_hitbox_overlay_enabled(enabled: bool) -> void:
 
 func set_game_paused(enabled: bool) -> void:
 	var pause_controller := _resolve_pause_controller()
-	if is_instance_valid(pause_controller):
+	if is_instance_valid(pause_controller) and pause_controller.has_method("set_paused_from_debug"):
 		pause_controller.call("set_paused_from_debug", enabled)
 	_sync_manager_window_pause_state()
 
@@ -160,7 +160,11 @@ func _sync_manager_window_pause_state() -> void:
 
 func _can_toggle_pause_from_debug_input() -> bool:
 	var pause_controller := _resolve_pause_controller()
-	return is_instance_valid(pause_controller) and bool(pause_controller.call("is_pause_toggle_allowed"))
+	if !is_instance_valid(pause_controller):
+		return false
+	if !pause_controller.has_method("is_pause_toggle_allowed"):
+		return false
+	return bool(pause_controller.call("is_pause_toggle_allowed"))
 
 func _resolve_pause_controller() -> Node:
 	var current_scene := get_tree().current_scene

@@ -17,6 +17,14 @@ func _unhandled_input(_event: InputEvent) -> void:
 		get_tree().change_scene_to_file(MAIN_SCENE_PATH)
 
 
+func is_pause_toggle_allowed() -> bool:
+	return true
+
+
+func set_paused_from_debug(enabled: bool) -> void:
+	get_tree().paused = enabled
+
+
 func _register_input_map() -> void:
 	_ensure_action("move_left", [_key_event(KEY_LEFT), _key_event(KEY_A), _joypad_button(JOY_BUTTON_DPAD_LEFT)])
 	_ensure_action("move_right", [_key_event(KEY_RIGHT), _key_event(KEY_D), _joypad_button(JOY_BUTTON_DPAD_RIGHT)])

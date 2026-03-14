@@ -5,8 +5,13 @@ class_name BasePlayer
 @export var spawn_position := Vector2(320.0, 180.0)
 @export var half_extent := Vector2(12.0, 12.0)
 
+@onready var pick_area: Area2D = $PickArea
+
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_PAUSABLE
+	if is_instance_valid(pick_area):
+		pick_area.set_meta(&"debug_pick_owner", self)
 	position = spawn_position
 
 

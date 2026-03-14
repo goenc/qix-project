@@ -1,11 +1,11 @@
-日時: 2026-03-14 19:59:58 +09:00
-summary: QIX初期プロジェクトとして旧アクションゲーム構成を撤去し、タイトルから移動確認できる最小導線へ整理した
-対象: qix-project
+日時: 2026-03-14 20:29:44 +09:00
+対象: QIX 初期プロジェクトの debug pause と object inspector 選択修正
+summary: title_main と base_main の両方で debug pause が成立し、base_player を object inspector でクリック選択できるように修正
 code_changes:
-・project.godot から GameRoute autoload を削除し、プロジェクト名を初期構成向けに更新した
-・title_main と base_main の導線を維持したまま、タイトル文言と入力定義を最小構成向けに整理した
-・旧ゲーム用の scene script asset config と対応する uid を、参照確認後に削除した
+・base_player に Area2D と CollisionShape2D を追加し、debug_pick_owner メタで選択対象を BasePlayer ルートへ解決するようにした
+・base_player を PROCESS_MODE_PAUSABLE にして、base_main が常時処理でも pause 中の十字移動が止まるようにした
+・title_main に set_paused_from_debug と is_pause_toggle_allowed を追加し、タイトル中も debug pause を受けられるようにした
+・DebugManager の pause controller 呼び出し前に has_method を確認し、不在時や解決揺れで不正終了しないようにした
 verification:
-・godot_console --path . --headless --quit-after 5 が成功した
-・tools/run.ps1 で Godot ウィンドウ起動を確認した
-・一時検証スクリプトで title_main から base_main への遷移と base_player の右移動と ESC 復帰を確認した
+・tools/run.ps1 を実行し、タイムアウトまで起動継続することを確認した
+・godot_console --headless --path . --quit-after 120 が exit code 0 で終了し、新規エラー出力がないことを確認した
