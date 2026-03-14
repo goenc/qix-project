@@ -1,9 +1,9 @@
-日時: 2026-03-15 02:18:54 JST
-summary: Shift保持中のみ内側移動を継続し離した瞬間に未確定線を破棄して外周へ戻す仕様を追加
-対象: scripts/player/base_player.gd
+日時: 2026-03-15 02:30:05 JST
+summary: Shift解放時に侵入線を破棄せず始点まで逆順で巻き戻すROLLBACK状態を追加
+target: scripts/player/base_player.gd
 code_changes:
-・DRAWING状態の先頭でqix_draw保持を判定し、離していたらそのフレームでキャンセルしてBORDERへ戻るようにした
-・未確定trail_pointsとTrailLineをクリアし、現在位置を最寄り外周へスナップしてborder_progressと見た目を復帰する処理を追加した
+・PlayerState に ROLLBACK と巻き戻し用メンバを追加し、_process と get_state_text と移動拘束を新状態対応に更新
+・Shift解放時に _start_rollback へ遷移し、trail_points を保持したまま _process_rollback で線を縮めながら開始点へ戻す処理を追加
+・_finish_rollback で外周復帰時に trail_line をクリアし、既存の _finish_drawing による閉路完了フローは維持
 verification:
-・tools/run.ps1 を起動し、起動確認後に確認用プロセスを終了した
-
+・tools/run.ps1 を別プロセスで起動し、Godot が起動したことを確認後に停止

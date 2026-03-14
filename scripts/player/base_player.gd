@@ -14,7 +14,8 @@ class_name BasePlayer
 
 enum PlayerState {
 	BORDER,
-	DRAWING
+	DRAWING,
+	ROLLBACK
 }
 
 var playfield_rect: Rect2 = Rect2()
@@ -22,6 +23,8 @@ var state: int = PlayerState.BORDER
 var trail_points: PackedVector2Array = PackedVector2Array()
 var has_left_border: bool = false
 var border_progress := 0.0
+var rollback_speed := move_speed
+var rollback_index: int = -1
 
 
 func _ready() -> void:
@@ -45,7 +48,7 @@ func set_playfield_rect(rect: Rect2) -> void:
 			playfield_rect.position.y
 		)
 		position = _snap_point_to_border(position)
-	elif state == PlayerState.DRAWING:
+	elif state == PlayerState.DRAWING or state == PlayerState.ROLLBACK:
 		position = _clamp_to_playfield(position)
 	else:
 		position = _snap_point_to_border(position)
@@ -74,12 +77,20 @@ func _process(delta: float) -> void:
 			_process_border(direction, delta)
 		PlayerState.DRAWING:
 			_process_drawing(direction, delta)
+		PlayerState.ROLLBACK:
+			_process_rollback(delta)
 
 	_apply_movement_constraints()
 
 
 func get_state_text() -> String:
-	return "DRAWING" if state == PlayerState.DRAWING else "BORDER"
+	match state:
+		PlayerState.DRAWING:
+			return "DRAWING"
+		PlayerState.ROLLBACK:
+			return "ROLLBACK"
+		_:
+			return "BORDER"
 
 
 func get_debug_status() -> Dictionary:
@@ -100,7 +111,7 @@ func _process_border(direction: Vector2, delta: float) -> void:
 
 func _process_drawing(direction: Vector2, delta: float) -> void:
 	if !Input.is_action_pressed("qix_draw"):
-		_cancel_drawing_to_border()
+		_start_rollback()
 		return
 
 	var current_position := position
@@ -122,6 +133,7 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 func _start_drawing() -> void:
 	state = PlayerState.DRAWING
 	has_left_border = false
+	rollback_index = -1
 	position = _snap_point_to_border(position)
 	border_progress = _point_to_border_progress(position)
 	trail_points = PackedVector2Array()
@@ -138,13 +150,25 @@ func _finish_drawing() -> void:
 	_apply_state_visuals()
 
 
-func _cancel_drawing_to_border() -> void:
-	trail_points = PackedVector2Array()
-	_update_trail_line()
-	position = _snap_point_to_border(position)
-	border_progress = _point_to_border_progress(position)
-	has_left_border = false
-	state = PlayerState.BORDER
+func _start_rollback() -> void:
+	rollback_speed = move_speed
+	if trail_points.is_empty():
+		trail_points.append(position)
+	else:
+		var last_point: Vector2 = trail_points[trail_points.size() - 1]
+		if !last_point.is_equal_approx(position):
+			trail_points.append(position)
+		else:
+			trail_points[trail_points.size() - 1] = position
+
+	state = PlayerState.ROLLBACK
+	position = trail_points[trail_points.size() - 1]
+	rollback_index = trail_points.size() - 2
+	if trail_points.size() <= 1:
+		_finish_rollback()
+		return
+
+	_update_rollback_trail_line()
 	_apply_state_visuals()
 
 
@@ -165,16 +189,51 @@ func _update_trail_line() -> void:
 		trail_line.points = trail_points
 
 
+func _update_rollback_trail_line() -> void:
+	if !is_instance_valid(trail_line):
+		return
+
+	var visible_points := PackedVector2Array()
+	for i in range(rollback_index + 1):
+		visible_points.append(trail_points[i])
+	visible_points.append(position)
+	trail_line.points = visible_points
+
+
+func _process_rollback(delta: float) -> void:
+	var target_point: Vector2 = trail_points[rollback_index]
+	position = position.move_toward(target_point, rollback_speed * delta)
+	if position.distance_to(target_point) <= border_epsilon:
+		position = target_point
+		rollback_index -= 1
+		if rollback_index < 0:
+			_finish_rollback()
+			return
+
+	_update_rollback_trail_line()
+
+
+func _finish_rollback() -> void:
+	position = _snap_point_to_border(position)
+	border_progress = _point_to_border_progress(position)
+	trail_points = PackedVector2Array()
+	rollback_index = -1
+	has_left_border = false
+	state = PlayerState.BORDER
+	_update_trail_line()
+	_apply_state_visuals()
+
+
 func _apply_state_visuals() -> void:
 	if is_instance_valid(body):
-		body.color = drawing_color if state == PlayerState.DRAWING else border_color
+		body.color = drawing_color if state == PlayerState.DRAWING or state == PlayerState.ROLLBACK else border_color
 
 
 func _apply_movement_constraints() -> void:
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
 		return
 
-	if state == PlayerState.DRAWING:
+	if state == PlayerState.DRAWING or state == PlayerState.ROLLBACK:
 		position = _clamp_to_playfield(position)
 	else:
 		position = _snap_point_to_border(position)
