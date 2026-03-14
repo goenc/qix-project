@@ -1,0 +1,45 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://debug/panels/object_inspector/object_pick_list_panel.gd" id="1_panel_script"]
+
+[node name="ObjectPickListPanel" type="Control"]
+layout_mode = 3
+anchor_right = 1.0
+anchor_bottom = 1.0
+mouse_filter = 2
+script = ExtResource("1_panel_script")
+
+[node name="CountLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 8.0
+offset_right = 180.0
+offset_bottom = 28.0
+theme_override_font_sizes/font_size = 11
+text = "候補 0 件"
+
+[node name="CandidateList" type="ItemList" parent="."]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 34.0
+offset_right = 510.0
+offset_bottom = 206.0
+allow_reselect = true
+same_column_width = true
+max_columns = 1
+
+[node name="SelectButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 322.0
+offset_top = 214.0
+offset_right = 410.0
+offset_bottom = 246.0
+text = "Select"
+
+[node name="CancelButton" type="Button" parent="."]
+layout_mode = 0
+offset_left = 420.0
+offset_top = 214.0
+offset_right = 508.0
+offset_bottom = 246.0
+text = "Close"

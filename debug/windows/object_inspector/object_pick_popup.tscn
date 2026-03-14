@@ -1,0 +1,18 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://debug/windows/object_inspector/object_pick_popup.gd" id="1_popup_script"]
+[ext_resource type="PackedScene" path="res://debug/panels/object_inspector/object_pick_list_panel.tscn" id="2_pick_panel"]
+
+[node name="ObjectPickPopup" type="Window"]
+oversampling_override = 1.0
+visible = false
+title = "Object Pick"
+initial_position = 2
+size = Vector2i(520, 256)
+wrap_controls = true
+unresizable = true
+script = ExtResource("1_popup_script")
+
+[node name="ObjectPickListPanel" parent="." instance=ExtResource("2_pick_panel")]
+anchor_right = 1.0
+anchor_bottom = 1.0

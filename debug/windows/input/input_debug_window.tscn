@@ -1,0 +1,21 @@
+[gd_scene format=3 uid="uid://dusoncc1bm0qo"]
+
+[ext_resource type="Script" path="res://debug/windows/input/input_debug_window.gd" id="1_window_script"]
+[ext_resource type="PackedScene" uid="uid://dwdjjpo008erb" path="res://debug/panels/DebugInputPanel.tscn" id="2_input_panel"]
+
+[node name="InputDebugWindow" type="Window" unique_id=378167538]
+oversampling_override = 1.0
+title = "Input Debugger"
+initial_position = 2
+size = Vector2i(321, 60)
+wrap_controls = true
+unresizable = true
+script = ExtResource("1_window_script")
+
+[node name="DebugInputPanel" parent="." unique_id=1110585034 instance=ExtResource("2_input_panel")]
+anchor_right = 1.01
+anchor_bottom = 0.9710001
+offset_top = 1.0
+offset_right = -0.40118408
+offset_bottom = 1.6249847
+rotation = -0.004012554

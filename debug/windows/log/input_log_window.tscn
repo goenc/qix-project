@@ -1,0 +1,16 @@
+[gd_scene format=3 uid="uid://cdw4mv3qked0k"]
+
+[ext_resource type="Script" path="res://debug/windows/log/input_log_window.gd" id="1_window_script"]
+[ext_resource type="PackedScene" path="res://debug/panels/DebugLogPanel.tscn" id="2_log_panel"]
+
+[node name="InputLogWindow" type="Window" unique_id=856244544]
+oversampling_override = 1.0
+title = "Input Log"
+initial_position = 2
+size = Vector2i(420, 160)
+wrap_controls = true
+min_size = Vector2i(360, 140)
+script = ExtResource("1_window_script")
+
+[node name="DebugLogPanel" parent="." unique_id=2133867632 instance=ExtResource("2_log_panel")]
+layout_mode = 3

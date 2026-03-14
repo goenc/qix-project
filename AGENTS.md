@@ -1,0 +1,2 @@
+- 共通方針は C:\Users\gonec\GameProjects\Godot\AGENTS.md を参照する
+- skills ディレクトリは C:\Users\gonec\GameProjects\Godot\skills を参照する

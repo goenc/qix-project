@@ -1,0 +1,54 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/title.gd" id="1_script"]
+
+[node name="Title" type="CanvasLayer"]
+script = ExtResource("1_script")
+
+[node name="Root" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+
+[node name="Backdrop" type="ColorRect" parent="Root"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+color = Color(0.07, 0.08, 0.12, 0.92)
+
+[node name="TitleLabel" type="Label" parent="Root"]
+offset_left = 116.0
+offset_top = 84.0
+offset_right = 532.0
+offset_bottom = 132.0
+theme_override_font_sizes/font_size = 32
+text = "BASE CHECK"
+horizontal_alignment = 1
+
+[node name="SubLabel" type="Label" parent="Root"]
+offset_left = 128.0
+offset_top = 152.0
+offset_right = 512.0
+offset_bottom = 196.0
+theme_override_font_sizes/font_size = 18
+text = "ARROW KEYS OR WASD TO MOVE"
+horizontal_alignment = 1
+
+[node name="Prompt" type="Label" parent="Root"]
+offset_left = 152.0
+offset_top = 248.0
+offset_right = 488.0
+offset_bottom = 286.0
+theme_override_font_sizes/font_size = 20
+text = "PRESS ACCEPT TO START"
+horizontal_alignment = 1

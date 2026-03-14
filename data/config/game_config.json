@@ -1,0 +1,44 @@
+{
+  "window": {
+    "width": 640,
+    "height": 360
+  },
+  "tile_size": 32,
+  "gravity": 900,
+  "player": {
+    "size": [24, 28],
+    "move_speed": 120,
+    "jump_velocity": -320,
+    "max_life": 5,
+    "invincible_time": 1.0,
+    "bullet_speed": 220,
+    "bullet_size": [8, 8]
+  },
+  "walker": {
+    "size": [24, 24],
+    "hp": 2,
+    "speed": 40,
+    "contact_damage": 1
+  },
+  "turret": {
+    "size": [24, 24],
+    "hp": 3,
+    "shoot_interval": 2.0,
+    "contact_damage": 1
+  },
+  "boss": {
+    "size": [48, 48],
+    "hp": 12,
+    "contact_damage": 1,
+    "move_speed": 110,
+    "jump_velocity": -280,
+    "shot_interval": 0.3,
+    "shot_count": 3,
+    "wait_after_burst": 1.0
+  },
+  "enemy_bullet": {
+    "size": [8, 8],
+    "speed": 120,
+    "damage": 1
+  }
+}

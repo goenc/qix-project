@@ -1,0 +1,9 @@
+[gd_scene load_steps=3 format=4]
+
+[ext_resource type="Script" path="res://scripts/ui/title_main.gd" id="1_title_main_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/title.tscn" id="2_title_scene"]
+
+[node name="TitleMain" type="Node"]
+script = ExtResource("1_title_main_script")
+
+[node name="Title" parent="." instance=ExtResource("2_title_scene")]

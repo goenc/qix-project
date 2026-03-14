@@ -1,0 +1,22 @@
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://scripts/game/enemy_bullet.gd" id="1_script"]
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
+size = Vector2(8, 8)
+
+[node name="EnemyBullet" type="Area2D"]
+visible = false
+collision_layer = 8
+collision_mask = 17
+monitoring = false
+monitorable = false
+script = ExtResource("1_script")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="."]
+shape = SubResource("RectangleShape2D_body")
+disabled = true
+
+[node name="Body" type="Polygon2D" parent="."]
+polygon = PackedVector2Array(-4, -4, 4, -4, 4, 4, -4, 4)
+color = Color(0.96, 0.84, 0.25, 1)

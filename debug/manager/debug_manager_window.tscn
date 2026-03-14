@@ -1,0 +1,56 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://debug/manager/debug_manager_window.gd" id="1_manager_script"]
+
+[node name="DebugManagerWindow" type="Window"]
+oversampling_override = 1.0
+title = "Debug Manager"
+initial_position = 2
+size = Vector2i(220, 236)
+wrap_controls = true
+unresizable = true
+script = ExtResource("1_manager_script")
+
+[node name="FeatureButtons" type="Control" parent="."]
+layout_mode = 1
+anchors_preset = 0
+
+[node name="OpenInputDebuggerButton" type="Button" parent="FeatureButtons"]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 14.0
+offset_right = 206.0
+offset_bottom = 46.0
+text = "Input Debugger"
+
+[node name="OpenInputLogButton" type="Button" parent="FeatureButtons"]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 56.0
+offset_right = 206.0
+offset_bottom = 88.0
+text = "Input Log"
+
+[node name="ToggleHitboxOverlayButton" type="CheckButton" parent="FeatureButtons"]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 98.0
+offset_right = 206.0
+offset_bottom = 130.0
+text = "Hitbox Overlay"
+
+[node name="TogglePauseButton" type="CheckButton" parent="FeatureButtons"]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 140.0
+offset_right = 206.0
+offset_bottom = 172.0
+text = "Pause"
+
+[node name="OpenObjectInspectorButton" type="Button" parent="FeatureButtons"]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 182.0
+offset_right = 206.0
+offset_bottom = 214.0
+text = "Object Inspector"

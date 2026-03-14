@@ -1,0 +1,48 @@
+[gd_scene format=3 uid="uid://dwdjjpo008erb"]
+
+[ext_resource type="Script" uid="uid://cxi0eeuj42aws" path="res://debug/panels/DebugInputPanel.gd" id="1_panel_script"]
+
+[node name="DebugInputPanel" type="Control" unique_id=1134805185]
+layout_mode = 3
+anchor_right = 0.76900005
+anchor_bottom = 0.674
+offset_right = 0.11193848
+offset_bottom = 0.24798584
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_vertical = 3
+mouse_filter = 2
+script = ExtResource("1_panel_script")
+
+[node name="InputGroup" type="Control" parent="." unique_id=855474650]
+layout_mode = 1
+anchors_preset = 0
+
+[node name="CurrentInputLabel" type="Label" parent="InputGroup" unique_id=1899402556]
+layout_mode = 0
+offset_left = 4.0
+offset_top = 3.0
+offset_right = 275.0
+offset_bottom = 20.0
+theme_override_font_sizes/font_size = 10
+text = "入力 : なし"
+autowrap_mode = 3
+
+[node name="PressCountLabel" type="Label" parent="InputGroup" unique_id=1009842628]
+layout_mode = 0
+offset_left = 3.0
+offset_top = 38.0
+offset_right = 288.0
+offset_bottom = 64.0
+theme_override_font_sizes/font_size = 10
+text = "同時押し数 : 0"
+
+[node name="PressedKeysLabel" type="Label" parent="InputGroup" unique_id=305203520]
+layout_mode = 0
+offset_left = 4.0
+offset_top = 21.0
+offset_right = 288.0
+offset_bottom = 44.0
+theme_override_font_sizes/font_size = 10
+text = "押下中キー : なし"
+autowrap_mode = 3

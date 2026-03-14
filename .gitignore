@@ -1,0 +1,23 @@
+# Godot
+.godot/
+.import/
+*.import
+*.tmp
+
+# Android
+/android/
+
+# ビルド
+build/
+export/
+
+# ログ
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,219 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://debug/panels/object_inspector/object_inspector_panel.gd" id="1_panel_script"]
+
+[node name="ObjectInspectorPanel" type="Control"]
+layout_mode = 3
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_right = 0.0
+offset_bottom = 0.0
+mouse_filter = 2
+script = ExtResource("1_panel_script")
+
+[node name="StatusLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 8.0
+offset_right = 374.0
+offset_bottom = 28.0
+theme_override_font_sizes/font_size = 11
+text = "対象なし"
+autowrap_mode = 3
+
+[node name="SummaryNameLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 38.0
+offset_right = 42.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 11
+text = "名前"
+
+[node name="SummaryNameValueLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 38.0
+offset_right = 186.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 11
+text = "-"
+clip_text = true
+
+[node name="SummaryStateLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 194.0
+offset_top = 38.0
+offset_right = 226.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 11
+text = "状態"
+
+[node name="SummaryStateValueLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 232.0
+offset_top = 38.0
+offset_right = 374.0
+offset_bottom = 56.0
+theme_override_font_sizes/font_size = 11
+text = "-"
+clip_text = true
+
+[node name="SummaryPositionLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 58.0
+offset_right = 42.0
+offset_bottom = 76.0
+theme_override_font_sizes/font_size = 11
+text = "座標"
+
+[node name="SummaryPositionValueLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 58.0
+offset_right = 186.0
+offset_bottom = 76.0
+theme_override_font_sizes/font_size = 11
+text = "-"
+clip_text = true
+
+[node name="SummaryAnimationLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 194.0
+offset_top = 58.0
+offset_right = 226.0
+offset_bottom = 76.0
+theme_override_font_sizes/font_size = 11
+text = "アニメ"
+
+[node name="SummaryAnimationValueLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 232.0
+offset_top = 58.0
+offset_right = 374.0
+offset_bottom = 76.0
+theme_override_font_sizes/font_size = 11
+text = "-"
+clip_text = true
+
+[node name="SummaryRegisteredImagesLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 82.0
+offset_right = 178.0
+offset_bottom = 100.0
+theme_override_font_sizes/font_size = 11
+text = "登録画像"
+
+[node name="SummaryRegisteredImagesScroll" type="ScrollContainer" parent="."]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 100.0
+offset_right = 374.0
+offset_bottom = 188.0
+horizontal_scroll_mode = 0
+
+[node name="Content" type="VBoxContainer" parent="SummaryRegisteredImagesScroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="EmptyLabel" type="Label" parent="SummaryRegisteredImagesScroll/Content"]
+visible = false
+layout_mode = 2
+theme_override_font_sizes/font_size = 11
+text = "登録画像なし"
+
+[node name="ImageList" type="VBoxContainer" parent="SummaryRegisteredImagesScroll/Content"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 4
+
+[node name="ImageRowTemplate" type="HBoxContainer" parent="SummaryRegisteredImagesScroll/Content/ImageList"]
+visible = false
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+mouse_filter = 2
+
+[node name="Thumbnail" type="TextureRect" parent="SummaryRegisteredImagesScroll/Content/ImageList/ImageRowTemplate"]
+custom_minimum_size = Vector2(40, 40)
+layout_mode = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="SeparatorLabel" type="Label" parent="SummaryRegisteredImagesScroll/Content/ImageList/ImageRowTemplate"]
+layout_mode = 2
+mouse_filter = 2
+text = ":"
+vertical_alignment = 1
+
+[node name="FileNameLabel" type="Label" parent="SummaryRegisteredImagesScroll/Content/ImageList/ImageRowTemplate"]
+custom_minimum_size = Vector2(0, 40)
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_font_sizes/font_size = 11
+text = "(embedded)"
+clip_text = true
+text_overrun_behavior = 3
+vertical_alignment = 1
+
+[node name="SummaryVelocityLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 196.0
+offset_right = 42.0
+offset_bottom = 214.0
+theme_override_font_sizes/font_size = 11
+text = "速度"
+
+[node name="SummaryVelocityValueLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 48.0
+offset_top = 196.0
+offset_right = 186.0
+offset_bottom = 214.0
+theme_override_font_sizes/font_size = 11
+text = "-"
+clip_text = true
+
+[node name="SummaryCollisionLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 194.0
+offset_top = 196.0
+offset_right = 226.0
+offset_bottom = 214.0
+theme_override_font_sizes/font_size = 11
+text = "判定"
+
+[node name="SummaryCollisionValueLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 232.0
+offset_top = 196.0
+offset_right = 374.0
+offset_bottom = 214.0
+theme_override_font_sizes/font_size = 11
+text = "-"
+clip_text = true
+
+[node name="CommonTitleLabel" type="Label" parent="."]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 222.0
+offset_right = 178.0
+offset_bottom = 240.0
+theme_override_font_sizes/font_size = 11
+text = "共通情報"
+
+[node name="CommonInfoText" type="TextEdit" parent="."]
+layout_mode = 0
+offset_left = 10.0
+offset_top = 242.0
+offset_right = 374.0
+offset_bottom = 390.0
+editable = false
+wrap_mode = 1

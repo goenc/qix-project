@@ -1,0 +1,17 @@
+[gd_scene format=4 uid="uid://bt7eu72ulw04w"]
+
+[ext_resource type="Script" uid="uid://b45pt8fvu10bi" path="res://scripts/game/game_manager.gd" id="1_game_manager"]
+[ext_resource type="PackedScene" path="res://scenes/player/player.tscn" id="2_player_scene"]
+[ext_resource type="PackedScene" path="res://scenes/ui/hud.tscn" id="4_hud_scene"]
+[ext_resource type="PackedScene" path="res://scenes/ui/clear.tscn" id="5_clear_scene"]
+
+[node name="Main" type="Node2D" unique_id=1763189076]
+script = ExtResource("1_game_manager")
+
+[node name="StageMount" type="Node2D" parent="."]
+
+[node name="Player" parent="." unique_id=628198543 instance=ExtResource("2_player_scene")]
+
+[node name="Hud" parent="." unique_id=873235544 instance=ExtResource("4_hud_scene")]
+
+[node name="Clear" parent="." unique_id=19522033 instance=ExtResource("5_clear_scene")]
