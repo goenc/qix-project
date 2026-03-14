@@ -2,25 +2,25 @@ extends Node2D
 class_name BasePlayer
 
 @export var move_speed := 240.0
-@export var half_extent := Vector2(12.0, 12.0)
-@export var trail_point_min_distance := 8.0
+@export var border_epsilon := 2.0
+@export var trail_min_point_distance := 8.0
 @export var border_color := Color(1.0, 1.0, 1.0, 1.0)
 @export var drawing_color := Color(1.0, 0.45, 0.2, 1.0)
-@export var border_tolerance := 1.0
+@export var start_edge_ratio := 0.18
 
 @onready var body: Polygon2D = $Body
 @onready var pick_area: Area2D = $PickArea
 @onready var trail_line: Line2D = $TrailLine
 
-enum MoveState {
+enum PlayerState {
 	BORDER,
 	DRAWING
 }
 
-var playfield_rect := Rect2()
-var move_state: MoveState = MoveState.BORDER
+var playfield_rect: Rect2 = Rect2()
+var state: int = PlayerState.BORDER
 var trail_points: PackedVector2Array = PackedVector2Array()
-var has_left_border := false
+var has_left_border: bool = false
 var border_progress := 0.0
 
 
@@ -40,12 +40,16 @@ func set_playfield_rect(rect: Rect2) -> void:
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
 		return
 	if position == Vector2.ZERO or !_is_inside_or_on_playfield(position):
-		position = Vector2(playfield_rect.get_center().x, playfield_rect.position.y)
+		position = Vector2(
+			playfield_rect.position.x + playfield_rect.size.x * start_edge_ratio,
+			playfield_rect.position.y
+		)
+		position = _snap_point_to_border(position)
+	elif state == PlayerState.DRAWING:
+		position = _clamp_to_playfield(position)
 	else:
 		position = _snap_point_to_border(position)
 	border_progress = _point_to_border_progress(position)
-	if move_state == MoveState.DRAWING:
-		move_state = MoveState.BORDER
 	_apply_state_visuals()
 	_apply_movement_constraints()
 
@@ -65,24 +69,26 @@ func _process(delta: float) -> void:
 	if direction.length_squared() > 1.0:
 		direction = direction.normalized()
 
-	match move_state:
-		MoveState.BORDER:
+	match state:
+		PlayerState.BORDER:
 			_process_border(direction, delta)
-		MoveState.DRAWING:
+		PlayerState.DRAWING:
 			_process_drawing(direction, delta)
 
 	_apply_movement_constraints()
 
 
 func get_state_text() -> String:
-	return "DRAWING" if move_state == MoveState.DRAWING else "BORDER"
+	return "DRAWING" if state == PlayerState.DRAWING else "BORDER"
 
 
 func get_debug_status() -> Dictionary:
 	return {
+		"mode_text": get_state_text(),
 		"state": get_state_text(),
 		"position": position,
-		"is_on_border": _is_on_border(position)
+		"is_on_border": _is_on_border(position),
+		"trail_point_count": trail_points.size()
 	}
 
 
@@ -105,11 +111,12 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 
 
 func _start_drawing() -> void:
-	move_state = MoveState.DRAWING
+	state = PlayerState.DRAWING
 	has_left_border = false
 	position = _snap_point_to_border(position)
 	border_progress = _point_to_border_progress(position)
-	trail_points = PackedVector2Array([position])
+	trail_points = PackedVector2Array()
+	trail_points.append(position)
 	_update_trail_line()
 	_apply_state_visuals()
 
@@ -118,7 +125,7 @@ func _finish_drawing() -> void:
 	position = _snap_point_to_border(position)
 	_append_trail_point_if_needed(true)
 	border_progress = _point_to_border_progress(position)
-	move_state = MoveState.BORDER
+	state = PlayerState.BORDER
 	_apply_state_visuals()
 
 
@@ -129,7 +136,7 @@ func _append_trail_point_if_needed(force_add: bool) -> void:
 		return
 
 	var last_point: Vector2 = trail_points[trail_points.size() - 1]
-	if force_add or last_point.distance_to(position) >= trail_point_min_distance:
+	if force_add or last_point.distance_to(position) >= trail_min_point_distance:
 		trail_points.append(position)
 		_update_trail_line()
 
@@ -141,20 +148,14 @@ func _update_trail_line() -> void:
 
 func _apply_state_visuals() -> void:
 	if is_instance_valid(body):
-		body.color = drawing_color if move_state == MoveState.DRAWING else border_color
+		body.color = drawing_color if state == PlayerState.DRAWING else border_color
 
 
 func _apply_movement_constraints() -> void:
-	var viewport_rect := get_viewport_rect()
-	position = Vector2(
-		clampf(position.x, viewport_rect.position.x + half_extent.x, viewport_rect.end.x - half_extent.x),
-		clampf(position.y, viewport_rect.position.y + half_extent.y, viewport_rect.end.y - half_extent.y)
-	)
-
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
 		return
 
-	if move_state == MoveState.DRAWING:
+	if state == PlayerState.DRAWING:
 		position = _clamp_to_playfield(position)
 	else:
 		position = _snap_point_to_border(position)
@@ -189,13 +190,13 @@ func _snap_point_to_border(point: Vector2) -> Vector2:
 
 func _is_on_border(point: Vector2) -> bool:
 	var clamped := _clamp_to_playfield(point)
-	if clamped.distance_to(point) > border_tolerance:
+	if clamped.distance_to(point) > border_epsilon:
 		return false
 	return (
-		absf(clamped.x - playfield_rect.position.x) <= border_tolerance
-		or absf(clamped.x - playfield_rect.end.x) <= border_tolerance
-		or absf(clamped.y - playfield_rect.position.y) <= border_tolerance
-		or absf(clamped.y - playfield_rect.end.y) <= border_tolerance
+		absf(clamped.x - playfield_rect.position.x) <= border_epsilon
+		or absf(clamped.x - playfield_rect.end.x) <= border_epsilon
+		or absf(clamped.y - playfield_rect.position.y) <= border_epsilon
+		or absf(clamped.y - playfield_rect.end.y) <= border_epsilon
 	)
 
 
@@ -226,11 +227,11 @@ func _point_to_border_progress(point: Vector2) -> float:
 	var right := playfield_rect.end.x
 	var bottom := playfield_rect.end.y
 
-	if absf(snapped.y - top) <= border_tolerance:
+	if absf(snapped.y - top) <= border_epsilon:
 		return clampf(snapped.x - left, 0.0, width)
-	if absf(snapped.x - right) <= border_tolerance:
+	if absf(snapped.x - right) <= border_epsilon:
 		return width + clampf(snapped.y - top, 0.0, height)
-	if absf(snapped.y - bottom) <= border_tolerance:
+	if absf(snapped.y - bottom) <= border_epsilon:
 		return width + height + clampf(right - snapped.x, 0.0, width)
 	return width + height + width + clampf(bottom - snapped.y, 0.0, height)
 
@@ -292,4 +293,4 @@ func _wrap_border_progress(progress: float) -> float:
 
 func _is_inside_or_on_playfield(point: Vector2) -> bool:
 	var clamped := _clamp_to_playfield(point)
-	return clamped.distance_to(point) <= border_tolerance
+	return clamped.distance_to(point) <= border_epsilon

@@ -17,30 +17,49 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 
 [node name="TitleLabel" type="Label" parent="Ui/Root"]
-offset_left = 16.0
-offset_top = 16.0
-offset_right = 256.0
-offset_bottom = 44.0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 32.0
+offset_right = -24.0
+offset_bottom = 64.0
 theme_override_font_sizes/font_size = 24
+horizontal_alignment = 2
 text = "QIX BASE"
 
 [node name="HelpLabel" type="Label" parent="Ui/Root"]
-offset_left = 16.0
-offset_top = 52.0
-offset_right = 520.0
-offset_bottom = 96.0
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 84.0
+offset_right = -24.0
+offset_bottom = 144.0
+autowrap_mode = 3
 text = "MOVE: ARROWS/WASD  DRAW: Z/SHIFT  ESC: TITLE"
 
-[node name="StatusLabel" type="Label" parent="Ui/Root"]
-offset_left = 16.0
-offset_top = 96.0
-offset_right = 208.0
-offset_bottom = 124.0
-text = "BORDER"
+[node name="StateLabel" type="Label" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 180.0
+offset_right = -24.0
+offset_bottom = 208.0
+text = "MODE: BORDER"
 
 [node name="PositionLabel" type="Label" parent="Ui/Root"]
-offset_left = 16.0
-offset_top = 126.0
-offset_right = 560.0
-offset_bottom = 154.0
-text = "POS: (-, -)  MODE: WAITING"
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 220.0
+offset_right = -24.0
+offset_bottom = 248.0
+text = "POS: (0, 0)"
+
+[node name="ClaimedLabel" type="Label" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 260.0
+offset_right = -24.0
+offset_bottom = 288.0
+text = "CLAIMED: 0%"
