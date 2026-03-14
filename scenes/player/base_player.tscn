@@ -15,3 +15,7 @@ polygon = PackedVector2Array(-12, -12, 12, -12, 12, 12, -12, 12)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="PickArea"]
 shape = SubResource("RectangleShape2D_pick")
+
+[node name="TrailLine" type="Line2D" parent="."]
+default_color = Color(0.15, 0.9, 1, 1)
+width = 3.0

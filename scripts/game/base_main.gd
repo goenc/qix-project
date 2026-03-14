@@ -2,13 +2,27 @@ extends Node2D
 
 const TITLE_SCENE_PATH := "res://scenes/title_main.tscn"
 
+@export var playfield_margin := Vector2(72.0, 124.0)
+@export var playfield_min_size := Vector2(180.0, 120.0)
+@export var playfield_border_color := Color(0.4, 0.95, 0.7, 1.0)
+@export var playfield_border_width := 3.0
+
+@onready var base_player: BasePlayer = $BasePlayer
 @onready var status_label: Label = $Ui/Root/StatusLabel
+
+var playfield_rect := Rect2()
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	get_tree().paused = false
 	_register_input_map()
+	_recalculate_playfield_rect()
+	_apply_playfield_to_player()
+	var viewport := get_viewport()
+	if is_instance_valid(viewport) and !viewport.size_changed.is_connected(_on_viewport_size_changed):
+		viewport.size_changed.connect(_on_viewport_size_changed)
+	queue_redraw()
 	_sync_status_label()
 
 
@@ -27,8 +41,17 @@ func set_paused_from_debug(enabled: bool) -> void:
 	_sync_status_label()
 
 
+func _process(_delta: float) -> void:
+	_sync_status_label()
+
+
 func _sync_status_label() -> void:
-	status_label.text = "PAUSED" if get_tree().paused else "ESC TO TITLE"
+	if get_tree().paused:
+		status_label.text = "PAUSED"
+	elif is_instance_valid(base_player):
+		status_label.text = base_player.get_state_text()
+	else:
+		status_label.text = "SAFE"
 
 
 func _register_input_map() -> void:
@@ -36,6 +59,7 @@ func _register_input_map() -> void:
 	_ensure_action("move_right", [_key_event(KEY_RIGHT), _key_event(KEY_D), _joypad_button(JOY_BUTTON_DPAD_RIGHT)])
 	_ensure_action("move_up", [_key_event(KEY_UP), _key_event(KEY_W), _joypad_button(JOY_BUTTON_DPAD_UP)])
 	_ensure_action("move_down", [_key_event(KEY_DOWN), _key_event(KEY_S), _joypad_button(JOY_BUTTON_DPAD_DOWN)])
+	_ensure_action("qix_draw", [_key_event(KEY_Z), _key_event(KEY_SHIFT), _joypad_button(JOY_BUTTON_X)])
 	_ensure_action("ui_cancel", [_key_event(KEY_ESCAPE), _joypad_button(JOY_BUTTON_B), _joypad_button(JOY_BUTTON_BACK)])
 	_ensure_action("pause", [_key_event(KEY_P), _joypad_button(JOY_BUTTON_START)])
 
@@ -59,3 +83,32 @@ func _joypad_button(button_index: JoyButton) -> InputEventJoypadButton:
 	var event := InputEventJoypadButton.new()
 	event.button_index = button_index
 	return event
+
+
+func _draw() -> void:
+	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
+		return
+	draw_rect(playfield_rect, playfield_border_color, false, playfield_border_width)
+
+
+func _on_viewport_size_changed() -> void:
+	_recalculate_playfield_rect()
+	_apply_playfield_to_player()
+	queue_redraw()
+	_sync_status_label()
+
+
+func _recalculate_playfield_rect() -> void:
+	var viewport_rect := get_viewport_rect()
+	var margin_x := minf(playfield_margin.x, viewport_rect.size.x * 0.35)
+	var margin_y := minf(playfield_margin.y, viewport_rect.size.y * 0.35)
+	var width := maxf(playfield_min_size.x, viewport_rect.size.x - margin_x * 2.0)
+	var height := maxf(playfield_min_size.y, viewport_rect.size.y - margin_y * 2.0)
+	var position_x := viewport_rect.position.x + (viewport_rect.size.x - width) * 0.5
+	var position_y := viewport_rect.position.y + (viewport_rect.size.y - height) * 0.5
+	playfield_rect = Rect2(Vector2(position_x, position_y), Vector2(width, height))
+
+
+func _apply_playfield_to_player() -> void:
+	if is_instance_valid(base_player):
+		base_player.set_playfield(playfield_rect)

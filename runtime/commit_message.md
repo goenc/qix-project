@@ -1,5 +1,7 @@
-base_player の当たり判定デバッグ表示を修正
+QIXベース画面の境界移動と描線導線を実装
 
-・BasePlayer を debug_player_collision グループに登録して既存 PickArea の CollisionShape2D を Hitbox Overlay の描画対象に含めた
-・headless 検証で object select の候補取得と当たり判定の移動追従を確認した
-・tools/run.ps1 でプロジェクト起動確認を行い 新規エラーがないことを確認した
+・タイトル遷移とpause復帰を維持したままQIXの最低限プレイ基盤を追加した
+・base_mainにplayfield_rect計算と外枠描画とリサイズ追従とqix_draw入力登録を追加した
+・base_playerをSAFEとDRAWINGの2状態に置換しTrailLine描線開始終了と状態文字列取得を追加した
+・base_mainとbase_playerのscene文言とTrailLineノードを最小変更で更新した
+・godot_consoleのheadless実行とtools/run.ps1起動確認が成功した

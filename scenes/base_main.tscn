@@ -22,18 +22,18 @@ offset_top = 16.0
 offset_right = 256.0
 offset_bottom = 44.0
 theme_override_font_sizes/font_size = 24
-text = "QIX INITIAL PROJECT"
+text = "QIX BASE"
 
 [node name="HelpLabel" type="Label" parent="Ui/Root"]
 offset_left = 16.0
 offset_top = 52.0
 offset_right = 320.0
 offset_bottom = 96.0
-text = "MOVE WITH ARROWS OR WASD"
+text = "MOVE: ARROWS/WASD  DRAW: Z  ESC: TITLE"
 
 [node name="StatusLabel" type="Label" parent="Ui/Root"]
 offset_left = 16.0
 offset_top = 96.0
 offset_right = 208.0
 offset_bottom = 124.0
-text = "ESC TO TITLE"
+text = "SAFE"
