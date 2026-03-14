@@ -32,7 +32,7 @@ offset_top = 84.0
 offset_right = 532.0
 offset_bottom = 132.0
 theme_override_font_sizes/font_size = 32
-text = "BASE CHECK"
+text = "QIX INITIAL PROJECT"
 horizontal_alignment = 1
 
 [node name="SubLabel" type="Label" parent="Root"]
@@ -41,7 +41,7 @@ offset_top = 152.0
 offset_right = 512.0
 offset_bottom = 196.0
 theme_override_font_sizes/font_size = 18
-text = "ARROW KEYS OR WASD TO MOVE"
+text = "MINIMAL TITLE AND MOVE TEST"
 horizontal_alignment = 1
 
 [node name="Prompt" type="Label" parent="Root"]

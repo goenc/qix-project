@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="qix_project"
+config/name="QIX Initial Project"
 run/main_scene="res://scenes/title_main.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
@@ -19,7 +19,6 @@ config/icon="res://icon.svg"
 
 DebugInputData="*res://debug/services/input_debug_data.gd"
 DebugManager="*res://debug/DebugManager.gd"
-GameRoute="*res://scripts/game/game_route.gd"
 
 [physics]
 
