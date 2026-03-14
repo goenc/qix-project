@@ -1,9 +1,9 @@
-日時: 2026-03-15 02:30:05 JST
-summary: Shift解放時に侵入線を破棄せず始点まで逆順で巻き戻すROLLBACK状態を追加
-target: scripts/player/base_player.gd
+日時: 2026-03-15 02:44:37 +09:00
+summary: Shift押下中の内部移動を4方向化して斜め軌跡を防止した
+対象: scripts/player/base_player.gd
 code_changes:
-・PlayerState に ROLLBACK と巻き戻し用メンバを追加し、_process と get_state_text と移動拘束を新状態対応に更新
-・Shift解放時に _start_rollback へ遷移し、trail_points を保持したまま _process_rollback で線を縮めながら開始点へ戻す処理を追加
-・_finish_rollback で外周復帰時に trail_line をクリアし、既存の _finish_drawing による閉路完了フローは維持
+・DRAWING専用の入力方向決定を追加し、最後に押した方向の軸だけを残すようにした
+・軸切り替え時にコーナーポイントを追加し、trailの各区間が水平線か垂直線だけになるようにした
 verification:
-・tools/run.ps1 を別プロセスで起動し、Godot が起動したことを確認後に停止
+・godot_console --headless --path . -s res://runtime/verify_drawing_lock.gd で内部移動の軸固定と軌跡の直交性を確認した
+・tools/run.ps1 で Godot 4.6.1 の起動を確認した

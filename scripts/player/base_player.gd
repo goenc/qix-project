@@ -25,6 +25,14 @@ var has_left_border: bool = false
 var border_progress := 0.0
 var rollback_speed := move_speed
 var rollback_index: int = -1
+var drawing_input_sequence: int = 0
+var drawing_input_order: Dictionary = {
+	&"move_left": 0,
+	&"move_right": 0,
+	&"move_up": 0,
+	&"move_down": 0
+}
+var drawing_segment_direction: Vector2 = Vector2.ZERO
 
 
 func _ready() -> void:
@@ -65,10 +73,12 @@ func _process(delta: float) -> void:
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
 		return
 
+	_update_drawing_input_order()
 	var direction := Vector2(
 		Input.get_axis("move_left", "move_right"),
 		Input.get_axis("move_up", "move_down")
 	)
+	var drawing_direction := _get_drawing_direction()
 	if direction.length_squared() > 1.0:
 		direction = direction.normalized()
 
@@ -76,7 +86,7 @@ func _process(delta: float) -> void:
 		PlayerState.BORDER:
 			_process_border(direction, delta)
 		PlayerState.DRAWING:
-			_process_drawing(direction, delta)
+			_process_drawing(drawing_direction, delta)
 		PlayerState.ROLLBACK:
 			_process_rollback(delta)
 
@@ -115,11 +125,12 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 		return
 
 	var current_position := position
-	var next_position := _clamp_to_playfield(position + direction * move_speed * delta)
+	var next_position := _clamp_to_playfield(current_position + direction * move_speed * delta)
 	var is_waiting_to_leave_border := !has_left_border and _is_on_border(current_position)
 	var should_block_border_movement := is_waiting_to_leave_border and _is_on_border(next_position)
 
 	if !should_block_border_movement:
+		_update_drawing_segment(direction, current_position)
 		position = next_position
 
 	_append_trail_point_if_needed(false)
@@ -134,6 +145,7 @@ func _start_drawing() -> void:
 	state = PlayerState.DRAWING
 	has_left_border = false
 	rollback_index = -1
+	drawing_segment_direction = Vector2.ZERO
 	position = _snap_point_to_border(position)
 	border_progress = _point_to_border_progress(position)
 	trail_points = PackedVector2Array()
@@ -146,6 +158,7 @@ func _finish_drawing() -> void:
 	position = _snap_point_to_border(position)
 	_append_trail_point_if_needed(true)
 	border_progress = _point_to_border_progress(position)
+	drawing_segment_direction = Vector2.ZERO
 	state = PlayerState.BORDER
 	_apply_state_visuals()
 
@@ -161,6 +174,7 @@ func _start_rollback() -> void:
 		else:
 			trail_points[trail_points.size() - 1] = position
 
+	drawing_segment_direction = Vector2.ZERO
 	state = PlayerState.ROLLBACK
 	position = trail_points[trail_points.size() - 1]
 	rollback_index = trail_points.size() - 2
@@ -181,6 +195,86 @@ func _append_trail_point_if_needed(force_add: bool) -> void:
 	var last_point: Vector2 = trail_points[trail_points.size() - 1]
 	if force_add or last_point.distance_to(position) >= trail_min_point_distance:
 		trail_points.append(position)
+		_update_trail_line()
+
+
+func _update_drawing_input_order() -> void:
+	_remember_drawing_input(&"move_left")
+	_remember_drawing_input(&"move_right")
+	_remember_drawing_input(&"move_up")
+	_remember_drawing_input(&"move_down")
+
+
+func _remember_drawing_input(action_name: StringName) -> void:
+	if !Input.is_action_just_pressed(action_name):
+		return
+
+	drawing_input_sequence += 1
+	drawing_input_order[action_name] = drawing_input_sequence
+
+
+func _get_drawing_direction() -> Vector2:
+	var horizontal := _get_prioritized_axis(&"move_left", &"move_right")
+	var vertical := _get_prioritized_axis(&"move_up", &"move_down")
+
+	if horizontal != 0.0 and vertical != 0.0:
+		if _get_axis_input_order(&"move_left", &"move_right") >= _get_axis_input_order(&"move_up", &"move_down"):
+			vertical = 0.0
+		else:
+			horizontal = 0.0
+
+	return Vector2(horizontal, vertical)
+
+
+func _get_prioritized_axis(negative_action: StringName, positive_action: StringName) -> float:
+	var negative_pressed := Input.is_action_pressed(negative_action)
+	var positive_pressed := Input.is_action_pressed(positive_action)
+	if negative_pressed and positive_pressed:
+		if int(drawing_input_order.get(negative_action, 0)) >= int(drawing_input_order.get(positive_action, 0)):
+			return -1.0
+		return 1.0
+	if negative_pressed:
+		return -1.0
+	if positive_pressed:
+		return 1.0
+	return 0.0
+
+
+func _get_axis_input_order(negative_action: StringName, positive_action: StringName) -> int:
+	var order := 0
+	if Input.is_action_pressed(negative_action):
+		order = max(order, int(drawing_input_order.get(negative_action, 0)))
+	if Input.is_action_pressed(positive_action):
+		order = max(order, int(drawing_input_order.get(positive_action, 0)))
+	return order
+
+
+func _update_drawing_segment(direction: Vector2, current_position: Vector2) -> void:
+	if direction == Vector2.ZERO:
+		return
+	if drawing_segment_direction == Vector2.ZERO:
+		drawing_segment_direction = direction
+		return
+
+	var axis_changed := (
+		(direction.x != 0.0 and drawing_segment_direction.y != 0.0)
+		or (direction.y != 0.0 and drawing_segment_direction.x != 0.0)
+	)
+	if axis_changed:
+		_append_trail_corner_point(current_position)
+
+	drawing_segment_direction = direction
+
+
+func _append_trail_corner_point(point: Vector2) -> void:
+	if trail_points.is_empty():
+		trail_points.append(point)
+		_update_trail_line()
+		return
+
+	var last_point: Vector2 = trail_points[trail_points.size() - 1]
+	if !last_point.is_equal_approx(point):
+		trail_points.append(point)
 		_update_trail_line()
 
 
@@ -219,6 +313,7 @@ func _finish_rollback() -> void:
 	trail_points = PackedVector2Array()
 	rollback_index = -1
 	has_left_border = false
+	drawing_segment_direction = Vector2.ZERO
 	state = PlayerState.BORDER
 	_update_trail_line()
 	_apply_state_visuals()
