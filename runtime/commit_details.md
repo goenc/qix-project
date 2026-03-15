@@ -1,13 +1,12 @@
-日時: 2026-03-15 15:43:26 +09:00
-対象: BBOS の常時移動と白線内反射の最小実装
-summary: BBOS がプレイフィールド内を常時移動し一定間隔で進行方向を再抽選するようにした。
-変更:
-・BBOS に移動速度と方向変更間隔と反射押し戻し量の export を追加した。
-・毎フレーム移動し、HALF_SIZE ベースの矩形内で位置補正と軸別反射を行う処理を追加した。
-・初回ランダム出現とリサイズ後の矩形内補正の既存挙動は維持した。
+日時: 2026-03-15 16:26:59 +09:00
+対象: 外周ループを正規データにしたプレイフィールド更新
+summary: ボス側に残る外周ループを唯一の正規データにし、自機外周移動とBBOS反射を同じループ参照へ統一した
 code_changes:
-・scripts/enemy/bbos.gd に velocity と direction_change_timer を追加し _ready と _process と反射補助関数を実装した。
-確認:
-・C:\Godot\godot_console.exe --headless --path C:\Users\gonec\GameProjects\Godot\qix-project --quit が終了コード 0 で成功した。
+・scripts/game/playfield_boundary.gd を追加し、外周ループ生成、進行量変換、trail 分割、候補選択、最初の衝突線分判定を集約した
+・scripts/game/base_main.gd で初期外周生成、capture_closed 受信、ボス側候補ループ選択、Player と BBOS への再配布を一元化した
+・scripts/player/base_player.gd を active_outer_loop ベースへ差し替え、描画完了時に閉じた trail を通知するよう変更した
+・scripts/enemy/bbos.gd を active_outer_loop 全線分との最初の衝突による反射へ置換した
+・tools/verify_outer_loop.gd を追加し、初期矩形、1 回目 L 字、2 回目凸凹の 3 状態を headless で検証できるようにした
 verification:
-・Godot CLI のヘッドレス起動でプロジェクトロードとスクリプト構文確認を実施した。
+・C:\Godot\godot_console.exe --path . --headless --quit-after 1
+・C:\Godot\godot_console.exe --path . --headless --script res://tools/verify_outer_loop.gd

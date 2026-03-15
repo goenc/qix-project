@@ -1,7 +1,9 @@
 extends Node2D
 class_name BasePlayer
 
-signal drawing_completed(start_point: Vector2, end_point: Vector2, trail_points: PackedVector2Array)
+const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
+
+signal capture_closed(trail_points: PackedVector2Array)
 
 @export var move_speed := 240.0
 @export var border_epsilon := 2.0
@@ -21,26 +23,27 @@ enum PlayerState {
 }
 
 var playfield_rect: Rect2 = Rect2()
-var active_border_loop: PackedVector2Array = PackedVector2Array()
-var active_border_segment_lengths: PackedFloat32Array = PackedFloat32Array()
-var active_border_segment_starts: PackedFloat32Array = PackedFloat32Array()
-var active_border_total_length := 0.0
+var active_outer_loop: PackedVector2Array = PackedVector2Array()
+var outer_loop_metrics: Dictionary = {}
+var outer_loop_lengths: PackedFloat32Array = PackedFloat32Array()
+var outer_loop_starts: PackedFloat32Array = PackedFloat32Array()
+var outer_loop_total_length := 0.0
 var remaining_polygon: PackedVector2Array = PackedVector2Array()
 var state: int = PlayerState.BORDER
 var trail_points: PackedVector2Array = PackedVector2Array()
-var has_left_border: bool = false
+var has_left_border := false
 var border_progress := 0.0
 var rewind_speed := move_speed
 var rewind_index: int = -1
-var drawing_input_sequence: int = 0
+var drawing_input_sequence := 0
 var drawing_input_order: Dictionary = {
 	&"move_left": 0,
 	&"move_right": 0,
 	&"move_up": 0,
 	&"move_down": 0
 }
-var drawing_move_direction: Vector2 = Vector2.ZERO
-var drawing_segment_direction: Vector2 = Vector2.ZERO
+var drawing_move_direction := Vector2.ZERO
+var drawing_segment_direction := Vector2.ZERO
 
 
 func _ready() -> void:
@@ -58,19 +61,19 @@ func set_playfield_rect(rect: Rect2) -> void:
 	playfield_rect = rect.abs()
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
 		return
-	if active_border_loop.is_empty():
-		var default_loop := _ensure_consistent_loop_winding(_rect_to_polygon(playfield_rect))
-		_assign_active_border(default_loop, default_loop)
-	if position == Vector2.ZERO or !_is_inside_or_on_playfield(position):
-		position = Vector2(
-			playfield_rect.position.x + playfield_rect.size.x * start_edge_ratio,
-			playfield_rect.position.y
-		)
-		position = _snap_point_to_border(position)
+
+	if active_outer_loop.is_empty():
+		set_active_outer_loop(PlayfieldBoundary.create_rect_loop(playfield_rect))
+
+	if position == Vector2.ZERO:
+		position = _snap_point_to_border(_get_default_spawn_point())
 	elif state == PlayerState.DRAWING or state == PlayerState.REWINDING:
 		position = _limit_point_to_allowed_area(position)
+	elif !_is_inside_or_on_playfield(position):
+		position = _snap_point_to_border(_get_default_spawn_point())
 	else:
 		position = _snap_point_to_border(position)
+
 	border_progress = _point_to_border_progress(position)
 	_apply_state_visuals()
 	_apply_movement_constraints()
@@ -80,36 +83,38 @@ func set_playfield(rect: Rect2) -> void:
 	set_playfield_rect(rect)
 
 
-func set_active_border(border_loop: PackedVector2Array, allowed_polygon: PackedVector2Array) -> void:
-	var sanitized_loop := _ensure_consistent_loop_winding(_sanitize_polygon(border_loop))
-	var sanitized_polygon := _ensure_consistent_loop_winding(_sanitize_polygon(allowed_polygon))
-	if sanitized_loop.size() < 3 or sanitized_polygon.size() < 3:
+func set_active_outer_loop(loop: PackedVector2Array) -> void:
+	var sanitized_loop := PlayfieldBoundary.sanitize_loop(loop)
+	if sanitized_loop.size() < 3:
 		return
 
-	_assign_active_border(sanitized_loop, sanitized_polygon)
-	position = _snap_point_to_border(position)
+	_assign_active_outer_loop(sanitized_loop)
+	if position == Vector2.ZERO:
+		position = _snap_point_to_border(_get_default_spawn_point())
+	elif state == PlayerState.DRAWING or state == PlayerState.REWINDING:
+		position = _limit_point_to_allowed_area(position)
+	else:
+		position = _snap_point_to_border(position)
+
 	border_progress = _point_to_border_progress(position)
 	_apply_movement_constraints()
 
 
-func _assign_active_border(border_loop: PackedVector2Array, allowed_polygon: PackedVector2Array) -> void:
-	active_border_loop = border_loop
-	remaining_polygon = allowed_polygon
-	active_border_segment_lengths = PackedFloat32Array()
-	active_border_segment_starts = PackedFloat32Array()
-	active_border_total_length = 0.0
+func set_active_border(border_loop: PackedVector2Array, _allowed_polygon: PackedVector2Array = PackedVector2Array()) -> void:
+	set_active_outer_loop(border_loop)
 
-	for index in range(active_border_loop.size()):
-		active_border_segment_starts.append(active_border_total_length)
-		var segment_length := active_border_loop[index].distance_to(
-			active_border_loop[(index + 1) % active_border_loop.size()]
-		)
-		active_border_segment_lengths.append(segment_length)
-		active_border_total_length += segment_length
+
+func _assign_active_outer_loop(loop: PackedVector2Array) -> void:
+	active_outer_loop = loop
+	remaining_polygon = active_outer_loop
+	outer_loop_metrics = PlayfieldBoundary.build_loop_metrics(active_outer_loop)
+	outer_loop_lengths = outer_loop_metrics.get("segment_lengths", PackedFloat32Array())
+	outer_loop_starts = outer_loop_metrics.get("segment_starts", PackedFloat32Array())
+	outer_loop_total_length = float(outer_loop_metrics.get("total_length", 0.0))
 
 
 func _process(delta: float) -> void:
-	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0 or active_border_total_length <= 0.0:
+	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0 or outer_loop_total_length <= 0.0:
 		return
 
 	_update_drawing_input_order()
@@ -208,8 +213,7 @@ func _finish_drawing() -> void:
 	position = _snap_point_to_border(position)
 	_append_trail_point_if_needed(true)
 	if trail_points.size() >= 2:
-		var finalized_trail := trail_points.duplicate()
-		drawing_completed.emit(finalized_trail[0], finalized_trail[finalized_trail.size() - 1], finalized_trail)
+		capture_closed.emit(trail_points.duplicate())
 	border_progress = _point_to_border_progress(position)
 	drawing_move_direction = Vector2.ZERO
 	drawing_segment_direction = Vector2.ZERO
@@ -418,7 +422,7 @@ func _apply_state_visuals() -> void:
 
 
 func _apply_movement_constraints() -> void:
-	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
+	if outer_loop_total_length <= 0.0:
 		return
 
 	if state == PlayerState.DRAWING or state == PlayerState.REWINDING:
@@ -491,10 +495,6 @@ func _find_first_trail_contact(from_point: Vector2, to_point: Vector2) -> Dictio
 	return best_contact
 
 
-func _would_cross_existing_trail(from_point: Vector2, to_point: Vector2) -> bool:
-	return bool(_find_first_trail_contact(from_point, to_point).get("hit", false))
-
-
 func _find_segment_contact_point(
 	a0: Vector2,
 	a1: Vector2,
@@ -558,16 +558,6 @@ func _find_segment_contact_point(
 	return _make_trail_contact(a0, intersection_point)
 
 
-func _segments_intersect_or_touch(
-	a0: Vector2,
-	a1: Vector2,
-	b0: Vector2,
-	b1: Vector2,
-	allow_shared_start := false
-) -> bool:
-	return bool(_find_segment_contact_point(a0, a1, b0, b1, allow_shared_start).get("hit", false))
-
-
 func _make_trail_contact(from_point: Vector2, point: Vector2) -> Dictionary:
 	return {
 		"hit": true,
@@ -609,26 +599,28 @@ func _find_first_allowed_boundary_contact(from_point: Vector2, to_point: Vector2
 
 
 func _limit_drawing_position(from_point: Vector2, desired_point: Vector2) -> Vector2:
-	var clamped_target := _clamp_to_playfield(desired_point)
-	if from_point.distance_to(clamped_target) <= border_epsilon:
-		return clamped_target
+	if from_point.distance_to(desired_point) <= border_epsilon:
+		return desired_point
 
-	var boundary_contact := _find_first_allowed_boundary_contact(from_point, clamped_target)
+	var boundary_contact := _find_first_allowed_boundary_contact(from_point, desired_point)
 	if bool(boundary_contact.get("hit", false)):
 		return boundary_contact["point"]
-	if _is_inside_or_on_playfield(clamped_target):
-		return clamped_target
+	if _is_inside_or_on_playfield(desired_point):
+		return desired_point
 	return from_point
 
 
 func _limit_point_to_allowed_area(point: Vector2) -> Vector2:
-	var clamped_point := _clamp_to_playfield(point)
-	if _is_inside_or_on_playfield(clamped_point):
-		return clamped_point
-	return _snap_point_to_border(clamped_point)
+	if _is_inside_or_on_playfield(point):
+		return point
+	return _snap_point_to_border(point)
 
 
 func _clamp_to_playfield(point: Vector2) -> Vector2:
+	if outer_loop_total_length > 0.0:
+		return _limit_point_to_allowed_area(point)
+	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
+		return point
 	return Vector2(
 		clampf(point.x, playfield_rect.position.x, playfield_rect.end.x),
 		clampf(point.y, playfield_rect.position.y, playfield_rect.end.y)
@@ -640,9 +632,9 @@ func _snap_point_to_border(point: Vector2) -> Vector2:
 
 
 func _is_on_border(point: Vector2) -> bool:
-	if active_border_total_length <= 0.0:
+	if outer_loop_total_length <= 0.0:
 		return false
-	return point.distance_to(_snap_point_to_border(point)) <= border_epsilon
+	return PlayfieldBoundary.is_point_on_loop(active_outer_loop, point, border_epsilon, outer_loop_metrics)
 
 
 func _move_along_border(direction: Vector2, delta: float) -> void:
@@ -668,46 +660,23 @@ func _point_to_border_progress(point: Vector2) -> float:
 
 
 func _border_progress_to_point(progress: float) -> Vector2:
-	if active_border_loop.size() < 2:
-		return _clamp_to_playfield(position)
-
-	var wrapped_progress := _wrap_border_progress(progress)
-	for index in range(active_border_segment_lengths.size()):
-		var segment_length := active_border_segment_lengths[index]
-		var segment_start_progress := active_border_segment_starts[index]
-		var segment_end_progress := segment_start_progress + segment_length
-		var is_last_segment := index == active_border_segment_lengths.size() - 1
-		if wrapped_progress < segment_end_progress - 0.001 or is_last_segment:
-			if segment_length <= 0.001:
-				return active_border_loop[(index + 1) % active_border_loop.size()]
-			var segment_start: Vector2 = active_border_loop[index]
-			var segment_end: Vector2 = active_border_loop[(index + 1) % active_border_loop.size()]
-			var local_progress := clampf(wrapped_progress - segment_start_progress, 0.0, segment_length)
-			return segment_start.lerp(segment_end, local_progress / segment_length)
-
-	return active_border_loop[0]
+	return PlayfieldBoundary.point_at_progress(active_outer_loop, outer_loop_metrics, progress)
 
 
 func _border_tangent_cw(progress: float) -> Vector2:
-	return _loop_direction_at_progress(progress + _border_tangent_sample_distance())
+	return PlayfieldBoundary.tangent_at_progress(active_outer_loop, outer_loop_metrics, progress, true)
 
 
 func _border_tangent_ccw(progress: float) -> Vector2:
-	return -_loop_direction_at_progress(progress - _border_tangent_sample_distance())
+	return PlayfieldBoundary.tangent_at_progress(active_outer_loop, outer_loop_metrics, progress, false)
 
 
 func _perimeter_length() -> float:
-	return active_border_total_length
+	return outer_loop_total_length
 
 
 func _wrap_border_progress(progress: float) -> float:
-	var perimeter := _perimeter_length()
-	if perimeter <= 0.0:
-		return 0.0
-	var wrapped := fmod(progress, perimeter)
-	if wrapped < 0.0:
-		wrapped += perimeter
-	return wrapped
+	return PlayfieldBoundary.wrap_progress(progress, _perimeter_length())
 
 
 func _is_inside_or_on_playfield(point: Vector2) -> bool:
@@ -715,12 +684,17 @@ func _is_inside_or_on_playfield(point: Vector2) -> bool:
 		return true
 	if remaining_polygon.size() >= 3:
 		return Geometry2D.is_point_in_polygon(point, remaining_polygon)
-	var clamped := _clamp_to_playfield(point)
+	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
+		return false
+	var clamped := Vector2(
+		clampf(point.x, playfield_rect.position.x, playfield_rect.end.x),
+		clampf(point.y, playfield_rect.position.y, playfield_rect.end.y)
+	)
 	return clamped.distance_to(point) <= border_epsilon
 
 
 func _get_nearest_border_projection(point: Vector2) -> Dictionary:
-	if active_border_loop.size() < 2:
+	if outer_loop_total_length <= 0.0:
 		var clamped_point := _clamp_to_playfield(point)
 		return {
 			"point": clamped_point,
@@ -728,107 +702,11 @@ func _get_nearest_border_projection(point: Vector2) -> Dictionary:
 			"distance": point.distance_to(clamped_point),
 			"segment_index": -1
 		}
-
-	var best_distance := INF
-	var best_point := active_border_loop[0]
-	var best_progress := 0.0
-	var best_segment_index := -1
-	for index in range(active_border_loop.size()):
-		var segment_start: Vector2 = active_border_loop[index]
-		var segment_end: Vector2 = active_border_loop[(index + 1) % active_border_loop.size()]
-		var segment_length := active_border_segment_lengths[index]
-		if segment_length <= 0.001:
-			continue
-
-		var projected_point := Geometry2D.get_closest_point_to_segment(point, segment_start, segment_end)
-		var distance := point.distance_to(projected_point)
-		if distance < best_distance - 0.001:
-			best_distance = distance
-			best_point = projected_point
-			best_progress = active_border_segment_starts[index] + clampf(
-				segment_start.distance_to(projected_point),
-				0.0,
-				segment_length
-			)
-			best_segment_index = index
-
-	return {
-		"point": best_point,
-		"progress": best_progress,
-		"distance": best_distance,
-		"segment_index": best_segment_index
-	}
+	return PlayfieldBoundary.project_point_to_loop(active_outer_loop, point, outer_loop_metrics)
 
 
-func _loop_direction_at_progress(progress: float) -> Vector2:
-	if active_border_loop.size() < 2 or active_border_total_length <= 0.0:
-		return Vector2.ZERO
-
-	var wrapped_progress := _wrap_border_progress(progress)
-	for index in range(active_border_segment_lengths.size()):
-		var segment_length := active_border_segment_lengths[index]
-		if segment_length <= 0.001:
-			continue
-
-		var segment_start_progress := active_border_segment_starts[index]
-		var segment_end_progress := segment_start_progress + segment_length
-		var is_last_segment := index == active_border_segment_lengths.size() - 1
-		if wrapped_progress < segment_end_progress - 0.001 or is_last_segment:
-			return (active_border_loop[(index + 1) % active_border_loop.size()] - active_border_loop[index]).normalized()
-
-	return Vector2.ZERO
-
-
-func _border_tangent_sample_distance() -> float:
-	if active_border_total_length <= 0.0:
-		return 0.01
-	return minf(maxf(0.01, border_epsilon * 0.5), active_border_total_length * 0.25)
-
-
-func _sanitize_trail_polyline(points: PackedVector2Array) -> PackedVector2Array:
-	var sanitized := PackedVector2Array()
-	for point in points:
-		if sanitized.is_empty() or !sanitized[sanitized.size() - 1].is_equal_approx(point):
-			sanitized.append(point)
-	return sanitized
-
-
-func _sanitize_polygon(points: PackedVector2Array) -> PackedVector2Array:
-	var sanitized := _sanitize_trail_polyline(points)
-	if sanitized.size() >= 2 and sanitized[0].is_equal_approx(sanitized[sanitized.size() - 1]):
-		sanitized.resize(sanitized.size() - 1)
-	return sanitized
-
-
-func _ensure_consistent_loop_winding(loop: PackedVector2Array) -> PackedVector2Array:
-	if _signed_polygon_area(loop) <= 0.0:
-		return loop
-
-	var reversed_loop := PackedVector2Array()
-	for index in range(loop.size() - 1, -1, -1):
-		reversed_loop.append(loop[index])
-	return reversed_loop
-
-
-func _signed_polygon_area(polygon: PackedVector2Array) -> float:
-	if polygon.size() < 3:
-		return 0.0
-
-	var signed_area := 0.0
-	for index in range(polygon.size()):
-		var current: Vector2 = polygon[index]
-		var next: Vector2 = polygon[(index + 1) % polygon.size()]
-		signed_area += current.x * next.y - next.x * current.y
-	return signed_area * 0.5
-
-
-func _rect_to_polygon(rect: Rect2) -> PackedVector2Array:
-	var polygon := PackedVector2Array()
-	if rect.size.x <= 0.0 or rect.size.y <= 0.0:
-		return polygon
-
-	polygon.append(rect.position)
-	polygon.append(Vector2(rect.end.x, rect.position.y))
-	polygon.append(rect.end)
-	polygon.append(Vector2(rect.position.x, rect.end.y))
-	return polygon
+func _get_default_spawn_point() -> Vector2:
+	return Vector2(
+		playfield_rect.position.x + playfield_rect.size.x * start_edge_ratio,
+		playfield_rect.position.y
+	)

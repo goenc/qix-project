@@ -1,6 +1,8 @@
 extends Node2D
 
+const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const HALF_SIZE := Vector2(32.0, 32.0)
+const MAX_REFLECTIONS_PER_FRAME := 2
 
 @export var move_speed: float = 140.0
 @export var direction_change_interval_min: float = 1.5
@@ -10,6 +12,9 @@ const HALF_SIZE := Vector2(32.0, 32.0)
 @onready var pick_area: Area2D = $PickArea
 
 var playfield_rect: Rect2 = Rect2()
+var active_outer_loop: PackedVector2Array = PackedVector2Array()
+var outer_loop_metrics: Dictionary = {}
+var outer_loop_total_length := 0.0
 var rng := RandomNumberGenerator.new()
 var has_spawned := false
 var velocity := Vector2.ZERO
@@ -25,7 +30,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
+	if active_outer_loop.size() < 3 or outer_loop_total_length <= 0.0:
 		return
 
 	direction_change_timer -= delta
@@ -33,11 +38,34 @@ func _process(delta: float) -> void:
 		_pick_new_velocity()
 		_reset_direction_change_timer()
 
-	position += velocity * delta
-	var spawnable_rect := _get_spawnable_rect(playfield_rect)
-	var reflected_state := _reflect_in_rect(position, velocity, spawnable_rect)
-	position = reflected_state["position"]
-	velocity = reflected_state["velocity"]
+	var remaining_time := delta
+	var reflection_count := 0
+	while remaining_time > 0.0 and reflection_count < MAX_REFLECTIONS_PER_FRAME:
+		var next_position := position + velocity * remaining_time
+		var boundary_hit := PlayfieldBoundary.find_first_boundary_hit(
+			position,
+			next_position,
+			active_outer_loop,
+			maxf(bounce_epsilon, 0.001)
+		)
+		if !bool(boundary_hit.get("hit", false)):
+			position = PlayfieldBoundary.ensure_point_inside(active_outer_loop, next_position, bounce_epsilon)
+			return
+
+		position = boundary_hit["point"]
+		velocity = _reflect_velocity(velocity, Vector2(boundary_hit.get("normal", Vector2.ZERO)))
+		position += Vector2(boundary_hit.get("normal", Vector2.ZERO)) * maxf(bounce_epsilon * 2.0, 1.0)
+		position = PlayfieldBoundary.ensure_point_inside(active_outer_loop, position, bounce_epsilon)
+		var travel_ratio := clampf(float(boundary_hit.get("travel_ratio", 1.0)), 0.0, 1.0)
+		remaining_time *= maxf(0.0, 1.0 - travel_ratio)
+		reflection_count += 1
+
+	if remaining_time > 0.0:
+		position = PlayfieldBoundary.ensure_point_inside(
+			active_outer_loop,
+			position + velocity * remaining_time,
+			bounce_epsilon
+		)
 
 
 func set_playfield_rect(rect: Rect2) -> void:
@@ -45,14 +73,30 @@ func set_playfield_rect(rect: Rect2) -> void:
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
 		return
 
-	var spawnable_rect := _get_spawnable_rect(playfield_rect)
 	if !has_spawned:
-		position = _pick_random_point(spawnable_rect)
+		position = _pick_random_point(_get_spawnable_rect(playfield_rect))
 		has_spawned = true
+	elif active_outer_loop.is_empty():
+		var spawnable_rect := _get_spawnable_rect(playfield_rect)
+		if !_rect_has_point(spawnable_rect, position):
+			position = _clamp_point_to_rect(position, spawnable_rect)
+
+
+func set_active_outer_loop(loop: PackedVector2Array) -> void:
+	var sanitized_loop := PlayfieldBoundary.sanitize_loop(loop)
+	if sanitized_loop.size() < 3:
 		return
 
-	if !_rect_has_point(spawnable_rect, position):
-		position = _clamp_point_to_rect(position, spawnable_rect)
+	active_outer_loop = sanitized_loop
+	outer_loop_metrics = PlayfieldBoundary.build_loop_metrics(active_outer_loop)
+	outer_loop_total_length = float(outer_loop_metrics.get("total_length", 0.0))
+
+	if !has_spawned and playfield_rect.size.x > 0.0 and playfield_rect.size.y > 0.0:
+		position = _pick_random_point(_get_spawnable_rect(playfield_rect))
+		has_spawned = true
+
+	if has_spawned:
+		position = PlayfieldBoundary.ensure_point_inside(active_outer_loop, position, bounce_epsilon)
 
 
 func _get_spawnable_rect(rect: Rect2) -> Rect2:
@@ -112,35 +156,12 @@ func _pick_new_velocity() -> void:
 	velocity = direction.normalized() * maxf(absf(move_speed), 0.001)
 
 
-func _reflect_in_rect(point: Vector2, current_velocity: Vector2, rect: Rect2) -> Dictionary:
-	var reflected_point := point
-	var reflected_velocity := current_velocity
+func _reflect_velocity(current_velocity: Vector2, normal: Vector2) -> Vector2:
+	var safe_normal := normal.normalized()
+	if safe_normal == Vector2.ZERO:
+		return current_velocity
 
-	if reflected_point.x < rect.position.x:
-		reflected_point.x = _push_inside_rect_axis(rect.position.x, rect.end.x, true)
-		reflected_velocity.x = absf(reflected_velocity.x)
-	elif reflected_point.x > rect.end.x:
-		reflected_point.x = _push_inside_rect_axis(rect.position.x, rect.end.x, false)
-		reflected_velocity.x = -absf(reflected_velocity.x)
-
-	if reflected_point.y < rect.position.y:
-		reflected_point.y = _push_inside_rect_axis(rect.position.y, rect.end.y, true)
-		reflected_velocity.y = absf(reflected_velocity.y)
-	elif reflected_point.y > rect.end.y:
-		reflected_point.y = _push_inside_rect_axis(rect.position.y, rect.end.y, false)
-		reflected_velocity.y = -absf(reflected_velocity.y)
-
-	reflected_point = _clamp_point_to_rect(reflected_point, rect)
-
-	return {
-		"position": reflected_point,
-		"velocity": reflected_velocity
-	}
-
-
-func _push_inside_rect_axis(min_value: float, max_value: float, from_min_side: bool) -> float:
-	if min_value >= max_value:
-		return min_value
-	if from_min_side:
-		return minf(min_value + bounce_epsilon, max_value)
-	return maxf(max_value - bounce_epsilon, min_value)
+	var reflected_velocity := current_velocity - 2.0 * current_velocity.dot(safe_normal) * safe_normal
+	if reflected_velocity.length_squared() <= 0.0001:
+		return current_velocity
+	return reflected_velocity.normalized() * maxf(current_velocity.length(), 0.001)
