@@ -1,10 +1,10 @@
-日時: 2026-03-15 19:25:40 JST
-対象: BOSS被弾判定と自機HP
-summary: BOSS被弾判定と自機HPおよびゲームオーバー表示を追加した
+日時: 2026-03-15 19:52:36 +09:00
+対象: qix_draw 入力名統一と欠落時の起動時検知
+summary: qix_draw を唯一の正式入力名として固定し InputMap 欠落時に原因が即分かるようにした
 code_changes:
-・BasePlayer に外周通常、外周Shift押下、内部侵入、巻き戻し中の被弾対象判定と HP3 と無敵時間と PickArea の有効制御を追加した
-・BBOS にプレイヤー本体と描線の命中判定を追加し、BasePlayer の現在リスク状態に応じてダメージ対象を切り替えるようにした
-・既存 HUD に HP 表示とゲームオーバー表示を追加した
+・project.godot に qix_draw の Shift と PAD-A 定義を追加し base_main では既存定義がある場合だけ qix_draw のイベントを正規化するよう変更
+・base_player.gd に ACTION_QIX_DRAW 定数と起動時の InputMap.has_action 検知を追加し qix_draw 参照を定数ヘルパー経由へ統一
 verification:
-・C:\Godot\godot_console.exe --headless --path . --quit-after 1
-・C:\Godot\godot_console.exe --headless --path . -s res://runtime/tmp_damage_check.gd で外周とShiftと内部侵入と巻き戻しとHP減少と無敵時間を確認した後に確認用スクリプトを削除した
+・C:\Godot\godot.exe --headless --path . --scene res://scenes/base_main.tscn --quit が成功
+・一時 headless スクリプトで Shift と PAD-A の BORDER から DRAWING 開始 離して REWINDING 再押下で再開を確認
+・一時 headless スクリプトで qix_draw を削除した場合に明示エラーが 1 回だけ出ることを確認

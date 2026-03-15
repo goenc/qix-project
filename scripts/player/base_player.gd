@@ -2,6 +2,7 @@ extends Node2D
 class_name BasePlayer
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
+const ACTION_QIX_DRAW := &"qix_draw"
 
 signal capture_closed(trail_points: PackedVector2Array)
 signal hp_changed(current_hp: int, max_hp: int)
@@ -58,11 +59,16 @@ var drawing_segment_direction := Vector2.ZERO
 var current_hp := 0
 var invincibility_timer := 0.0
 var is_defeated := false
+var is_draw_action_configured := true
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	current_hp = get_max_hp()
+	is_draw_action_configured = InputMap.has_action(ACTION_QIX_DRAW)
+	if !is_draw_action_configured:
+		push_error("Missing InputMap action '%s'. Register Shift and PAD-A to '%s' before starting gameplay." % [String(ACTION_QIX_DRAW), String(ACTION_QIX_DRAW)])
+		set_process(false)
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
 	if is_instance_valid(trail_line):
@@ -130,6 +136,8 @@ func _assign_active_outer_loop(loop: PackedVector2Array) -> void:
 
 
 func _process(delta: float) -> void:
+	if !is_draw_action_configured:
+		return
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0 or outer_loop_total_length <= 0.0:
 		return
 
@@ -197,7 +205,7 @@ func is_dead() -> bool:
 
 func get_boss_hit_targets() -> Dictionary:
 	var on_border := _is_on_border(position)
-	var draw_pressed := Input.is_action_pressed("qix_draw")
+	var draw_pressed := _is_draw_action_pressed()
 	var risk_state := BossHitRisk.NONE
 	var player_target := false
 	var trail_target := false
@@ -289,12 +297,12 @@ func apply_boss_damage() -> bool:
 
 func _process_border(direction: Vector2, delta: float) -> void:
 	_move_along_border(direction, delta)
-	if Input.is_action_just_pressed("qix_draw") and _is_on_border(position):
+	if _is_draw_action_just_pressed() and _is_on_border(position):
 		_start_drawing()
 
 
 func _process_drawing(direction: Vector2, delta: float) -> void:
-	if !Input.is_action_pressed("qix_draw"):
+	if !_is_draw_action_pressed():
 		_start_rewinding()
 		return
 
@@ -498,7 +506,7 @@ func _build_visible_trail_points() -> PackedVector2Array:
 
 
 func _process_rewinding(delta: float) -> void:
-	if Input.is_action_just_pressed("qix_draw"):
+	if _is_draw_action_just_pressed():
 		_interrupt_rewinding()
 		return
 
@@ -861,3 +869,11 @@ func _update_damage_hitboxes() -> void:
 
 func _is_damage_blocked() -> bool:
 	return is_defeated or invincibility_timer > 0.0
+
+
+func _is_draw_action_pressed() -> bool:
+	return is_draw_action_configured and Input.is_action_pressed(ACTION_QIX_DRAW)
+
+
+func _is_draw_action_just_pressed() -> bool:
+	return is_draw_action_configured and Input.is_action_just_pressed(ACTION_QIX_DRAW)

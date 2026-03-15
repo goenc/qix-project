@@ -3,6 +3,7 @@ extends Node2D
 const TITLE_SCENE_PATH := "res://scenes/title_main.tscn"
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const BBOS_SCENE = preload("res://scenes/enemy/bbos.tscn")
+const ACTION_QIX_DRAW := &"qix_draw"
 
 @export var playfield_margin := Vector2(32.0, 40.0)
 @export var playfield_min_size := Vector2(180.0, 120.0)
@@ -122,7 +123,7 @@ func _register_input_map() -> void:
 	_ensure_action("move_right", [_key_event(KEY_RIGHT), _key_event(KEY_D), _joypad_button(JOY_BUTTON_DPAD_RIGHT)])
 	_ensure_action("move_up", [_key_event(KEY_UP), _key_event(KEY_W), _joypad_button(JOY_BUTTON_DPAD_UP)])
 	_ensure_action("move_down", [_key_event(KEY_DOWN), _key_event(KEY_S), _joypad_button(JOY_BUTTON_DPAD_DOWN)])
-	_replace_action_events("qix_draw", [_key_event(KEY_SHIFT), _joypad_button(JOY_BUTTON_A)])
+	_sync_draw_action_events([_key_event(KEY_SHIFT), _joypad_button(JOY_BUTTON_A)])
 	_ensure_action("ui_cancel", [_key_event(KEY_ESCAPE), _joypad_button(JOY_BUTTON_B), _joypad_button(JOY_BUTTON_BACK)])
 	_ensure_action("pause", [_key_event(KEY_P), _joypad_button(JOY_BUTTON_START)])
 
@@ -142,6 +143,14 @@ func _replace_action_events(action_name: String, events: Array[InputEvent]) -> v
 	InputMap.action_erase_events(action_name)
 	for event in events:
 		InputMap.action_add_event(action_name, event)
+
+
+func _sync_draw_action_events(events: Array[InputEvent]) -> void:
+	if !InputMap.has_action(ACTION_QIX_DRAW):
+		return
+	InputMap.action_erase_events(ACTION_QIX_DRAW)
+	for event in events:
+		InputMap.action_add_event(ACTION_QIX_DRAW, event)
 
 
 func _key_event(keycode: Key) -> InputEventKey:
