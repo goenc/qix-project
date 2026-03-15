@@ -18,9 +18,12 @@ const BBOS_SCENE = preload("res://scenes/enemy/bbos.tscn")
 @onready var base_player = get_node_or_null("BasePlayer")
 @onready var bbos: Node2D = get_node_or_null("BBOS")
 @onready var boss: Node2D = get_node_or_null("Boss")
+@onready var help_label: Label = $Ui/Root/HelpLabel
 @onready var state_label: Label = $Ui/Root/StateLabel
 @onready var position_label: Label = $Ui/Root/PositionLabel
 @onready var claimed_label: Label = $Ui/Root/ClaimedLabel
+@onready var hp_label: Label = $Ui/Root/HpLabel
+@onready var result_label: Label = $Ui/Root/ResultLabel
 
 var playfield_rect: Rect2 = Rect2()
 var claimed_polygons: Array[PackedVector2Array] = []
@@ -29,6 +32,7 @@ var remaining_polygon: PackedVector2Array = PackedVector2Array()
 var inactive_border_segments: Array[PackedVector2Array] = []
 var claimed_area := 0.0
 var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
+var game_over := false
 
 
 func _ready() -> void:
@@ -60,6 +64,8 @@ func is_pause_toggle_allowed() -> bool:
 
 
 func set_paused_from_debug(enabled: bool) -> void:
+	if game_over and !enabled:
+		return
 	get_tree().paused = enabled
 	_sync_hud()
 
@@ -75,15 +81,30 @@ func _sync_hud() -> void:
 	if playfield_area > 0.0:
 		claimed_ratio = clampf(claimed_area / playfield_area, 0.0, 1.0)
 	claimed_label.text = "CLAIMED: %d%%" % int(round(claimed_ratio * 100.0))
+	_update_hp_label()
+
+	if game_over:
+		state_label.text = "MODE: GAME OVER"
+		result_label.text = "GAME OVER"
+		help_label.text = "ESC: TITLE"
+		if is_instance_valid(base_player):
+			position_label.text = "POS: (%d, %d)" % [int(round(base_player.position.x)), int(round(base_player.position.y))]
+		else:
+			position_label.text = "POS: (-, -)"
+		return
 
 	if get_tree().paused:
 		state_label.text = "MODE: PAUSED"
 		position_label.text = "POS: (-, -)"
+		result_label.text = ""
+		help_label.text = "MOVE: ARROWS/WASD DRAW: SHIFT/PAD-A ESC: TITLE"
 		return
 
 	if !is_instance_valid(base_player):
 		state_label.text = "MODE: BORDER"
 		position_label.text = "POS: (-, -)"
+		result_label.text = ""
+		help_label.text = "MOVE: ARROWS/WASD DRAW: SHIFT/PAD-A ESC: TITLE"
 		return
 
 	var status: Dictionary = base_player.get_debug_status()
@@ -92,6 +113,8 @@ func _sync_hud() -> void:
 
 	state_label.text = "MODE: %s" % mode_text
 	position_label.text = "POS: (%d, %d)" % [int(round(current_position.x)), int(round(current_position.y))]
+	result_label.text = ""
+	help_label.text = "MOVE: ARROWS/WASD DRAW: SHIFT/PAD-A ESC: TITLE"
 
 
 func _register_input_map() -> void:
@@ -189,8 +212,14 @@ func _ensure_bbos_node() -> void:
 
 
 func _connect_player_signal() -> void:
-	if is_instance_valid(base_player) and !base_player.capture_closed.is_connected(_on_player_capture_closed):
+	if !is_instance_valid(base_player):
+		return
+	if !base_player.capture_closed.is_connected(_on_player_capture_closed):
 		base_player.capture_closed.connect(_on_player_capture_closed)
+	if base_player.has_signal("hp_changed") and !base_player.hp_changed.is_connected(_on_player_hp_changed):
+		base_player.hp_changed.connect(_on_player_hp_changed)
+	if base_player.has_signal("defeated") and !base_player.defeated.is_connected(_on_player_defeated):
+		base_player.defeated.connect(_on_player_defeated)
 
 
 func _initialize_outer_loop_from_rect() -> void:
@@ -320,3 +349,28 @@ func _draw_border_segments(segments: Array[PackedVector2Array], color: Color) ->
 			continue
 		for index in range(segment.size() - 1):
 			draw_line(segment[index], segment[index + 1], color, playfield_border_width)
+
+
+func _update_hp_label() -> void:
+	if !is_instance_valid(hp_label):
+		return
+
+	if !is_instance_valid(base_player):
+		hp_label.text = "HP: -/-"
+		return
+
+	if base_player.has_method("get_current_hp") and base_player.has_method("get_max_hp"):
+		hp_label.text = "HP: %d/%d" % [base_player.get_current_hp(), base_player.get_max_hp()]
+		return
+
+	hp_label.text = "HP: -/-"
+
+
+func _on_player_hp_changed(_current_hp: int, _max_hp: int) -> void:
+	_sync_hud()
+
+
+func _on_player_defeated() -> void:
+	game_over = true
+	get_tree().paused = true
+	_sync_hud()

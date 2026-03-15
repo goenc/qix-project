@@ -4,6 +4,8 @@ class_name BasePlayer
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 
 signal capture_closed(trail_points: PackedVector2Array)
+signal hp_changed(current_hp: int, max_hp: int)
+signal defeated()
 
 @export var move_speed := 240.0
 @export var border_epsilon := 2.0
@@ -11,15 +13,24 @@ signal capture_closed(trail_points: PackedVector2Array)
 @export var border_color := Color(1.0, 1.0, 1.0, 1.0)
 @export var drawing_color := Color(1.0, 0.45, 0.2, 1.0)
 @export var start_edge_ratio := 0.18
+@export var max_hp := 3
+@export var invincibility_duration := 0.75
 
 @onready var body: Polygon2D = $Body
 @onready var pick_area: Area2D = $PickArea
+@onready var pick_collision_shape: CollisionShape2D = $PickArea/CollisionShape2D
 @onready var trail_line: Line2D = $TrailLine
 
 enum PlayerState {
 	BORDER,
 	DRAWING,
 	REWINDING
+}
+
+enum BossHitRisk {
+	NONE,
+	PLAYER_ONLY,
+	PLAYER_AND_TRAIL
 }
 
 var playfield_rect: Rect2 = Rect2()
@@ -44,10 +55,14 @@ var drawing_input_order: Dictionary = {
 }
 var drawing_move_direction := Vector2.ZERO
 var drawing_segment_direction := Vector2.ZERO
+var current_hp := 0
+var invincibility_timer := 0.0
+var is_defeated := false
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
+	current_hp = get_max_hp()
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
 	if is_instance_valid(trail_line):
@@ -55,6 +70,7 @@ func _ready() -> void:
 		trail_line.global_position = Vector2.ZERO
 		trail_line.points = PackedVector2Array()
 	_apply_state_visuals()
+	_update_damage_hitboxes()
 
 
 func set_playfield_rect(rect: Rect2) -> void:
@@ -117,6 +133,12 @@ func _process(delta: float) -> void:
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0 or outer_loop_total_length <= 0.0:
 		return
 
+	if invincibility_timer > 0.0:
+		var previous_timer := invincibility_timer
+		invincibility_timer = maxf(0.0, invincibility_timer - delta)
+		if !is_equal_approx(previous_timer, invincibility_timer):
+			_apply_state_visuals()
+
 	_update_drawing_input_order()
 	var direction := Vector2(
 		Input.get_axis("move_left", "move_right"),
@@ -135,6 +157,7 @@ func _process(delta: float) -> void:
 			_process_rewinding(delta)
 
 	_apply_movement_constraints()
+	_update_damage_hitboxes()
 
 
 func get_state_text() -> String:
@@ -153,8 +176,115 @@ func get_debug_status() -> Dictionary:
 		"state": get_state_text(),
 		"position": position,
 		"is_on_border": _is_on_border(position),
-		"trail_point_count": trail_points.size()
+		"trail_point_count": trail_points.size(),
+		"hp": current_hp,
+		"max_hp": get_max_hp(),
+		"invincible": invincibility_timer > 0.0
 	}
+
+
+func get_current_hp() -> int:
+	return current_hp
+
+
+func get_max_hp() -> int:
+	return max(1, max_hp)
+
+
+func is_dead() -> bool:
+	return is_defeated
+
+
+func get_boss_hit_targets() -> Dictionary:
+	var on_border := _is_on_border(position)
+	var draw_pressed := Input.is_action_pressed("qix_draw")
+	var risk_state := BossHitRisk.NONE
+	var player_target := false
+	var trail_target := false
+
+	match state:
+		PlayerState.DRAWING:
+			if !on_border:
+				risk_state = BossHitRisk.PLAYER_AND_TRAIL
+				player_target = true
+				trail_target = true
+			elif draw_pressed:
+				risk_state = BossHitRisk.PLAYER_ONLY
+				player_target = true
+		PlayerState.REWINDING:
+			if !on_border or draw_pressed:
+				risk_state = BossHitRisk.PLAYER_ONLY
+				player_target = true
+		_:
+			if draw_pressed:
+				risk_state = BossHitRisk.PLAYER_ONLY
+				player_target = true
+
+	var damage_blocked := _is_damage_blocked()
+	return {
+		"risk_state": risk_state,
+		"player": player_target and !damage_blocked,
+		"trail": trail_target and !damage_blocked,
+		"on_border": on_border,
+		"draw_pressed": draw_pressed,
+		"invincible": invincibility_timer > 0.0
+	}
+
+
+func get_body_damage_rect() -> Rect2:
+	if !is_instance_valid(pick_collision_shape):
+		return Rect2(position, Vector2.ZERO)
+
+	var rectangle_shape := pick_collision_shape.shape as RectangleShape2D
+	if rectangle_shape == null:
+		return Rect2(position, Vector2.ZERO)
+
+	var center := pick_collision_shape.global_position
+	var scale := pick_collision_shape.global_scale
+	var size := Vector2(
+		rectangle_shape.size.x * absf(scale.x),
+		rectangle_shape.size.y * absf(scale.y)
+	)
+	return Rect2(center - size * 0.5, size)
+
+
+func get_active_damage_trail_segments() -> Array[PackedVector2Array]:
+	var targets := get_boss_hit_targets()
+	if !bool(targets.get("trail", false)):
+		var empty_segments: Array[PackedVector2Array] = []
+		return empty_segments
+
+	var visible_points := _build_visible_trail_points()
+	var segments: Array[PackedVector2Array] = []
+	for i in range(visible_points.size() - 1):
+		var segment_start: Vector2 = visible_points[i]
+		var segment_end: Vector2 = visible_points[i + 1]
+		if segment_start.is_equal_approx(segment_end):
+			continue
+		var segment := PackedVector2Array()
+		segment.append(segment_start)
+		segment.append(segment_end)
+		segments.append(segment)
+	return segments
+
+
+func apply_boss_damage() -> bool:
+	if _is_damage_blocked():
+		return false
+
+	current_hp = max(current_hp - 1, 0)
+	if current_hp <= 0:
+		is_defeated = true
+		invincibility_timer = 0.0
+	else:
+		invincibility_timer = maxf(invincibility_duration, 0.0)
+
+	hp_changed.emit(current_hp, get_max_hp())
+	_apply_state_visuals()
+	_update_damage_hitboxes()
+	if is_defeated:
+		defeated.emit()
+	return true
 
 
 func _process_border(direction: Vector2, delta: float) -> void:
@@ -418,7 +548,12 @@ func _finish_rewinding() -> void:
 
 func _apply_state_visuals() -> void:
 	if is_instance_valid(body):
-		body.color = drawing_color if state == PlayerState.DRAWING or state == PlayerState.REWINDING else border_color
+		var next_color := drawing_color if state == PlayerState.DRAWING or state == PlayerState.REWINDING else border_color
+		if invincibility_timer > 0.0 and !is_defeated:
+			next_color.a = 0.45
+		body.color = next_color
+	if is_instance_valid(trail_line):
+		trail_line.modulate = Color(1.0, 1.0, 1.0, 0.55) if invincibility_timer > 0.0 and !is_defeated else Color.WHITE
 
 
 func _apply_movement_constraints() -> void:
@@ -710,3 +845,19 @@ func _get_default_spawn_point() -> Vector2:
 		playfield_rect.position.x + playfield_rect.size.x * start_edge_ratio,
 		playfield_rect.position.y
 	)
+
+
+func _update_damage_hitboxes() -> void:
+	if !is_instance_valid(pick_area):
+		return
+
+	var targets := get_boss_hit_targets()
+	var enable_player_hitbox := bool(targets.get("player", false))
+	pick_area.monitoring = enable_player_hitbox
+	pick_area.monitorable = enable_player_hitbox
+	if is_instance_valid(pick_collision_shape):
+		pick_collision_shape.disabled = !enable_player_hitbox
+
+
+func _is_damage_blocked() -> bool:
+	return is_defeated or invincibility_timer > 0.0
