@@ -1,8 +1,10 @@
-BOSSの反射判定を円形基準へ変更
+BOSSの細い通路入口反射を現在半径基準に修正
 
-・BOSSの反射判定を中心点基準から円形基準へ変更した
-・bbos.gd で collision_radius と min_collision_radius を追加し、生成範囲と反射後補正を円形中心基準へ置き換えた
-・playfield_boundary.gd に直交多角形用の内側オフセット生成と円形反射用ヘルパーを追加した
-・Godot headless の check-only で対象 2 スクリプトの構文確認を実施した
-・Godot headless の 1 フレーム起動でプロジェクト読み込み時エラーが出ないことを確認した
-・一時検証スクリプトで半径32の手前反射、半径縮小時の進入量増加、L字外周の内側ループ生成を確認した
+・BOSSが細い通路で停止せず現在半径に応じて入口反射するよう修正
+・active_inner_loop が作れない形状でも移動停止せず outer loop 基準の円形侵入判定へフォールバックするように変更
+・現在の collision_radius で通行可否を判定する補助と inset loop 不成立時の局所ヒット検出を playfield_boundary に追加
+・狭い通路の入口では進入方向を返す法線を優先し反射後に押し戻して再侵入しにくくした
+・Godot headless の check-only で scripts/enemy/bbos.gd の構文確認が成功
+・Godot headless の check-only で scripts/game/playfield_boundary.gd の構文確認が成功
+・Godot headless でプロジェクトを 1 フレーム起動して正常終了を確認
+・一時確認スクリプトで細い通路の入口反射と半径縮小後の通行を確認

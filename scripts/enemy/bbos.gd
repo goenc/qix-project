@@ -32,7 +32,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if active_inner_loop.size() < 3 or active_inner_loop_total_length <= 0.0:
+	if active_outer_loop.size() < 3:
 		return
 
 	direction_change_timer -= delta
@@ -42,46 +42,36 @@ func _process(delta: float) -> void:
 
 	var safe_radius := _get_effective_collision_radius()
 	var safe_epsilon := maxf(bounce_epsilon, 0.001)
+	var use_inner_loop := _has_active_inner_loop()
 	var remaining_time := delta
 	var reflection_count := 0
 	while remaining_time > 0.0 and reflection_count < MAX_REFLECTIONS_PER_FRAME:
 		var next_position := position + velocity * remaining_time
-		var boundary_hit := PlayfieldBoundary.find_first_boundary_hit_for_circle(
-			position,
-			next_position,
-			active_outer_loop,
-			safe_radius,
-			safe_epsilon
-		)
-		if !bool(boundary_hit.get("hit", false)):
-			position = PlayfieldBoundary.ensure_circle_center_inside(
-				active_outer_loop,
+		var boundary_hit := (
+			PlayfieldBoundary.find_first_boundary_hit(position, next_position, active_inner_loop, safe_epsilon)
+			if use_inner_loop
+			else PlayfieldBoundary.find_first_boundary_hit_for_circle(
+				position,
 				next_position,
+				active_outer_loop,
 				safe_radius,
 				safe_epsilon
 			)
+		)
+		if !bool(boundary_hit.get("hit", false)):
+			position = _ensure_position_inside_active_boundary(next_position, safe_radius, safe_epsilon)
 			return
 
 		position = boundary_hit["point"]
 		velocity = _reflect_velocity(velocity, Vector2(boundary_hit.get("normal", Vector2.ZERO)))
 		position += Vector2(boundary_hit.get("normal", Vector2.ZERO)) * maxf(bounce_epsilon * 2.0, 1.0)
-		position = PlayfieldBoundary.ensure_circle_center_inside(
-			active_outer_loop,
-			position,
-			safe_radius,
-			safe_epsilon
-		)
+		position = _ensure_position_inside_active_boundary(position, safe_radius, safe_epsilon)
 		var travel_ratio := clampf(float(boundary_hit.get("travel_ratio", 1.0)), 0.0, 1.0)
 		remaining_time *= maxf(0.0, 1.0 - travel_ratio)
 		reflection_count += 1
 
 	if remaining_time > 0.0:
-		position = PlayfieldBoundary.ensure_circle_center_inside(
-			active_outer_loop,
-			position + velocity * remaining_time,
-			safe_radius,
-			safe_epsilon
-		)
+		position = _ensure_position_inside_active_boundary(position + velocity * remaining_time, safe_radius, safe_epsilon)
 
 
 func set_playfield_rect(rect: Rect2) -> void:
@@ -111,8 +101,7 @@ func set_active_outer_loop(loop: PackedVector2Array) -> void:
 		has_spawned = true
 
 	if has_spawned:
-		position = PlayfieldBoundary.ensure_circle_center_inside(
-			active_outer_loop,
+		position = _ensure_position_inside_active_boundary(
 			position,
 			_get_effective_collision_radius(),
 			maxf(bounce_epsilon, 0.001)
@@ -127,8 +116,7 @@ func set_collision_radius(radius: float) -> void:
 		return
 
 	if active_outer_loop.size() >= 3:
-		position = PlayfieldBoundary.ensure_circle_center_inside(
-			active_outer_loop,
+		position = _ensure_position_inside_active_boundary(
 			position,
 			collision_radius,
 			maxf(bounce_epsilon, 0.001)
@@ -208,6 +196,16 @@ func _reflect_velocity(current_velocity: Vector2, normal: Vector2) -> Vector2:
 
 func _get_effective_collision_radius() -> float:
 	return maxf(collision_radius, maxf(min_collision_radius, 0.0))
+
+
+func _has_active_inner_loop() -> bool:
+	return active_inner_loop.size() >= 3 and active_inner_loop_total_length > 0.0
+
+
+func _ensure_position_inside_active_boundary(point: Vector2, radius: float, epsilon: float) -> Vector2:
+	if _has_active_inner_loop():
+		return PlayfieldBoundary.ensure_point_inside(active_inner_loop, point, epsilon)
+	return PlayfieldBoundary.ensure_circle_center_inside(active_outer_loop, point, radius, epsilon)
 
 
 func _rebuild_active_inner_loop() -> void:

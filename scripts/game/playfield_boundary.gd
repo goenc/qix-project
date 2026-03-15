@@ -370,6 +370,22 @@ static func build_inset_loop(
 	return inset_loop
 
 
+static func can_circle_center_fit(
+	loop: PackedVector2Array,
+	point: Vector2,
+	radius: float,
+	epsilon: float
+) -> bool:
+	var sanitized_loop := sanitize_loop(loop)
+	if sanitized_loop.size() < 3:
+		return false
+	if !_is_point_inside_or_on_loop(sanitized_loop, point, epsilon):
+		return false
+
+	var projection := project_point_to_loop(sanitized_loop, point)
+	return float(projection.get("distance", INF)) + epsilon >= maxf(radius, 0.0)
+
+
 static func find_first_boundary_hit_for_circle(
 	current_pos: Vector2,
 	next_pos: Vector2,
@@ -377,9 +393,16 @@ static func find_first_boundary_hit_for_circle(
 	radius: float,
 	epsilon: float
 ) -> Dictionary:
-	var inset_loop := build_inset_loop(loop, maxf(radius, 0.0), epsilon)
+	var sanitized_loop := sanitize_loop(loop)
+	var inset_loop := build_inset_loop(sanitized_loop, maxf(radius, 0.0), epsilon)
 	if inset_loop.size() < 3:
-		return {"hit": false}
+		return _find_first_boundary_hit_for_circle_without_inset(
+			current_pos,
+			next_pos,
+			sanitized_loop,
+			maxf(radius, 0.0),
+			epsilon
+		)
 	return find_first_boundary_hit(current_pos, next_pos, inset_loop, epsilon)
 
 
@@ -412,9 +435,15 @@ static func ensure_circle_center_inside(
 	radius: float,
 	epsilon: float
 ) -> Vector2:
-	var inset_loop := build_inset_loop(loop, maxf(radius, 0.0), epsilon)
+	var sanitized_loop := sanitize_loop(loop)
+	var inset_loop := build_inset_loop(sanitized_loop, maxf(radius, 0.0), epsilon)
 	if inset_loop.size() < 3:
-		return point
+		return _ensure_circle_center_inside_without_inset(
+			sanitized_loop,
+			point,
+			maxf(radius, 0.0),
+			epsilon
+		)
 	return ensure_point_inside(inset_loop, point, epsilon)
 
 
@@ -524,6 +553,182 @@ static func _direction_at_progress(loop: PackedVector2Array, metrics: Dictionary
 			return (loop[(index + 1) % loop.size()] - loop[index]).normalized()
 
 	return Vector2.ZERO
+
+
+static func _find_first_boundary_hit_for_circle_without_inset(
+	current_pos: Vector2,
+	next_pos: Vector2,
+	loop: PackedVector2Array,
+	radius: float,
+	epsilon: float
+) -> Dictionary:
+	if loop.size() < 3:
+		return {"hit": false}
+
+	var movement := next_pos - current_pos
+	if movement.length_squared() <= epsilon * epsilon:
+		return {"hit": false}
+	if can_circle_center_fit(loop, next_pos, radius, epsilon):
+		return {"hit": false}
+
+	var safe_current_pos := current_pos
+	if !can_circle_center_fit(loop, safe_current_pos, radius, epsilon):
+		safe_current_pos = _ensure_circle_center_inside_without_inset(loop, safe_current_pos, radius, epsilon)
+		if !can_circle_center_fit(loop, safe_current_pos, radius, epsilon):
+			return {"hit": false}
+		movement = next_pos - safe_current_pos
+		if movement.length_squared() <= epsilon * epsilon:
+			return {"hit": false}
+
+	var low := 0.0
+	var high := 1.0
+	for _index in range(12):
+		var mid := (low + high) * 0.5
+		var sample_point := safe_current_pos.lerp(next_pos, mid)
+		if can_circle_center_fit(loop, sample_point, radius, epsilon):
+			low = mid
+		else:
+			high = mid
+
+	var hit_point := safe_current_pos.lerp(next_pos, low)
+	var blocked_point := safe_current_pos.lerp(next_pos, high)
+	var blocking_boundary := _find_circle_blocking_boundary(loop, blocked_point, movement, epsilon)
+	var hit_normal := Vector2(blocking_boundary.get("normal", Vector2.ZERO))
+	hit_normal = _resolve_circle_hit_normal(loop, blocked_point, radius, movement, epsilon, hit_normal)
+	if hit_normal == Vector2.ZERO:
+		hit_normal = _fallback_normal_for_motion(movement)
+
+	return {
+		"hit": true,
+		"point": hit_point,
+		"distance": safe_current_pos.distance_to(hit_point),
+		"travel_ratio": low,
+		"normal": hit_normal,
+		"segment_index": int(blocking_boundary.get("segment_index", -1)),
+		"segment_start": Vector2(blocking_boundary.get("segment_start", Vector2.ZERO)),
+		"segment_end": Vector2(blocking_boundary.get("segment_end", Vector2.ZERO))
+	}
+
+
+static func _ensure_circle_center_inside_without_inset(
+	loop: PackedVector2Array,
+	point: Vector2,
+	radius: float,
+	epsilon: float
+) -> Vector2:
+	if loop.size() < 3:
+		return point
+	if can_circle_center_fit(loop, point, radius, epsilon):
+		return point
+
+	var adjusted_point := ensure_point_inside(loop, point, epsilon)
+	for _index in range(6):
+		if can_circle_center_fit(loop, adjusted_point, radius, epsilon):
+			return adjusted_point
+
+		var blocking_boundary := _find_circle_blocking_boundary(loop, adjusted_point, Vector2.ZERO, epsilon)
+		if !bool(blocking_boundary.get("valid", false)):
+			return adjusted_point
+
+		var inward_normal := Vector2(blocking_boundary.get("normal", Vector2.ZERO))
+		if inward_normal == Vector2.ZERO:
+			return adjusted_point
+
+		var boundary_distance := float(blocking_boundary.get("distance", 0.0))
+		var push_distance := maxf(radius - boundary_distance, 0.0) + maxf(epsilon * 4.0, 1.0)
+		adjusted_point += inward_normal * push_distance
+		adjusted_point = ensure_point_inside(loop, adjusted_point, epsilon)
+
+	return adjusted_point
+
+
+static func _find_circle_blocking_boundary(
+	loop: PackedVector2Array,
+	point: Vector2,
+	movement: Vector2,
+	epsilon: float
+) -> Dictionary:
+	if loop.size() < 2:
+		return {"valid": false}
+
+	var movement_direction := movement.normalized()
+	var best_distance := INF
+	var best_alignment := -INF
+	var best_boundary := {"valid": false}
+	for index in range(loop.size()):
+		var segment_start: Vector2 = loop[index]
+		var segment_end: Vector2 = loop[(index + 1) % loop.size()]
+		var projected_point := Geometry2D.get_closest_point_to_segment(point, segment_start, segment_end)
+		var distance := point.distance_to(projected_point)
+		var inward_normal := _segment_inward_normal(loop, segment_start, segment_end, epsilon)
+		var alignment := 0.0 if movement_direction == Vector2.ZERO else absf(inward_normal.dot(movement_direction))
+		if distance < best_distance - epsilon or (is_equal_approx(distance, best_distance) and alignment > best_alignment):
+			best_distance = distance
+			best_alignment = alignment
+			best_boundary = {
+				"valid": true,
+				"segment_index": index,
+				"point": projected_point,
+				"distance": distance,
+				"normal": inward_normal,
+				"segment_start": segment_start,
+				"segment_end": segment_end
+			}
+
+	return best_boundary
+
+
+static func _resolve_circle_hit_normal(
+	loop: PackedVector2Array,
+	point: Vector2,
+	radius: float,
+	movement: Vector2,
+	epsilon: float,
+	fallback_normal: Vector2
+) -> Vector2:
+	var resolved_normal := fallback_normal
+	if loop.size() < 2:
+		return resolved_normal
+
+	var has_left_blocker := false
+	var has_right_blocker := false
+	var has_up_blocker := false
+	var has_down_blocker := false
+	for index in range(loop.size()):
+		var segment_start: Vector2 = loop[index]
+		var segment_end: Vector2 = loop[(index + 1) % loop.size()]
+		var projected_point := Geometry2D.get_closest_point_to_segment(point, segment_start, segment_end)
+		if point.distance_to(projected_point) > radius + epsilon:
+			continue
+
+		var inward_normal := _segment_inward_normal(loop, segment_start, segment_end, epsilon)
+		if absf(inward_normal.x) > 0.5:
+			has_left_blocker = has_left_blocker or inward_normal.x < 0.0
+			has_right_blocker = has_right_blocker or inward_normal.x > 0.0
+		elif absf(inward_normal.y) > 0.5:
+			has_up_blocker = has_up_blocker or inward_normal.y < 0.0
+			has_down_blocker = has_down_blocker or inward_normal.y > 0.0
+
+	var horizontal_entry_score := absf(movement.x) if has_up_blocker and has_down_blocker else -1.0
+	var vertical_entry_score := absf(movement.y) if has_left_blocker and has_right_blocker else -1.0
+	if horizontal_entry_score >= vertical_entry_score and horizontal_entry_score > epsilon:
+		return Vector2.RIGHT if movement.x >= 0.0 else Vector2.LEFT
+	if vertical_entry_score > epsilon:
+		return Vector2.DOWN if movement.y >= 0.0 else Vector2.UP
+	return resolved_normal
+
+
+static func _fallback_normal_for_motion(movement: Vector2) -> Vector2:
+	if absf(movement.x) >= absf(movement.y):
+		if movement.x > DEFAULT_EPSILON:
+			return Vector2.RIGHT
+		if movement.x < -DEFAULT_EPSILON:
+			return Vector2.LEFT
+	if movement.y > DEFAULT_EPSILON:
+		return Vector2.DOWN
+	if movement.y < -DEFAULT_EPSILON:
+		return Vector2.UP
+	return Vector2.RIGHT
 
 
 static func _intersect_motion_with_axis_segment(
