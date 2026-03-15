@@ -35,7 +35,7 @@ offset_top = 84.0
 offset_right = -24.0
 offset_bottom = 144.0
 autowrap_mode = 3
-text = "MOVE: ARROWS/WASD  DRAW: Z/SHIFT  ESC: TITLE"
+text = "MOVE: ARROWS/WASD DRAW: SHIFT/PAD-A ESC: TITLE"
 
 [node name="StateLabel" type="Label" parent="Ui/Root"]
 anchor_left = 1.0

@@ -1,7 +1,5 @@
-内部線の接触点停止を修正
+qix_draw のパッド入力案内を追加
 
-・内部線への手前停止をやめて最初の接触点まで進むようにした
-・既存内部線との判定を最初の接触点を返す方式へ変更した
-・描画移動を接触点まで進めて接触後も既存内部線の跨ぎと重なりを継続禁止にした
-・git show 38c6e63 -- scripts/player/base_player.gd で不具合原因を確認した
-・tools/run.ps1 を実行し Godot プロセスの起動を確認した
+・qix_draw を Shift と PAD-A の両対応に変更
+・HelpLabel の DRAW 表示を SHIFT/PAD-A に更新
+・tools/run.ps1 で Godot の起動を確認

@@ -1,10 +1,7 @@
-日時: 2026-03-15 13:28:50 JST
-summary: 内部線への手前停止を接触点停止へ変更
-対象:
-scripts/player/base_player.gd
+日時: 2026-03-15 13:42:35 JST
+summary: qix_draw を Shift と PAD-A の両対応にしてヘルプ表示を更新
 code_changes:
-・既存内部線との判定を最初の接触点を返す方式へ変更した
-・描画移動を接触点まで進めて接触後も既存内部線の跨ぎと重なりを継続禁止にした
+・base_main.gd の qix_draw 入力登録を Shift と JOY_BUTTON_A の併用へ変更
+・base_main.tscn の HelpLabel 表示を SHIFT/PAD-A 表記へ更新
 verification:
-・git show 38c6e63 -- scripts/player/base_player.gd で不具合原因を確認した
-・tools/run.ps1 を実行し Godot プロセスの起動を確認した
+・tools/run.ps1 を実行し Godot の起動を確認

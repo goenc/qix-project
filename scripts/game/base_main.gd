@@ -78,7 +78,7 @@ func _register_input_map() -> void:
 	_ensure_action("move_right", [_key_event(KEY_RIGHT), _key_event(KEY_D), _joypad_button(JOY_BUTTON_DPAD_RIGHT)])
 	_ensure_action("move_up", [_key_event(KEY_UP), _key_event(KEY_W), _joypad_button(JOY_BUTTON_DPAD_UP)])
 	_ensure_action("move_down", [_key_event(KEY_DOWN), _key_event(KEY_S), _joypad_button(JOY_BUTTON_DPAD_DOWN)])
-	_replace_action_events("qix_draw", [_key_event(KEY_SHIFT)])
+	_replace_action_events("qix_draw", [_key_event(KEY_SHIFT), _joypad_button(JOY_BUTTON_A)])
 	_ensure_action("ui_cancel", [_key_event(KEY_ESCAPE), _joypad_button(JOY_BUTTON_B), _joypad_button(JOY_BUTTON_BACK)])
 	_ensure_action("pause", [_key_event(KEY_P), _joypad_button(JOY_BUTTON_START)])
 
