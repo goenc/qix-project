@@ -2,17 +2,42 @@ extends Node2D
 
 const HALF_SIZE := Vector2(32.0, 32.0)
 
+@export var move_speed: float = 140.0
+@export var direction_change_interval_min: float = 1.5
+@export var direction_change_interval_max: float = 3.0
+@export var bounce_epsilon: float = 0.5
+
 @onready var pick_area: Area2D = $PickArea
 
 var playfield_rect: Rect2 = Rect2()
 var rng := RandomNumberGenerator.new()
 var has_spawned := false
+var velocity := Vector2.ZERO
+var direction_change_timer := 0.0
 
 
 func _ready() -> void:
 	rng.randomize()
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
+	_reset_direction_change_timer()
+	_pick_new_velocity()
+
+
+func _process(delta: float) -> void:
+	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
+		return
+
+	direction_change_timer -= delta
+	if direction_change_timer <= 0.0:
+		_pick_new_velocity()
+		_reset_direction_change_timer()
+
+	position += velocity * delta
+	var spawnable_rect := _get_spawnable_rect(playfield_rect)
+	var reflected_state := _reflect_in_rect(position, velocity, spawnable_rect)
+	position = reflected_state["position"]
+	velocity = reflected_state["velocity"]
 
 
 func set_playfield_rect(rect: Rect2) -> void:
@@ -71,3 +96,51 @@ func _rect_has_point(rect: Rect2, point: Vector2) -> bool:
 		and point.y >= rect.position.y
 		and point.y <= rect.end.y
 	)
+
+
+func _reset_direction_change_timer() -> void:
+	var min_interval := minf(direction_change_interval_min, direction_change_interval_max)
+	var max_interval := maxf(direction_change_interval_min, direction_change_interval_max)
+	direction_change_timer = min_interval if is_equal_approx(min_interval, max_interval) else rng.randf_range(min_interval, max_interval)
+
+
+func _pick_new_velocity() -> void:
+	var direction := Vector2(
+		-1.0 if rng.randi_range(0, 1) == 0 else 1.0,
+		-1.0 if rng.randi_range(0, 1) == 0 else 1.0
+	)
+	velocity = direction.normalized() * maxf(absf(move_speed), 0.001)
+
+
+func _reflect_in_rect(point: Vector2, current_velocity: Vector2, rect: Rect2) -> Dictionary:
+	var reflected_point := point
+	var reflected_velocity := current_velocity
+
+	if reflected_point.x < rect.position.x:
+		reflected_point.x = _push_inside_rect_axis(rect.position.x, rect.end.x, true)
+		reflected_velocity.x = absf(reflected_velocity.x)
+	elif reflected_point.x > rect.end.x:
+		reflected_point.x = _push_inside_rect_axis(rect.position.x, rect.end.x, false)
+		reflected_velocity.x = -absf(reflected_velocity.x)
+
+	if reflected_point.y < rect.position.y:
+		reflected_point.y = _push_inside_rect_axis(rect.position.y, rect.end.y, true)
+		reflected_velocity.y = absf(reflected_velocity.y)
+	elif reflected_point.y > rect.end.y:
+		reflected_point.y = _push_inside_rect_axis(rect.position.y, rect.end.y, false)
+		reflected_velocity.y = -absf(reflected_velocity.y)
+
+	reflected_point = _clamp_point_to_rect(reflected_point, rect)
+
+	return {
+		"position": reflected_point,
+		"velocity": reflected_velocity
+	}
+
+
+func _push_inside_rect_axis(min_value: float, max_value: float, from_min_side: bool) -> float:
+	if min_value >= max_value:
+		return min_value
+	if from_min_side:
+		return minf(min_value + bounce_epsilon, max_value)
+	return maxf(max_value - bounce_epsilon, min_value)
