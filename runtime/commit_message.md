@@ -1,5 +1,6 @@
-qix_draw のパッド入力案内を追加
+BBOS を固定出現する敵として追加
 
-・qix_draw を Shift と PAD-A の両対応に変更
-・HelpLabel の DRAW 表示を SHIFT/PAD-A に更新
-・tools/run.ps1 で Godot の起動を確認
+・BaseMain に BBOS インスタンスを追加し playfield_rect の適用を共通化した
+・BBOS の scene と script を追加し 64x64 の見た目と当たり判定を定義した
+・BBOS がプレイフィールド内へ一度だけランダム出現し 画面サイズ変更時は場内へ clamp されるようにした
+・ヘッドレスで base_main.tscn を起動し 終了コード 0 を確認した

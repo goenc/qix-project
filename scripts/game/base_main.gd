@@ -13,6 +13,7 @@ const TITLE_SCENE_PATH := "res://scenes/title_main.tscn"
 @export var playfield_outer_frame_padding := 12.0
 
 @onready var base_player = $BasePlayer
+@onready var bbos = $BBOS
 @onready var state_label: Label = $Ui/Root/StateLabel
 @onready var position_label: Label = $Ui/Root/PositionLabel
 @onready var claimed_label: Label = $Ui/Root/ClaimedLabel
@@ -25,7 +26,7 @@ func _ready() -> void:
 	get_tree().paused = false
 	_register_input_map()
 	_recalculate_playfield_rect()
-	_apply_playfield_to_player()
+	_apply_playfield_to_entities()
 	var viewport := get_viewport()
 	if is_instance_valid(viewport) and !viewport.size_changed.is_connected(_on_viewport_size_changed):
 		viewport.size_changed.connect(_on_viewport_size_changed)
@@ -124,7 +125,7 @@ func _draw() -> void:
 
 func _on_viewport_size_changed() -> void:
 	_recalculate_playfield_rect()
-	_apply_playfield_to_player()
+	_apply_playfield_to_entities()
 	queue_redraw()
 	_sync_hud()
 
@@ -146,6 +147,8 @@ func _recalculate_playfield_rect() -> void:
 	)
 
 
-func _apply_playfield_to_player() -> void:
+func _apply_playfield_to_entities() -> void:
 	if is_instance_valid(base_player):
 		base_player.set_playfield_rect(playfield_rect)
+	if is_instance_valid(bbos):
+		bbos.set_playfield_rect(playfield_rect)
