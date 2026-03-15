@@ -1,12 +1,12 @@
-日時: 2026-03-15 16:26:59 +09:00
-対象: 外周ループを正規データにしたプレイフィールド更新
-summary: ボス側に残る外周ループを唯一の正規データにし、自機外周移動とBBOS反射を同じループ参照へ統一した
+日時: 2026-03-15 17:06:15 +09:00
+summary: BOSSの反射判定を中心点基準から円形基準へ変更
+対象:
+- scripts/enemy/bbos.gd
+- scripts/game/playfield_boundary.gd
 code_changes:
-・scripts/game/playfield_boundary.gd を追加し、外周ループ生成、進行量変換、trail 分割、候補選択、最初の衝突線分判定を集約した
-・scripts/game/base_main.gd で初期外周生成、capture_closed 受信、ボス側候補ループ選択、Player と BBOS への再配布を一元化した
-・scripts/player/base_player.gd を active_outer_loop ベースへ差し替え、描画完了時に閉じた trail を通知するよう変更した
-・scripts/enemy/bbos.gd を active_outer_loop 全線分との最初の衝突による反射へ置換した
-・tools/verify_outer_loop.gd を追加し、初期矩形、1 回目 L 字、2 回目凸凹の 3 状態を headless で検証できるようにした
+・bbos.gd で collision_radius と min_collision_radius を追加し、生成範囲と反射後補正を円形中心基準へ置き換えた
+・playfield_boundary.gd に直交多角形用の内側オフセット生成と円形反射用ヘルパーを追加した
 verification:
-・C:\Godot\godot_console.exe --path . --headless --quit-after 1
-・C:\Godot\godot_console.exe --path . --headless --script res://tools/verify_outer_loop.gd
+・Godot headless の check-only で対象 2 スクリプトの構文確認を実施した
+・Godot headless の 1 フレーム起動でプロジェクト読み込み時エラーが出ないことを確認した
+・一時検証スクリプトで半径32の手前反射、半径縮小時の進入量増加、L字外周の内側ループ生成を確認した

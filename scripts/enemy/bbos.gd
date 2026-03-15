@@ -1,20 +1,21 @@
 extends Node2D
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
-const HALF_SIZE := Vector2(32.0, 32.0)
 const MAX_REFLECTIONS_PER_FRAME := 2
 
 @export var move_speed: float = 140.0
 @export var direction_change_interval_min: float = 1.5
 @export var direction_change_interval_max: float = 3.0
 @export var bounce_epsilon: float = 0.5
+@export var collision_radius: float = 32.0
+@export var min_collision_radius: float = 8.0
 
 @onready var pick_area: Area2D = $PickArea
 
 var playfield_rect: Rect2 = Rect2()
 var active_outer_loop: PackedVector2Array = PackedVector2Array()
-var outer_loop_metrics: Dictionary = {}
-var outer_loop_total_length := 0.0
+var active_inner_loop: PackedVector2Array = PackedVector2Array()
+var active_inner_loop_total_length := 0.0
 var rng := RandomNumberGenerator.new()
 var has_spawned := false
 var velocity := Vector2.ZERO
@@ -25,12 +26,13 @@ func _ready() -> void:
 	rng.randomize()
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
+	set_collision_radius(collision_radius)
 	_reset_direction_change_timer()
 	_pick_new_velocity()
 
 
 func _process(delta: float) -> void:
-	if active_outer_loop.size() < 3 or outer_loop_total_length <= 0.0:
+	if active_inner_loop.size() < 3 or active_inner_loop_total_length <= 0.0:
 		return
 
 	direction_change_timer -= delta
@@ -38,33 +40,47 @@ func _process(delta: float) -> void:
 		_pick_new_velocity()
 		_reset_direction_change_timer()
 
+	var safe_radius := _get_effective_collision_radius()
+	var safe_epsilon := maxf(bounce_epsilon, 0.001)
 	var remaining_time := delta
 	var reflection_count := 0
 	while remaining_time > 0.0 and reflection_count < MAX_REFLECTIONS_PER_FRAME:
 		var next_position := position + velocity * remaining_time
-		var boundary_hit := PlayfieldBoundary.find_first_boundary_hit(
+		var boundary_hit := PlayfieldBoundary.find_first_boundary_hit_for_circle(
 			position,
 			next_position,
 			active_outer_loop,
-			maxf(bounce_epsilon, 0.001)
+			safe_radius,
+			safe_epsilon
 		)
 		if !bool(boundary_hit.get("hit", false)):
-			position = PlayfieldBoundary.ensure_point_inside(active_outer_loop, next_position, bounce_epsilon)
+			position = PlayfieldBoundary.ensure_circle_center_inside(
+				active_outer_loop,
+				next_position,
+				safe_radius,
+				safe_epsilon
+			)
 			return
 
 		position = boundary_hit["point"]
 		velocity = _reflect_velocity(velocity, Vector2(boundary_hit.get("normal", Vector2.ZERO)))
 		position += Vector2(boundary_hit.get("normal", Vector2.ZERO)) * maxf(bounce_epsilon * 2.0, 1.0)
-		position = PlayfieldBoundary.ensure_point_inside(active_outer_loop, position, bounce_epsilon)
+		position = PlayfieldBoundary.ensure_circle_center_inside(
+			active_outer_loop,
+			position,
+			safe_radius,
+			safe_epsilon
+		)
 		var travel_ratio := clampf(float(boundary_hit.get("travel_ratio", 1.0)), 0.0, 1.0)
 		remaining_time *= maxf(0.0, 1.0 - travel_ratio)
 		reflection_count += 1
 
 	if remaining_time > 0.0:
-		position = PlayfieldBoundary.ensure_point_inside(
+		position = PlayfieldBoundary.ensure_circle_center_inside(
 			active_outer_loop,
 			position + velocity * remaining_time,
-			bounce_epsilon
+			safe_radius,
+			safe_epsilon
 		)
 
 
@@ -88,22 +104,45 @@ func set_active_outer_loop(loop: PackedVector2Array) -> void:
 		return
 
 	active_outer_loop = sanitized_loop
-	outer_loop_metrics = PlayfieldBoundary.build_loop_metrics(active_outer_loop)
-	outer_loop_total_length = float(outer_loop_metrics.get("total_length", 0.0))
+	_rebuild_active_inner_loop()
 
 	if !has_spawned and playfield_rect.size.x > 0.0 and playfield_rect.size.y > 0.0:
 		position = _pick_random_point(_get_spawnable_rect(playfield_rect))
 		has_spawned = true
 
 	if has_spawned:
-		position = PlayfieldBoundary.ensure_point_inside(active_outer_loop, position, bounce_epsilon)
+		position = PlayfieldBoundary.ensure_circle_center_inside(
+			active_outer_loop,
+			position,
+			_get_effective_collision_radius(),
+			maxf(bounce_epsilon, 0.001)
+		)
+
+
+func set_collision_radius(radius: float) -> void:
+	collision_radius = maxf(radius, maxf(min_collision_radius, 0.0))
+	_rebuild_active_inner_loop()
+
+	if !has_spawned:
+		return
+
+	if active_outer_loop.size() >= 3:
+		position = PlayfieldBoundary.ensure_circle_center_inside(
+			active_outer_loop,
+			position,
+			collision_radius,
+			maxf(bounce_epsilon, 0.001)
+		)
+	elif playfield_rect.size.x > 0.0 and playfield_rect.size.y > 0.0:
+		position = _clamp_point_to_rect(position, _get_spawnable_rect(playfield_rect))
 
 
 func _get_spawnable_rect(rect: Rect2) -> Rect2:
-	var min_x := rect.position.x + HALF_SIZE.x
-	var max_x := rect.end.x - HALF_SIZE.x
-	var min_y := rect.position.y + HALF_SIZE.y
-	var max_y := rect.end.y - HALF_SIZE.y
+	var radius := _get_effective_collision_radius()
+	var min_x := rect.position.x + radius
+	var max_x := rect.end.x - radius
+	var min_y := rect.position.y + radius
+	var max_y := rect.end.y - radius
 
 	if min_x > max_x:
 		var center_x := rect.position.x + rect.size.x * 0.5
@@ -165,3 +204,25 @@ func _reflect_velocity(current_velocity: Vector2, normal: Vector2) -> Vector2:
 	if reflected_velocity.length_squared() <= 0.0001:
 		return current_velocity
 	return reflected_velocity.normalized() * maxf(current_velocity.length(), 0.001)
+
+
+func _get_effective_collision_radius() -> float:
+	return maxf(collision_radius, maxf(min_collision_radius, 0.0))
+
+
+func _rebuild_active_inner_loop() -> void:
+	active_inner_loop = PackedVector2Array()
+	active_inner_loop_total_length = 0.0
+	if active_outer_loop.size() < 3:
+		return
+
+	active_inner_loop = PlayfieldBoundary.build_inset_loop(
+		active_outer_loop,
+		_get_effective_collision_radius(),
+		maxf(bounce_epsilon, 0.001)
+	)
+	if active_inner_loop.size() < 3:
+		return
+
+	var inner_loop_metrics := PlayfieldBoundary.build_loop_metrics(active_inner_loop)
+	active_inner_loop_total_length = float(inner_loop_metrics.get("total_length", 0.0))

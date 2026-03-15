@@ -308,6 +308,81 @@ static func find_first_boundary_hit(
 	return best_hit
 
 
+static func build_inset_loop(
+	loop: PackedVector2Array,
+	inset: float,
+	epsilon: float = DEFAULT_EPSILON
+) -> PackedVector2Array:
+	var safe_epsilon := maxf(epsilon, DEFAULT_EPSILON)
+	var sanitized_loop := _simplify_orthogonal_loop(sanitize_loop(loop), safe_epsilon)
+	if sanitized_loop.size() < 3:
+		return PackedVector2Array()
+	if inset <= safe_epsilon:
+		return sanitized_loop
+
+	var shifted_segments: Array[Dictionary] = []
+	for index in range(sanitized_loop.size()):
+		var segment_start: Vector2 = sanitized_loop[index]
+		var segment_end: Vector2 = sanitized_loop[(index + 1) % sanitized_loop.size()]
+		if segment_start.distance_to(segment_end) <= safe_epsilon:
+			return PackedVector2Array()
+
+		var inward_normal := _segment_inward_normal(sanitized_loop, segment_start, segment_end, safe_epsilon)
+		if absf(segment_start.y - segment_end.y) <= safe_epsilon:
+			var shifted_y := segment_start.y + inward_normal.y * inset
+			shifted_segments.append({
+				"horizontal": true,
+				"coordinate": shifted_y
+			})
+		elif absf(segment_start.x - segment_end.x) <= safe_epsilon:
+			var shifted_x := segment_start.x + inward_normal.x * inset
+			shifted_segments.append({
+				"horizontal": false,
+				"coordinate": shifted_x
+			})
+		else:
+			return PackedVector2Array()
+
+	var inset_loop := PackedVector2Array()
+	for index in range(shifted_segments.size()):
+		var previous_segment: Dictionary = shifted_segments[(index - 1 + shifted_segments.size()) % shifted_segments.size()]
+		var current_segment: Dictionary = shifted_segments[index]
+		var intersection := _intersect_shifted_axis_lines(previous_segment, current_segment)
+		if !bool(intersection.get("valid", false)):
+			return PackedVector2Array()
+		var intersection_point: Vector2 = intersection.get("point", Vector2.ZERO)
+		inset_loop.append(intersection_point)
+
+	inset_loop = _simplify_orthogonal_loop(sanitize_loop(inset_loop), safe_epsilon)
+	if inset_loop.size() < 3 or polygon_area(inset_loop) <= safe_epsilon:
+		return PackedVector2Array()
+	if _loop_has_self_intersections(inset_loop, safe_epsilon):
+		return PackedVector2Array()
+
+	for index in range(inset_loop.size()):
+		var current_point: Vector2 = inset_loop[index]
+		var next_point: Vector2 = inset_loop[(index + 1) % inset_loop.size()]
+		if !_is_point_inside_or_on_loop(sanitized_loop, current_point, safe_epsilon):
+			return PackedVector2Array()
+		if !_is_point_inside_or_on_loop(sanitized_loop, current_point.lerp(next_point, 0.5), safe_epsilon):
+			return PackedVector2Array()
+
+	return inset_loop
+
+
+static func find_first_boundary_hit_for_circle(
+	current_pos: Vector2,
+	next_pos: Vector2,
+	loop: PackedVector2Array,
+	radius: float,
+	epsilon: float
+) -> Dictionary:
+	var inset_loop := build_inset_loop(loop, maxf(radius, 0.0), epsilon)
+	if inset_loop.size() < 3:
+		return {"hit": false}
+	return find_first_boundary_hit(current_pos, next_pos, inset_loop, epsilon)
+
+
 static func ensure_point_inside(loop: PackedVector2Array, point: Vector2, epsilon: float) -> Vector2:
 	var sanitized_loop := sanitize_loop(loop)
 	if sanitized_loop.size() < 3:
@@ -329,6 +404,18 @@ static func ensure_point_inside(loop: PackedVector2Array, point: Vector2, epsilo
 		return pushed_point
 
 	return Vector2(projection.get("point", point))
+
+
+static func ensure_circle_center_inside(
+	loop: PackedVector2Array,
+	point: Vector2,
+	radius: float,
+	epsilon: float
+) -> Vector2:
+	var inset_loop := build_inset_loop(loop, maxf(radius, 0.0), epsilon)
+	if inset_loop.size() < 3:
+		return point
+	return ensure_point_inside(inset_loop, point, epsilon)
 
 
 static func sanitize_polyline(points: PackedVector2Array) -> PackedVector2Array:
@@ -500,3 +587,122 @@ static func _segment_inward_normal(
 	if Geometry2D.is_point_in_polygon(sample_a, loop) or is_point_on_loop(loop, sample_a, epsilon):
 		return normal_a
 	return -normal_a
+
+
+static func _simplify_orthogonal_loop(loop: PackedVector2Array, epsilon: float) -> PackedVector2Array:
+	var simplified := sanitize_loop(loop)
+	if simplified.size() < 3:
+		return simplified
+
+	var changed := true
+	while changed and simplified.size() >= 3:
+		changed = false
+		var next_loop := PackedVector2Array()
+		for index in range(simplified.size()):
+			var previous_point: Vector2 = simplified[(index - 1 + simplified.size()) % simplified.size()]
+			var current_point: Vector2 = simplified[index]
+			var next_point: Vector2 = simplified[(index + 1) % simplified.size()]
+			if _points_are_axis_collinear(previous_point, current_point, next_point, epsilon):
+				changed = true
+				continue
+			next_loop.append(current_point)
+		simplified = sanitize_loop(next_loop)
+
+	return simplified
+
+
+static func _points_are_axis_collinear(previous_point: Vector2, current_point: Vector2, next_point: Vector2, epsilon: float) -> bool:
+	return (
+		(absf(previous_point.x - current_point.x) <= epsilon and absf(current_point.x - next_point.x) <= epsilon)
+		or (absf(previous_point.y - current_point.y) <= epsilon and absf(current_point.y - next_point.y) <= epsilon)
+	)
+
+
+static func _intersect_shifted_axis_lines(previous_segment: Dictionary, current_segment: Dictionary) -> Dictionary:
+	var previous_horizontal := bool(previous_segment.get("horizontal", false))
+	var current_horizontal := bool(current_segment.get("horizontal", false))
+	if previous_horizontal == current_horizontal:
+		return {"valid": false}
+
+	if previous_horizontal:
+		return {
+			"valid": true,
+			"point": Vector2(
+				float(current_segment.get("coordinate", 0.0)),
+				float(previous_segment.get("coordinate", 0.0))
+			)
+		}
+
+	return {
+		"valid": true,
+		"point": Vector2(
+			float(previous_segment.get("coordinate", 0.0)),
+			float(current_segment.get("coordinate", 0.0))
+		)
+	}
+
+
+static func _is_point_inside_or_on_loop(loop: PackedVector2Array, point: Vector2, epsilon: float) -> bool:
+	return Geometry2D.is_point_in_polygon(point, loop) or is_point_on_loop(loop, point, epsilon)
+
+
+static func _loop_has_self_intersections(loop: PackedVector2Array, epsilon: float) -> bool:
+	if loop.size() < 4:
+		return false
+
+	for index in range(loop.size()):
+		var a_start: Vector2 = loop[index]
+		var a_end: Vector2 = loop[(index + 1) % loop.size()]
+		for other_index in range(index + 1, loop.size()):
+			if other_index == index:
+				continue
+			if other_index == (index + 1) % loop.size():
+				continue
+			if index == 0 and other_index == loop.size() - 1:
+				continue
+
+			var b_start: Vector2 = loop[other_index]
+			var b_end: Vector2 = loop[(other_index + 1) % loop.size()]
+			if _segments_intersect_or_overlap(a_start, a_end, b_start, b_end, epsilon):
+				return true
+
+	return false
+
+
+static func _segments_intersect_or_overlap(
+	a_start: Vector2,
+	a_end: Vector2,
+	b_start: Vector2,
+	b_end: Vector2,
+	epsilon: float
+) -> bool:
+	var a_horizontal := absf(a_start.y - a_end.y) <= epsilon
+	var b_horizontal := absf(b_start.y - b_end.y) <= epsilon
+	if a_horizontal and b_horizontal:
+		if absf(a_start.y - b_start.y) > epsilon:
+			return false
+		var overlap_start_x := maxf(minf(a_start.x, a_end.x), minf(b_start.x, b_end.x))
+		var overlap_end_x := minf(maxf(a_start.x, a_end.x), maxf(b_start.x, b_end.x))
+		return overlap_end_x - overlap_start_x > epsilon
+
+	if !a_horizontal and !b_horizontal:
+		if absf(a_start.x - b_start.x) > epsilon:
+			return false
+		var overlap_start_y := maxf(minf(a_start.y, a_end.y), minf(b_start.y, b_end.y))
+		var overlap_end_y := minf(maxf(a_start.y, a_end.y), maxf(b_start.y, b_end.y))
+		return overlap_end_y - overlap_start_y > epsilon
+
+	var horizontal_start: Vector2 = a_start if a_horizontal else b_start
+	var horizontal_end: Vector2 = a_end if a_horizontal else b_end
+	var vertical_start: Vector2 = b_start if a_horizontal else a_start
+	var vertical_end: Vector2 = b_end if a_horizontal else a_end
+	var horizontal_min_x := minf(horizontal_start.x, horizontal_end.x) - epsilon
+	var horizontal_max_x := maxf(horizontal_start.x, horizontal_end.x) + epsilon
+	var vertical_min_y := minf(vertical_start.y, vertical_end.y) - epsilon
+	var vertical_max_y := maxf(vertical_start.y, vertical_end.y) + epsilon
+	return (
+		vertical_start.x >= horizontal_min_x
+		and vertical_start.x <= horizontal_max_x
+		and horizontal_start.y >= vertical_min_y
+		and horizontal_start.y <= vertical_max_y
+	)
