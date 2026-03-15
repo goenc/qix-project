@@ -130,10 +130,17 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 	var next_position := _clamp_to_playfield(current_position + drawing_direction * move_speed * delta)
 	var is_waiting_to_leave_border := !has_left_border and _is_on_border(current_position)
 	var should_block_border_movement := is_waiting_to_leave_border and _is_on_border(next_position)
+	var would_cross_existing_trail := false
 
 	if !should_block_border_movement:
+		would_cross_existing_trail = _would_cross_existing_trail(current_position, next_position)
+
+	if !should_block_border_movement and !would_cross_existing_trail:
 		_update_drawing_segment(drawing_direction, current_position)
 		position = next_position
+
+	if would_cross_existing_trail:
+		return
 
 	_append_trail_point_if_needed(false)
 	if !has_left_border and !_is_on_border(position):
@@ -404,6 +411,89 @@ func _update_drawing_segment_from_trail() -> void:
 	elif absf(last_segment.y) > 0.0:
 		drawing_segment_direction = Vector2(0.0, signf(last_segment.y))
 		drawing_move_direction = drawing_segment_direction
+
+
+func _would_cross_existing_trail(from_point: Vector2, to_point: Vector2) -> bool:
+	if from_point.distance_to(to_point) <= border_epsilon:
+		return false
+
+	var visible_points := _build_visible_trail_points()
+	if visible_points.size() < 2:
+		return false
+
+	var last_segment_index := visible_points.size() - 2
+	for i in range(visible_points.size() - 1):
+		var segment_start: Vector2 = visible_points[i]
+		var segment_end: Vector2 = visible_points[i + 1]
+		var allow_shared_start := (
+			i == last_segment_index
+			and (segment_start.distance_to(from_point) <= border_epsilon or segment_end.distance_to(from_point) <= border_epsilon)
+		)
+		if _segments_intersect_or_touch(from_point, to_point, segment_start, segment_end, allow_shared_start):
+			return true
+
+	return false
+
+
+func _segments_intersect_or_touch(
+	a0: Vector2,
+	a1: Vector2,
+	b0: Vector2,
+	b1: Vector2,
+	allow_shared_start := false
+) -> bool:
+	var a_is_horizontal := absf(a0.y - a1.y) <= border_epsilon
+	var a_is_vertical := absf(a0.x - a1.x) <= border_epsilon
+	var b_is_horizontal := absf(b0.y - b1.y) <= border_epsilon
+	var b_is_vertical := absf(b0.x - b1.x) <= border_epsilon
+
+	if (a_is_horizontal and b_is_horizontal) or (a_is_vertical and b_is_vertical):
+		var a_fixed := a0.y if a_is_horizontal else a0.x
+		var b_fixed := b0.y if b_is_horizontal else b0.x
+		if absf(a_fixed - b_fixed) > border_epsilon:
+			return false
+
+		var a_min := minf(a0.x, a1.x) if a_is_horizontal else minf(a0.y, a1.y)
+		var a_max := maxf(a0.x, a1.x) if a_is_horizontal else maxf(a0.y, a1.y)
+		var b_min := minf(b0.x, b1.x) if b_is_horizontal else minf(b0.y, b1.y)
+		var b_max := maxf(b0.x, b1.x) if b_is_horizontal else maxf(b0.y, b1.y)
+		var overlap_start := maxf(a_min, b_min)
+		var overlap_end := minf(a_max, b_max)
+
+		if overlap_end < overlap_start - border_epsilon:
+			return false
+
+		if allow_shared_start:
+			var shared_value := a0.x if a_is_horizontal else a0.y
+			if absf(overlap_end - overlap_start) <= border_epsilon and absf(overlap_start - shared_value) <= border_epsilon:
+				return false
+
+		return true
+
+	if !(a_is_horizontal and b_is_vertical) and !(a_is_vertical and b_is_horizontal):
+		return false
+
+	var horizontal_start := a0 if a_is_horizontal else b0
+	var horizontal_end := a1 if a_is_horizontal else b1
+	var vertical_start := b0 if a_is_horizontal else a0
+	var vertical_end := b1 if a_is_horizontal else a1
+	var intersection_point := Vector2(vertical_start.x, horizontal_start.y)
+
+	if !_is_value_in_axis_range(intersection_point.x, horizontal_start.x, horizontal_end.x):
+		return false
+	if !_is_value_in_axis_range(intersection_point.y, vertical_start.y, vertical_end.y):
+		return false
+
+	if allow_shared_start and intersection_point.distance_to(a0) <= border_epsilon:
+		return false
+
+	return true
+
+
+func _is_value_in_axis_range(value: float, range_start: float, range_end: float) -> bool:
+	var minimum := minf(range_start, range_end) - border_epsilon
+	var maximum := maxf(range_start, range_end) + border_epsilon
+	return value >= minimum and value <= maximum
 
 
 func _clamp_to_playfield(point: Vector2) -> Vector2:
