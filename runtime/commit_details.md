@@ -1,8 +1,10 @@
-日時: 2026-03-15 13:16:21 JST
-summary: 内部侵入中の移動候補が既存の内部線と交差・重なり・端点接触する場合に停止するようにした
-target: scripts/player/base_player.gd
+日時: 2026-03-15 13:28:50 JST
+summary: 内部線への手前停止を接触点停止へ変更
+対象:
+scripts/player/base_player.gd
 code_changes:
-・描画中の候補セグメントを既存の trail_points と現在位置から組み立てた内部線に対して判定し無効移動を early return するようにした
-・軸平行セグメント専用の交差・重なり・端点接触判定 helper を追加し直前隣接セグメントの共有端点だけ除外した
+・既存内部線との判定を最初の接触点を返す方式へ変更した
+・描画移動を接触点まで進めて接触後も既存内部線の跨ぎと重なりを継続禁止にした
 verification:
-・tools/run.ps1 を起動してアプリケーション開始を確認した
+・git show 38c6e63 -- scripts/player/base_player.gd で不具合原因を確認した
+・tools/run.ps1 を実行し Godot プロセスの起動を確認した

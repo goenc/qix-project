@@ -130,17 +130,16 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 	var next_position := _clamp_to_playfield(current_position + drawing_direction * move_speed * delta)
 	var is_waiting_to_leave_border := !has_left_border and _is_on_border(current_position)
 	var should_block_border_movement := is_waiting_to_leave_border and _is_on_border(next_position)
-	var would_cross_existing_trail := false
+	var trail_contact := {"hit": false}
 
 	if !should_block_border_movement:
-		would_cross_existing_trail = _would_cross_existing_trail(current_position, next_position)
+		trail_contact = _find_first_trail_contact(current_position, next_position)
+		if bool(trail_contact.get("hit", false)):
+			next_position = trail_contact["point"]
 
-	if !should_block_border_movement and !would_cross_existing_trail:
+	if !should_block_border_movement and current_position.distance_to(next_position) > border_epsilon:
 		_update_drawing_segment(drawing_direction, current_position)
 		position = next_position
-
-	if would_cross_existing_trail:
-		return
 
 	_append_trail_point_if_needed(false)
 	if !has_left_border and !_is_on_border(position):
@@ -413,15 +412,16 @@ func _update_drawing_segment_from_trail() -> void:
 		drawing_move_direction = drawing_segment_direction
 
 
-func _would_cross_existing_trail(from_point: Vector2, to_point: Vector2) -> bool:
+func _find_first_trail_contact(from_point: Vector2, to_point: Vector2) -> Dictionary:
 	if from_point.distance_to(to_point) <= border_epsilon:
-		return false
+		return {"hit": false}
 
 	var visible_points := _build_visible_trail_points()
 	if visible_points.size() < 2:
-		return false
+		return {"hit": false}
 
 	var last_segment_index := visible_points.size() - 2
+	var best_contact := {"hit": false}
 	for i in range(visible_points.size() - 1):
 		var segment_start: Vector2 = visible_points[i]
 		var segment_end: Vector2 = visible_points[i + 1]
@@ -429,19 +429,35 @@ func _would_cross_existing_trail(from_point: Vector2, to_point: Vector2) -> bool
 			i == last_segment_index
 			and (segment_start.distance_to(from_point) <= border_epsilon or segment_end.distance_to(from_point) <= border_epsilon)
 		)
-		if _segments_intersect_or_touch(from_point, to_point, segment_start, segment_end, allow_shared_start):
-			return true
+		var contact := _find_segment_contact_point(
+			from_point,
+			to_point,
+			segment_start,
+			segment_end,
+			allow_shared_start
+		)
+		if !bool(contact.get("hit", false)):
+			continue
+		if (
+			!bool(best_contact.get("hit", false))
+			or float(contact["distance"]) < float(best_contact["distance"]) - border_epsilon
+		):
+			best_contact = contact
 
-	return false
+	return best_contact
 
 
-func _segments_intersect_or_touch(
+func _would_cross_existing_trail(from_point: Vector2, to_point: Vector2) -> bool:
+	return bool(_find_first_trail_contact(from_point, to_point).get("hit", false))
+
+
+func _find_segment_contact_point(
 	a0: Vector2,
 	a1: Vector2,
 	b0: Vector2,
 	b1: Vector2,
 	allow_shared_start := false
-) -> bool:
+) -> Dictionary:
 	var a_is_horizontal := absf(a0.y - a1.y) <= border_epsilon
 	var a_is_vertical := absf(a0.x - a1.x) <= border_epsilon
 	var b_is_horizontal := absf(b0.y - b1.y) <= border_epsilon
@@ -451,27 +467,35 @@ func _segments_intersect_or_touch(
 		var a_fixed := a0.y if a_is_horizontal else a0.x
 		var b_fixed := b0.y if b_is_horizontal else b0.x
 		if absf(a_fixed - b_fixed) > border_epsilon:
-			return false
+			return {"hit": false}
 
-		var a_min := minf(a0.x, a1.x) if a_is_horizontal else minf(a0.y, a1.y)
-		var a_max := maxf(a0.x, a1.x) if a_is_horizontal else maxf(a0.y, a1.y)
+		var a_start := a0.x if a_is_horizontal else a0.y
+		var a_end := a1.x if a_is_horizontal else a1.y
 		var b_min := minf(b0.x, b1.x) if b_is_horizontal else minf(b0.y, b1.y)
 		var b_max := maxf(b0.x, b1.x) if b_is_horizontal else maxf(b0.y, b1.y)
+		var a_min := minf(a_start, a_end)
+		var a_max := maxf(a_start, a_end)
 		var overlap_start := maxf(a_min, b_min)
 		var overlap_end := minf(a_max, b_max)
 
 		if overlap_end < overlap_start - border_epsilon:
-			return false
+			return {"hit": false}
 
 		if allow_shared_start:
-			var shared_value := a0.x if a_is_horizontal else a0.y
+			var shared_value := a_start
 			if absf(overlap_end - overlap_start) <= border_epsilon and absf(overlap_start - shared_value) <= border_epsilon:
-				return false
+				return {"hit": false}
 
-		return true
+		var contact_axis := overlap_start if a_end >= a_start else overlap_end
+		var contact_point := (
+			Vector2(contact_axis, a0.y)
+			if a_is_horizontal
+			else Vector2(a0.x, contact_axis)
+		)
+		return _make_trail_contact(a0, contact_point)
 
 	if !(a_is_horizontal and b_is_vertical) and !(a_is_vertical and b_is_horizontal):
-		return false
+		return {"hit": false}
 
 	var horizontal_start := a0 if a_is_horizontal else b0
 	var horizontal_end := a1 if a_is_horizontal else b1
@@ -480,14 +504,32 @@ func _segments_intersect_or_touch(
 	var intersection_point := Vector2(vertical_start.x, horizontal_start.y)
 
 	if !_is_value_in_axis_range(intersection_point.x, horizontal_start.x, horizontal_end.x):
-		return false
+		return {"hit": false}
 	if !_is_value_in_axis_range(intersection_point.y, vertical_start.y, vertical_end.y):
-		return false
+		return {"hit": false}
 
 	if allow_shared_start and intersection_point.distance_to(a0) <= border_epsilon:
-		return false
+		return {"hit": false}
 
-	return true
+	return _make_trail_contact(a0, intersection_point)
+
+
+func _segments_intersect_or_touch(
+	a0: Vector2,
+	a1: Vector2,
+	b0: Vector2,
+	b1: Vector2,
+	allow_shared_start := false
+) -> bool:
+	return bool(_find_segment_contact_point(a0, a1, b0, b1, allow_shared_start).get("hit", false))
+
+
+func _make_trail_contact(from_point: Vector2, point: Vector2) -> Dictionary:
+	return {
+		"hit": true,
+		"point": point,
+		"distance": from_point.distance_to(point)
+	}
 
 
 func _is_value_in_axis_range(value: float, range_start: float, range_end: float) -> bool:
