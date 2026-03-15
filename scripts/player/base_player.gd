@@ -32,6 +32,7 @@ var drawing_input_order: Dictionary = {
 	&"move_up": 0,
 	&"move_down": 0
 }
+var drawing_move_direction: Vector2 = Vector2.ZERO
 var drawing_segment_direction: Vector2 = Vector2.ZERO
 
 
@@ -124,13 +125,14 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 		_start_rewinding()
 		return
 
+	var drawing_direction := _restrict_drawing_backtracking(direction)
 	var current_position := position
-	var next_position := _clamp_to_playfield(current_position + direction * move_speed * delta)
+	var next_position := _clamp_to_playfield(current_position + drawing_direction * move_speed * delta)
 	var is_waiting_to_leave_border := !has_left_border and _is_on_border(current_position)
 	var should_block_border_movement := is_waiting_to_leave_border and _is_on_border(next_position)
 
 	if !should_block_border_movement:
-		_update_drawing_segment(direction, current_position)
+		_update_drawing_segment(drawing_direction, current_position)
 		position = next_position
 
 	_append_trail_point_if_needed(false)
@@ -145,6 +147,7 @@ func _start_drawing() -> void:
 	state = PlayerState.DRAWING
 	has_left_border = false
 	rewind_index = -1
+	drawing_move_direction = Vector2.ZERO
 	drawing_segment_direction = Vector2.ZERO
 	position = _snap_point_to_border(position)
 	border_progress = _point_to_border_progress(position)
@@ -158,6 +161,7 @@ func _finish_drawing() -> void:
 	position = _snap_point_to_border(position)
 	_append_trail_point_if_needed(true)
 	border_progress = _point_to_border_progress(position)
+	drawing_move_direction = Vector2.ZERO
 	drawing_segment_direction = Vector2.ZERO
 	state = PlayerState.BORDER
 	trail_points = PackedVector2Array()
@@ -171,6 +175,7 @@ func _start_rewinding() -> void:
 	rewind_speed = move_speed
 	_ensure_trail_endpoint(position)
 
+	drawing_move_direction = Vector2.ZERO
 	drawing_segment_direction = Vector2.ZERO
 	state = PlayerState.REWINDING
 	position = trail_points[trail_points.size() - 1]
@@ -246,9 +251,18 @@ func _get_axis_input_order(negative_action: StringName, positive_action: StringN
 	return order
 
 
+func _restrict_drawing_backtracking(direction: Vector2) -> Vector2:
+	if direction == Vector2.ZERO or drawing_move_direction == Vector2.ZERO:
+		return direction
+	if direction.dot(drawing_move_direction) < 0.0:
+		return Vector2.ZERO
+	return direction
+
+
 func _update_drawing_segment(direction: Vector2, current_position: Vector2) -> void:
 	if direction == Vector2.ZERO:
 		return
+	drawing_move_direction = direction
 	if drawing_segment_direction == Vector2.ZERO:
 		drawing_segment_direction = direction
 		return
@@ -341,6 +355,7 @@ func _finish_rewinding() -> void:
 	trail_points = PackedVector2Array()
 	rewind_index = -1
 	has_left_border = false
+	drawing_move_direction = Vector2.ZERO
 	drawing_segment_direction = Vector2.ZERO
 	state = PlayerState.BORDER
 	_update_trail_line()
@@ -377,6 +392,7 @@ func _ensure_trail_endpoint(point: Vector2) -> void:
 
 
 func _update_drawing_segment_from_trail() -> void:
+	drawing_move_direction = Vector2.ZERO
 	drawing_segment_direction = Vector2.ZERO
 	if trail_points.size() < 2:
 		return
@@ -384,8 +400,10 @@ func _update_drawing_segment_from_trail() -> void:
 	var last_segment := trail_points[trail_points.size() - 1] - trail_points[trail_points.size() - 2]
 	if absf(last_segment.x) > absf(last_segment.y):
 		drawing_segment_direction = Vector2(signf(last_segment.x), 0.0)
+		drawing_move_direction = drawing_segment_direction
 	elif absf(last_segment.y) > 0.0:
 		drawing_segment_direction = Vector2(0.0, signf(last_segment.y))
+		drawing_move_direction = drawing_segment_direction
 
 
 func _clamp_to_playfield(point: Vector2) -> Vector2:

@@ -1,0 +1,422 @@
+1. 最小実装の結論
+
+最小構成はこれです。
+
+・盤面は二次元配列で管理する
+・プレイヤーは外周と確保済み領域の上だけ安全移動
+・内部へ入ったら「線引き中」状態に入る
+・線が安全領域へ戻ったら閉路成立
+・敵がいる側を残し、敵がいない側を確保領域に変える
+・一定面積でクリア
+
+この方式なら、Godot の TileMap を使わなくても成立します。TileMap はグリッドマップ用ノードですが、QIX系の最小試作では「ロジック配列 + 自前描画」の方がバグ源が少ないです。TileMap 自体はグリッドベースのマップ表現ノードとして用意されています。
+
+2. シーン構成
+
+おすすめはこれです。
+
+Main
+├─ GameController
+├─ Field
+│  ├─ CapturedAreaRenderer
+│  ├─ TrailRenderer
+│  └─ DebugRenderer
+├─ Player
+├─ Enemies
+│  └─ Enemy_01
+├─ UI
+└─ Camera2D
+
+役割はこうです。
+
+Main
+全体の起動。
+
+GameController
+盤面配列、状態管理、クリア判定、死亡判定、閉路確定処理。
+
+Field
+見た目専用。ロジックは持たせない。
+
+Player
+入力と移動だけ。
+
+Enemies
+敵の移動だけ。
+
+UI
+面積率、残機、クリア表示。
+
+ここで重要なのは、
+「盤面の真実は GameController の配列だけ」
+にすることです。
+
+Line2D や Polygon2D を真実にすると壊れます。
+Line2D と Polygon2D は表示結果です。
+
+3. ノード選定
+Player
+
+Player は CharacterBody2D が無難です。
+CharacterBody2D はスクリプトで動かすキャラクター向けです。壁・衝突付き移動を扱いやすいので、外周沿い移動にも向きます。
+
+推奨構成:
+
+Player(CharacterBody2D)
+├─ CollisionShape2D
+├─ Sprite2D
+└─ Area2D
+   └─ CollisionShape2D
+
+CharacterBody2D 本体
+移動用
+
+子の Area2D
+敵や trail 接触の検知補助用
+
+Enemy
+
+最小実装なら Enemy は Area2D で十分です。
+敵は「押し戻し物理」より「接触判定」が主なので、Area2D の方が軽いです。Area2D は CollisionShape2D / CollisionPolygon2D を子に持ち、重なりの検知に使います。
+
+Enemy_01(Area2D)
+├─ CollisionShape2D
+└─ Sprite2D
+TrailRenderer
+
+Line2D を使う。
+ただし、あくまで線引き中の見た目だけです。Line2D は描画用で、数学的な無限細線ではありません。つまり、当たり判定の真実をこれに任せない方がいいです。
+
+CapturedAreaRenderer
+
+最小版では 2択です。
+
+A. セルを四角描画する
+B. Polygon2D で確保領域を描く
+
+最初は A が安全です。
+Polygon2D は閉じた多角形描画用なので、後で見た目を滑らかにしたくなったら使うくらいでいいです。
+
+4. 盤面データ設計
+
+これが中核です。
+
+enum CellType {
+    EMPTY,      # 未確保領域
+    SAFE,       # 外周または確保済み領域
+    TRAIL,      # 線引き中の仮線
+    WALL        # 外枠
+}
+
+保持データはこれだけでいいです。
+
+var grid_width: int = 80
+var grid_height: int = 60
+var cell_size: int = 8
+
+var cells: Array = []                 # 2次元配列
+var trail_cells: Array[Vector2i] = [] # 今引いている線
+var captured_percent: float = 0.0
+var player_state: int = STATE_SAFE
+
+重要なのは TRAIL を一時セルとして持つことです。
+これで「線引き中に敵が触れたら死ぬ」が単純になります。
+
+5. プレイヤー状態機械
+
+最小なら3状態で足ります。
+
+enum PlayerState {
+    SAFE_MOVE,     # 安全領域上を移動
+    DRAWING,       # 内部で線を引いている
+    DEAD
+}
+
+遷移はこうです。
+
+SAFE_MOVE
+↓ 内部へ踏み出す
+DRAWING
+↓ SAFE に戻る
+閉路確定 → SAFE_MOVE
+↓ 敵が TRAIL に接触
+DEAD
+
+この設計の利点は、QIX系の核心である「安全移動」と「無防備な線引き」を明確に分離できることです。
+
+6. 入力と移動の最小仕様
+
+最小版では4方向固定にしてください。
+斜め移動は切ってください。
+
+理由は単純です。
+
+・閉路判定が簡単
+・セル更新が簡単
+・敵接触の判定が簡単
+・見た目とロジックのズレが減る
+
+移動は「セル単位」でも「ピクセル単位」でもいいですが、最小実装ではセル単位が安全です。
+
+おすすめはこれです。
+
+・内部ロジックは 1 マスずつ進む
+・見た目だけ Tween か補間で滑らかに見せる
+
+7. 閉路確定アルゴリズム
+
+ここが一番重要です。
+
+最小版では、こうします。
+
+プレイヤーが SAFE から EMPTY に入ったら DRAWING 開始
+
+通過セルを TRAIL にする
+
+再び SAFE セルへ戻ったら閉路成立
+
+その時点で TRAIL を一時的に壁扱いにする
+
+EMPTY 領域を flood fill する
+
+敵が到達できる側を「残す」
+
+敵が到達できない側を SAFE に変える
+
+TRAIL も SAFE に変える
+
+これです。
+
+つまり本質は「線で2分割」ではなく、
+「敵がいる側を残す flood fill」です。
+
+実装イメージはこうです。
+
+func close_trail():
+    mark_trail_as_temporary_block()
+
+    var reachable_from_enemy = flood_fill_from_enemies()
+    for y in grid_height:
+        for x in grid_width:
+            var p = Vector2i(x, y)
+            if cells[y][x] == EMPTY and not reachable_from_enemy.has(p):
+                cells[y][x] = SAFE
+
+    for p in trail_cells:
+        cells[p.y][p.x] = SAFE
+
+    trail_cells.clear()
+
+これが最小で最も強いです。
+Geometry2D のポリゴンクリップを使う方法もありますが、最小実装では重いです。Geometry2D には polygon clip などの幾何処理がありますが、最初からそこへ行く必要はありません。
+
+8. 敵ロジックの最小仕様
+
+敵は1体だけでいいです。
+
+仕様はこれで足ります。
+
+・EMPTY 領域内を等速で移動
+・SAFE 領域には入らない
+・TRAIL に触れたらプレイヤー死亡
+・プレイヤー本体に触れても、DRAWING 中なら死亡
+
+最初は跳ね返り式で十分です。
+
+var dir := Vector2(1, 0.7).normalized()
+var speed := 90.0
+
+毎フレーム進めて、
+次位置が SAFE / WALL に当たるなら反射。
+
+これだけです。
+
+最初から経路探索は不要です。
+AStarGrid2D は Godot にありますが、QIX系の最小試作に入れる必要はありません。AStarGrid2D は部分グリッド上の経路探索用です。
+
+9. 当たり判定の真実
+
+ここは曖昧にすると壊れます。
+
+真実はノード衝突ではなく grid です。
+
+つまり、
+
+・敵がどのセルにいるか
+・プレイヤーがどのセルにいるか
+・そのセルが SAFE / EMPTY / TRAIL のどれか
+
+これを毎フレーム見ます。
+
+ノードの collision は補助でしかありません。
+
+理由は、QIX系の死亡条件は「線に触れたか」であって、見た目のスプライト衝突ではないからです。
+
+実装例:
+
+func enemy_hits_trail(enemy_pos: Vector2) -> bool:
+    var cell = world_to_cell(enemy_pos)
+    return cells[cell.y][cell.x] == TRAIL
+
+これが一番壊れにくいです。
+
+10. 描画の最小仕様
+
+描画は3層で十分です。
+
+SAFE 領域
+
+EMPTY 領域
+
+TRAIL
+
+最初は _draw() で四角を塗るだけでいいです。
+
+func _draw():
+    for y in grid_height:
+        for x in grid_width:
+            var rect = Rect2(x * cell_size, y * cell_size, cell_size, cell_size)
+            match cells[y][x]:
+                CellType.SAFE:
+                    draw_rect(rect, Color(0.2, 0.5, 0.9))
+                CellType.TRAIL:
+                    draw_rect(rect, Color(1.0, 0.9, 0.3))
+
+Line2D を使うのは、trail を少し綺麗に見せたい時だけでいいです。
+Line2D は polyline 描画用です。
+
+11. UIの最小仕様
+
+これだけです。
+
+・確保率
+・残機
+・状態表示
+
+Capture: 43%
+Lives: 3
+State: DRAWING
+
+スコアは後回しでいいです。
+QIX系の最初の面白さは点数ではなく、盤面変化です。
+
+12. 実装順
+
+この順番が安全です。
+
+grid 初期化
+
+SAFE 外周だけ作る
+
+プレイヤーを SAFE 上で動かす
+
+EMPTY に入ったら TRAIL を置く
+
+SAFE に戻ったら閉路確定
+
+flood fill で敵側を残す
+
+敵1体を動かす
+
+TRAIL 接触で死亡
+
+確保率でクリア
+
+演出追加
+
+逆順にすると死にます。
+
+13. ここは最初からやらない方がいい
+
+やらない方がいいものを切ります。
+
+・ベクター多角形による完全領域分割
+・斜め移動
+・複数敵
+・境界を這う敵
+・ステージギミック
+・ネット対戦
+・スキルツリー
+・物理演算ベース移動
+
+全部、最小版の敵です。
+
+14. 最小フォルダ構成
+res://
+  scenes/
+    main.tscn
+    player.tscn
+    enemy.tscn
+  scripts/
+    game_controller.gd
+    field_renderer.gd
+    player.gd
+    enemy.gd
+  ui/
+    hud.tscn
+15. 最小責務分離
+
+責務はこう切ってください。
+
+game_controller.gd
+
+盤面配列
+
+閉路確定
+
+flood fill
+
+勝敗判定
+
+player.gd
+
+入力
+
+移動
+
+trail 開始 / 継続 / 終了通知
+
+enemy.gd
+
+移動
+
+自分のセル位置通知
+
+field_renderer.gd
+
+cells を見て描画
+
+これが一番保守しやすいです。
+
+16. 最初の完成条件
+
+完成条件はこれで十分です。
+
+・外周を移動できる
+・内部で線を引ける
+・戻ると面が取れる
+・敵が線に触れると死ぬ
+・70% でクリア
+
+これができた時点で、もう QIX系として成立しています。
+
+17. 次にやるべき拡張
+
+最小実装の次はこの順です。
+
+境界を這う敵
+
+線引き速度アップ / ダッシュ
+
+ステージごとの敵パターン
+
+取った面に機能を持たせる
+
+ボス
+
+一番価値が高いのは 4 です。
+「取った面がただの得点」だと古典の焼き直しで終わります。
+
+必要なら次に、
+「Godot 4.x 用のスクリプト雛形一式」
+までそのまま書きます。
