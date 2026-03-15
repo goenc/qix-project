@@ -1,7 +1,5 @@
-QIXの囲み確定表示を追加
+切り取り後の有効外周を残存領域ベースに更新
 
-・QIXの囲み確定表示とCLAIMED更新を追加
-・BasePlayerの描画完了時に開始点と終了点と複製した軌跡を通知するsignalを追加した
-・BaseMainに外周経路から候補領域を作る分割処理とボス不在側のclaimed描画とCLAIMED比率更新を追加した
-・BaseMainシーンにBossノードを追加してBBOS位置を参照できるようにした
-・C:\Godot\godot.exe --headless --path . --scene res://scenes/base_main.tscn --quit-after 1で起動確認した
+・切り取り後のボス側残存領域から有効外周を再構築し 非採用の旧外周は薄い表示専用線として残るようにした
+・自機の白線移動と内外判定を active_border_loop と remaining_polygon 基準へ差し替えた
+・base_main シーンの headless 実行で構文確認を行った

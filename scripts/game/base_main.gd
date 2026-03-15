@@ -22,7 +22,11 @@ const TITLE_SCENE_PATH := "res://scenes/title_main.tscn"
 
 var playfield_rect: Rect2 = Rect2()
 var claimed_polygons: Array[PackedVector2Array] = []
+var remaining_polygon: PackedVector2Array = PackedVector2Array()
+var active_border_loop: PackedVector2Array = PackedVector2Array()
+var inactive_border_segments: Array[PackedVector2Array] = []
 var claimed_area := 0.0
+var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
 
 
 func _ready() -> void:
@@ -30,6 +34,7 @@ func _ready() -> void:
 	get_tree().paused = false
 	_register_input_map()
 	_recalculate_playfield_rect()
+	_initialize_playfield_border_state()
 	_apply_playfield_to_entities()
 	if is_instance_valid(base_player) and !base_player.drawing_completed.is_connected(_on_player_drawing_completed):
 		base_player.drawing_completed.connect(_on_player_drawing_completed)
@@ -134,12 +139,15 @@ func _draw() -> void:
 	for polygon in claimed_polygons:
 		if polygon.size() >= 3:
 			draw_colored_polygon(polygon, claimed_fill_color)
+	_draw_border_segments(inactive_border_segments, inactive_border_color)
+	_draw_border_loop(active_border_loop, playfield_border_color)
 	draw_rect(outer_rect, playfield_outer_frame_color, false, 2.0)
-	draw_rect(playfield_rect, playfield_border_color, false, playfield_border_width)
 
 
 func _on_viewport_size_changed() -> void:
 	_recalculate_playfield_rect()
+	if claimed_polygons.is_empty():
+		_initialize_playfield_border_state()
 	_apply_playfield_to_entities()
 	_sync_boss_marker()
 	_recalculate_claimed_area()
@@ -165,8 +173,11 @@ func _recalculate_playfield_rect() -> void:
 
 
 func _apply_playfield_to_entities() -> void:
+	if active_border_loop.is_empty() or remaining_polygon.is_empty():
+		_initialize_playfield_border_state()
 	if is_instance_valid(base_player):
 		base_player.set_playfield_rect(playfield_rect)
+		_sync_player_border_state()
 	if is_instance_valid(bbos):
 		bbos.set_playfield_rect(playfield_rect)
 
@@ -184,7 +195,11 @@ func _on_player_drawing_completed(
 	if !is_instance_valid(boss):
 		push_warning("Claim skipped: boss reference is missing.")
 		return
+	if active_border_loop.size() < 3:
+		push_warning("Claim skipped: active border loop is not ready.")
+		return
 
+	var previous_active_border := active_border_loop.duplicate()
 	var snapped_start := _snap_point_to_border(start_point)
 	var snapped_end := _snap_point_to_border(end_point)
 	var start_progress := _point_to_border_progress(snapped_start)
@@ -214,8 +229,21 @@ func _on_player_drawing_completed(
 		return
 
 	var claimed_polygon := candidate_b if boss_in_a else candidate_a
+	var next_remaining_polygon := candidate_a if boss_in_a else candidate_b
+	var remaining_path_clockwise := boss_in_a
+	if !_rebuild_active_border_state(
+		previous_active_border,
+		next_remaining_polygon,
+		snapped_start,
+		snapped_end,
+		remaining_path_clockwise
+	):
+		push_warning("Claim skipped: active border loop could not be rebuilt from the boss-side region.")
+		return
+
 	claimed_polygons.append(_ensure_consistent_polygon_winding(claimed_polygon))
 	_recalculate_claimed_area()
+	_sync_player_border_state()
 	queue_redraw()
 	_sync_hud()
 
@@ -239,20 +267,39 @@ func _build_claim_candidate(
 
 
 func _build_border_path(from_point: Vector2, to_point: Vector2, clockwise: bool) -> PackedVector2Array:
-	var from_progress := _point_to_border_progress(_snap_point_to_border(from_point))
-	var to_progress := _point_to_border_progress(_snap_point_to_border(to_point))
-	var total_distance := _border_travel_distance(from_progress, to_progress, clockwise)
+	return _build_loop_path(active_border_loop, from_point, to_point, clockwise)
+
+
+func _build_loop_path(
+	loop: PackedVector2Array,
+	from_point: Vector2,
+	to_point: Vector2,
+	clockwise: bool
+) -> PackedVector2Array:
 	var path := PackedVector2Array()
+	if loop.size() < 2:
+		return path
+
+	var snapped_from := _snap_point_to_loop(loop, from_point)
+	var snapped_to := _snap_point_to_loop(loop, to_point)
+	var from_progress := _point_to_loop_progress(loop, snapped_from)
+	var to_progress := _point_to_loop_progress(loop, snapped_to)
+	var total_distance := _loop_travel_distance(_get_loop_total_length(loop), from_progress, to_progress, clockwise)
 	if total_distance <= 0.0:
 		return path
 
 	var corners := []
-	for corner in _get_border_corner_infos():
-		var distance := _border_travel_distance(from_progress, float(corner["progress"]), clockwise)
+	for vertex in _get_loop_vertex_infos(loop):
+		var distance := _loop_travel_distance(
+			_get_loop_total_length(loop),
+			from_progress,
+			float(vertex["progress"]),
+			clockwise
+		)
 		if distance > 0.001 and distance < total_distance - 0.001:
 			corners.append({
 				"distance": distance,
-				"point": corner["point"]
+				"point": vertex["point"]
 			})
 
 	corners.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
@@ -264,19 +311,40 @@ func _build_border_path(from_point: Vector2, to_point: Vector2, clockwise: bool)
 	return path
 
 
-func _get_border_corner_infos() -> Array:
-	var left := playfield_rect.position.x
-	var top := playfield_rect.position.y
-	var right := playfield_rect.end.x
-	var bottom := playfield_rect.end.y
-	var width := playfield_rect.size.x
-	var height := playfield_rect.size.y
-	return [
-		{"progress": 0.0, "point": Vector2(left, top)},
-		{"progress": width, "point": Vector2(right, top)},
-		{"progress": width + height, "point": Vector2(right, bottom)},
-		{"progress": width + height + width, "point": Vector2(left, bottom)}
-	]
+func _build_loop_path_points(
+	loop: PackedVector2Array,
+	from_point: Vector2,
+	to_point: Vector2,
+	clockwise: bool
+) -> PackedVector2Array:
+	var path := PackedVector2Array()
+	if loop.size() < 2:
+		return path
+
+	var snapped_from := _snap_point_to_loop(loop, from_point)
+	var snapped_to := _snap_point_to_loop(loop, to_point)
+	path.append(snapped_from)
+	for point in _build_loop_path(loop, snapped_from, snapped_to, clockwise):
+		if path.is_empty() or !path[path.size() - 1].is_equal_approx(point):
+			path.append(point)
+	if path.is_empty() or !path[path.size() - 1].is_equal_approx(snapped_to):
+		path.append(snapped_to)
+	return _sanitize_trail_polyline(path)
+
+
+func _get_loop_vertex_infos(loop: PackedVector2Array) -> Array:
+	var vertex_infos: Array = []
+	if loop.size() < 2:
+		return vertex_infos
+
+	var progress := 0.0
+	for index in range(loop.size()):
+		vertex_infos.append({
+			"progress": progress,
+			"point": loop[index]
+		})
+		progress += loop[index].distance_to(loop[(index + 1) % loop.size()])
+	return vertex_infos
 
 
 func _sanitize_trail_polyline(points: PackedVector2Array) -> PackedVector2Array:
@@ -345,27 +413,11 @@ func _sync_boss_marker() -> void:
 
 
 func _border_travel_distance(from_progress: float, to_progress: float, clockwise: bool) -> float:
-	if clockwise:
-		return _wrap_border_progress(to_progress - from_progress)
-	return _wrap_border_progress(from_progress - to_progress)
+	return _loop_travel_distance(_get_loop_total_length(active_border_loop), from_progress, to_progress, clockwise)
 
 
 func _point_to_border_progress(point: Vector2) -> float:
-	var snapped := _snap_point_to_border(point)
-	var left := playfield_rect.position.x
-	var top := playfield_rect.position.y
-	var width := playfield_rect.size.x
-	var height := playfield_rect.size.y
-	var right := playfield_rect.end.x
-	var bottom := playfield_rect.end.y
-
-	if absf(snapped.y - top) <= 0.001:
-		return clampf(snapped.x - left, 0.0, width)
-	if absf(snapped.x - right) <= 0.001:
-		return width + clampf(snapped.y - top, 0.0, height)
-	if absf(snapped.y - bottom) <= 0.001:
-		return width + height + clampf(right - snapped.x, 0.0, width)
-	return width + height + width + clampf(bottom - snapped.y, 0.0, height)
+	return _point_to_loop_progress(active_border_loop, point)
 
 
 func _clamp_to_playfield(point: Vector2) -> Vector2:
@@ -376,33 +428,163 @@ func _clamp_to_playfield(point: Vector2) -> Vector2:
 
 
 func _snap_point_to_border(point: Vector2) -> Vector2:
-	var clamped := _clamp_to_playfield(point)
-	var left_dist := absf(clamped.x - playfield_rect.position.x)
-	var right_dist := absf(playfield_rect.end.x - clamped.x)
-	var top_dist := absf(clamped.y - playfield_rect.position.y)
-	var bottom_dist := absf(playfield_rect.end.y - clamped.y)
-	var nearest := minf(minf(left_dist, right_dist), minf(top_dist, bottom_dist))
-
-	if is_equal_approx(nearest, left_dist):
-		clamped.x = playfield_rect.position.x
-	elif is_equal_approx(nearest, right_dist):
-		clamped.x = playfield_rect.end.x
-	elif is_equal_approx(nearest, top_dist):
-		clamped.y = playfield_rect.position.y
-	else:
-		clamped.y = playfield_rect.end.y
-	return clamped
+	return _snap_point_to_loop(active_border_loop, point)
 
 
 func _perimeter_length() -> float:
-	return playfield_rect.size.x * 2.0 + playfield_rect.size.y * 2.0
+	return _get_loop_total_length(active_border_loop)
 
 
 func _wrap_border_progress(progress: float) -> float:
-	var perimeter := _perimeter_length()
-	if perimeter <= 0.0:
+	return _wrap_loop_progress(progress, _perimeter_length())
+
+
+func _wrap_loop_progress(progress: float, total_length: float) -> float:
+	if total_length <= 0.0:
 		return 0.0
-	var wrapped := fmod(progress, perimeter)
+	var wrapped := fmod(progress, total_length)
 	if wrapped < 0.0:
-		wrapped += perimeter
+		wrapped += total_length
 	return wrapped
+
+
+func _loop_travel_distance(total_length: float, from_progress: float, to_progress: float, clockwise: bool) -> float:
+	if total_length <= 0.0:
+		return 0.0
+	if clockwise:
+		return _wrap_loop_progress(to_progress - from_progress, total_length)
+	return _wrap_loop_progress(from_progress - to_progress, total_length)
+
+
+func _point_to_loop_progress(loop: PackedVector2Array, point: Vector2) -> float:
+	return float(_get_loop_projection(loop, point).get("progress", 0.0))
+
+
+func _snap_point_to_loop(loop: PackedVector2Array, point: Vector2) -> Vector2:
+	return _get_loop_projection(loop, point).get("point", point)
+
+
+func _get_loop_projection(loop: PackedVector2Array, point: Vector2) -> Dictionary:
+	if loop.size() < 2:
+		return {
+			"point": _clamp_to_playfield(point),
+			"progress": 0.0,
+			"distance": point.distance_to(_clamp_to_playfield(point))
+		}
+
+	var best_distance := INF
+	var best_point := loop[0]
+	var best_progress := 0.0
+	var progress := 0.0
+	for index in range(loop.size()):
+		var segment_start: Vector2 = loop[index]
+		var segment_end: Vector2 = loop[(index + 1) % loop.size()]
+		var segment_length := segment_start.distance_to(segment_end)
+		if segment_length <= 0.001:
+			continue
+
+		var projected_point := Geometry2D.get_closest_point_to_segment(point, segment_start, segment_end)
+		var distance := point.distance_to(projected_point)
+		if distance < best_distance - 0.001:
+			best_distance = distance
+			best_point = projected_point
+			best_progress = progress + clampf(segment_start.distance_to(projected_point), 0.0, segment_length)
+
+		progress += segment_length
+
+	return {
+		"point": best_point,
+		"progress": best_progress,
+		"distance": best_distance
+	}
+
+
+func _get_loop_total_length(loop: PackedVector2Array) -> float:
+	if loop.size() < 2:
+		return 0.0
+
+	var total_length := 0.0
+	for index in range(loop.size()):
+		total_length += loop[index].distance_to(loop[(index + 1) % loop.size()])
+	return total_length
+
+
+func _initialize_playfield_border_state() -> void:
+	var rect_polygon := _ensure_consistent_polygon_winding(_rect_to_polygon(playfield_rect))
+	remaining_polygon = rect_polygon
+	active_border_loop = rect_polygon.duplicate()
+	inactive_border_segments.clear()
+
+
+func _sync_player_border_state() -> void:
+	if is_instance_valid(base_player):
+		base_player.set_active_border(active_border_loop, remaining_polygon)
+
+
+func _rebuild_active_border_state(
+	previous_active_border: PackedVector2Array,
+	next_remaining_polygon: PackedVector2Array,
+	start_point: Vector2,
+	end_point: Vector2,
+	remaining_path_clockwise: bool
+) -> bool:
+	var sanitized_remaining := _ensure_consistent_polygon_winding(_sanitize_polygon(next_remaining_polygon))
+	if !_is_valid_claim_polygon(sanitized_remaining):
+		return false
+
+	var next_active_border := _sanitize_polygon(sanitized_remaining)
+	if next_active_border.size() < 3:
+		return false
+
+	var removed_path := _build_loop_path_points(
+		previous_active_border,
+		start_point,
+		end_point,
+		remaining_path_clockwise
+	)
+
+	remaining_polygon = sanitized_remaining
+	active_border_loop = next_active_border
+	inactive_border_segments = _polyline_to_segments(removed_path)
+	return true
+
+
+func _polyline_to_segments(points: PackedVector2Array) -> Array[PackedVector2Array]:
+	var segments: Array[PackedVector2Array] = []
+	for index in range(points.size() - 1):
+		var segment_start: Vector2 = points[index]
+		var segment_end: Vector2 = points[index + 1]
+		if segment_start.is_equal_approx(segment_end):
+			continue
+		var segment := PackedVector2Array()
+		segment.append(segment_start)
+		segment.append(segment_end)
+		segments.append(segment)
+	return segments
+
+
+func _draw_border_loop(loop: PackedVector2Array, color: Color) -> void:
+	if loop.size() < 2:
+		return
+	for index in range(loop.size()):
+		draw_line(loop[index], loop[(index + 1) % loop.size()], color, playfield_border_width)
+
+
+func _draw_border_segments(segments: Array[PackedVector2Array], color: Color) -> void:
+	for segment in segments:
+		if segment.size() < 2:
+			continue
+		for index in range(segment.size() - 1):
+			draw_line(segment[index], segment[index + 1], color, playfield_border_width)
+
+
+func _rect_to_polygon(rect: Rect2) -> PackedVector2Array:
+	var polygon := PackedVector2Array()
+	if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+		return polygon
+
+	polygon.append(rect.position)
+	polygon.append(Vector2(rect.end.x, rect.position.y))
+	polygon.append(rect.end)
+	polygon.append(Vector2(rect.position.x, rect.end.y))
+	return polygon
