@@ -1,6 +1,8 @@
 extends Node2D
 class_name BasePlayer
 
+signal drawing_completed(start_point: Vector2, end_point: Vector2, trail_points: PackedVector2Array)
+
 @export var move_speed := 240.0
 @export var border_epsilon := 2.0
 @export var trail_min_point_distance := 8.0
@@ -166,6 +168,9 @@ func _start_drawing() -> void:
 func _finish_drawing() -> void:
 	position = _snap_point_to_border(position)
 	_append_trail_point_if_needed(true)
+	if trail_points.size() >= 2:
+		var finalized_trail := trail_points.duplicate()
+		drawing_completed.emit(finalized_trail[0], finalized_trail[finalized_trail.size() - 1], finalized_trail)
 	border_progress = _point_to_border_progress(position)
 	drawing_move_direction = Vector2.ZERO
 	drawing_segment_direction = Vector2.ZERO

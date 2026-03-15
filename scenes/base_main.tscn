@@ -11,6 +11,9 @@ script = ExtResource("1_script")
 
 [node name="BBOS" parent="." instance=ExtResource("3_bbos_scene")]
 
+[node name="Boss" type="Node2D" parent="."]
+position = Vector2(320, 240)
+
 [node name="Ui" type="CanvasLayer" parent="."]
 
 [node name="Root" type="Control" parent="Ui"]
