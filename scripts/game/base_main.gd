@@ -171,8 +171,6 @@ func _draw() -> void:
 		return
 
 	var outer_rect := playfield_rect.grow(playfield_outer_frame_padding)
-	if remaining_polygon.size() >= 3:
-		draw_colored_polygon(remaining_polygon, playfield_fill_color)
 	for polygon in claimed_polygons:
 		if polygon.size() >= 3:
 			draw_colored_polygon(polygon, claimed_fill_color)

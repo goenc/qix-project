@@ -1,6 +1,5 @@
-タイトル開始入力を qix_start に分離
+ゲーム画面のグレー背景塗りを除去
 
-・project.godot に qix_start を追加し Enter Space A START をタイトル開始専用入力として登録
-・title_main.gd の開始判定を qix_start ベースの _input に変更し setup 後にウィンドウフォーカスを戻す処理を追加
-・title.gd の開始文言を PRESS A / ENTER TO START に変更
-・Godot headless で対象スクリプトの check-only とプロジェクト短時間起動を確認
+・scripts/game/base_main.gd の _draw から remaining_polygon に対するグレー塗り描画を削除
+・claimed_polygons の紫塗りと inactive_border_segments と current_outer_loop と outer_rect の描画処理は維持
+・Godot headless で base_main.gd の check-only と base_main.tscn の短時間起動を確認
