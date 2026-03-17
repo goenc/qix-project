@@ -1,6 +1,7 @@
 extends Node2D
 
 const TITLE_SCENE_PATH := "res://scenes/title_main.tscn"
+const InputActionUtils = preload("res://scripts/common/input_action_utils.gd")
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const BBOS_SCENE = preload("res://scenes/enemy/bbos.tscn")
 const ACTION_QIX_DRAW := &"qix_draw"
@@ -31,6 +32,7 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 
 var playfield_rect: Rect2 = Rect2()
 var stage_cover_polygon: PackedVector2Array = PackedVector2Array()
+var stage_cover_uvs: PackedVector2Array = PackedVector2Array()
 var claimed_polygons: Array[PackedVector2Array] = []
 var current_outer_loop: PackedVector2Array = PackedVector2Array()
 var remaining_polygon: PackedVector2Array = PackedVector2Array()
@@ -133,41 +135,23 @@ func _register_input_map() -> void:
 
 
 func _ensure_action(action_name: String, events: Array[InputEvent]) -> void:
-	if !InputMap.has_action(action_name):
-		InputMap.add_action(action_name)
-	if !InputMap.action_get_events(action_name).is_empty():
-		return
-	for event in events:
-		InputMap.action_add_event(action_name, event)
+	InputActionUtils.ensure_action(action_name, events)
 
 
 func _replace_action_events(action_name: String, events: Array[InputEvent]) -> void:
-	if !InputMap.has_action(action_name):
-		InputMap.add_action(action_name)
-	InputMap.action_erase_events(action_name)
-	for event in events:
-		InputMap.action_add_event(action_name, event)
+	InputActionUtils.replace_action_events(action_name, events)
 
 
 func _sync_draw_action_events(events: Array[InputEvent]) -> void:
-	if !InputMap.has_action(ACTION_QIX_DRAW):
-		return
-	InputMap.action_erase_events(ACTION_QIX_DRAW)
-	for event in events:
-		InputMap.action_add_event(ACTION_QIX_DRAW, event)
+	InputActionUtils.replace_existing_action_events(ACTION_QIX_DRAW, events)
 
 
 func _key_event(keycode: Key) -> InputEventKey:
-	var event := InputEventKey.new()
-	event.keycode = keycode
-	event.physical_keycode = keycode
-	return event
+	return InputActionUtils.key_event(keycode, true, true)
 
 
 func _joypad_button(button_index: JoyButton) -> InputEventJoypadButton:
-	var event := InputEventJoypadButton.new()
-	event.button_index = button_index
-	return event
+	return InputActionUtils.joypad_button(button_index)
 
 
 func _draw() -> void:
@@ -179,7 +163,7 @@ func _draw() -> void:
 		var cover_colors := PackedColorArray()
 		for _index in range(stage_cover_polygon.size()):
 			cover_colors.append(Color.WHITE)
-		draw_polygon(stage_cover_polygon, cover_colors, _build_stage_cover_uvs(stage_cover_polygon), STAGE_COVER_BACKGROUND_TEXTURE)
+		draw_polygon(stage_cover_polygon, cover_colors, stage_cover_uvs, STAGE_COVER_BACKGROUND_TEXTURE)
 
 	var outer_rect := playfield_rect.grow(playfield_outer_frame_padding)
 	for polygon in claimed_polygons:
@@ -204,6 +188,8 @@ func _on_viewport_size_changed() -> void:
 
 func _recalculate_playfield_rect() -> void:
 	playfield_rect = _create_playfield_rect()
+	if stage_cover_polygon.size() >= 3:
+		_rebuild_stage_cover_uvs()
 
 
 func _ensure_bbos_node() -> void:
@@ -232,7 +218,7 @@ func _initialize_outer_loop_from_rect() -> void:
 	remaining_polygon = _create_playfield_cover_polygon()
 	var initial_stage_cover_source := remaining_polygon if remaining_polygon.size() >= 3 else _create_playfield_cover_polygon()
 	_rebuild_stage_cover_polygon_from_polygon(initial_stage_cover_source)
-	_log_stage_cover_polygon_sizes("initialize")
+	queue_redraw()
 	inactive_border_segments.clear()
 	if claimed_polygons.is_empty():
 		claimed_area = 0.0
@@ -264,32 +250,58 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 		push_warning("Capture skipped: outer loop is not ready.")
 		return
 
-	var epsilon := 2.0
-	if is_instance_valid(base_player):
-		epsilon = base_player.border_epsilon
-
-	var candidate_loops := PlayfieldBoundary.split_outer_loop_by_trail(current_outer_loop, trail_points, epsilon)
+	var epsilon := _resolve_capture_epsilon()
+	var candidate_loops := _build_capture_candidate_loops(trail_points, epsilon)
 	if candidate_loops.size() < 2:
 		push_warning("Capture skipped: candidate outer loops could not be generated.")
 		return
 
-	_sync_boss_marker()
-	var selection_point := _get_boss_selection_point()
-	var retained_index := PlayfieldBoundary.select_loop_containing_point(candidate_loops, selection_point, epsilon)
+	var retained_index := _select_boss_side_loop(candidate_loops, epsilon)
 	if retained_index < 0 or retained_index >= candidate_loops.size():
 		push_warning("Capture skipped: boss-side outer loop could not be determined.")
 		return
 
-	var retained_candidate: Dictionary = candidate_loops[retained_index]
+	_apply_retained_capture_loop(candidate_loops[retained_index])
+	_append_claimed_capture_results(candidate_loops, retained_index)
+	_finalize_capture_closed()
+
+
+func _get_boss_selection_point() -> Vector2:
+	if is_instance_valid(bbos):
+		return bbos.global_position
+	if is_instance_valid(boss):
+		return boss.global_position
+	return current_outer_loop[0]
+
+
+func _resolve_capture_epsilon() -> float:
+	var epsilon := 2.0
+	if is_instance_valid(base_player):
+		epsilon = base_player.border_epsilon
+	return epsilon
+
+
+func _build_capture_candidate_loops(trail_points: PackedVector2Array, epsilon: float) -> Array[Dictionary]:
+	return PlayfieldBoundary.split_outer_loop_by_trail(current_outer_loop, trail_points, epsilon)
+
+
+func _select_boss_side_loop(candidate_loops: Array[Dictionary], epsilon: float) -> int:
+	_sync_boss_marker()
+	var selection_point := _get_boss_selection_point()
+	return PlayfieldBoundary.select_loop_containing_point(candidate_loops, selection_point, epsilon)
+
+
+func _apply_retained_capture_loop(retained_candidate: Dictionary) -> void:
 	current_outer_loop = retained_candidate.get("loop", PackedVector2Array())
 	var retained_polygon: PackedVector2Array = retained_candidate.get("polygon", PackedVector2Array())
 	if retained_polygon.size() >= 3:
 		remaining_polygon = retained_polygon
 	var stage_cover_source := retained_polygon if retained_polygon.size() >= 3 else remaining_polygon
 	_rebuild_stage_cover_polygon_from_polygon(stage_cover_source)
-	_log_stage_cover_polygon_sizes("capture", retained_polygon.size())
 	inactive_border_segments.clear()
 
+
+func _append_claimed_capture_results(candidate_loops: Array[Dictionary], retained_index: int) -> void:
 	for index in range(candidate_loops.size()):
 		if index == retained_index:
 			continue
@@ -299,20 +311,14 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 		var removed_path: PackedVector2Array = candidate_loops[index].get("boundary_path", PackedVector2Array())
 		inactive_border_segments.append_array(_polyline_to_segments(removed_path))
 
+
+func _finalize_capture_closed() -> void:
 	_recalculate_claimed_area()
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
 	_sync_boss_marker()
 	queue_redraw()
 	_sync_hud()
-
-
-func _get_boss_selection_point() -> Vector2:
-	if is_instance_valid(bbos):
-		return bbos.global_position
-	if is_instance_valid(boss):
-		return boss.global_position
-	return current_outer_loop[0]
 
 
 func _recalculate_claimed_area() -> void:
@@ -372,7 +378,11 @@ func _rebuild_stage_cover_polygon_from_polygon(source_polygon: PackedVector2Arra
 		return
 
 	stage_cover_polygon = rebuilt_polygon.duplicate()
-	queue_redraw()
+	_rebuild_stage_cover_uvs()
+
+
+func _rebuild_stage_cover_uvs() -> void:
+	stage_cover_uvs = _build_stage_cover_uvs(stage_cover_polygon)
 
 
 func _build_stage_cover_uvs(points: PackedVector2Array) -> PackedVector2Array:
@@ -386,30 +396,6 @@ func _build_stage_cover_uvs(points: PackedVector2Array) -> PackedVector2Array:
 			clampf((point.y - playfield_rect.position.y) / playfield_rect.size.y, 0.0, 1.0)
 		))
 	return uvs
-
-
-func _log_stage_cover_polygon_sizes(context: String, retained_polygon_size: int = -1) -> void:
-	if retained_polygon_size >= 0:
-		print(
-			"Stage cover sync ",
-			context,
-			": remaining=",
-			remaining_polygon.size(),
-			" stage_cover=",
-			stage_cover_polygon.size(),
-			" retained=",
-			retained_polygon_size
-		)
-		return
-
-	print(
-		"Stage cover sync ",
-		context,
-		": remaining=",
-		remaining_polygon.size(),
-		" stage_cover=",
-		stage_cover_polygon.size()
-	)
 
 
 func _draw_border_loop(loop: PackedVector2Array, color: Color) -> void:

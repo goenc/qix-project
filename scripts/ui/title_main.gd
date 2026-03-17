@@ -1,6 +1,7 @@
 extends Node
 
 const MAIN_SCENE_PATH := "res://scenes/base_main.tscn"
+const InputActionUtils = preload("res://scripts/common/input_action_utils.gd")
 
 @onready var title_screen: TitleScreen = $Title
 
@@ -45,21 +46,12 @@ func _grab_window_focus() -> void:
 
 
 func _ensure_action(action_name: String, events: Array[InputEvent]) -> void:
-	if !InputMap.has_action(action_name):
-		InputMap.add_action(action_name)
-	if !InputMap.action_get_events(action_name).is_empty():
-		return
-	for event in events:
-		InputMap.action_add_event(action_name, event)
+	InputActionUtils.ensure_action(action_name, events)
 
 
 func _key_event(keycode: Key) -> InputEventKey:
-	var event := InputEventKey.new()
-	event.physical_keycode = keycode
-	return event
+	return InputActionUtils.key_event(keycode, false, true)
 
 
 func _joypad_button(button_index: JoyButton) -> InputEventJoypadButton:
-	var event := InputEventJoypadButton.new()
-	event.button_index = button_index
-	return event
+	return InputActionUtils.joypad_button(button_index)

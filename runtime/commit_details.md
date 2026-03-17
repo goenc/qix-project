@@ -1,9 +1,16 @@
-日時: 2026-03-17 15:47:02 +09:00
-対象: scripts/game/base_main.gd
-summary: 切断後の前景背景ポリゴン更新経路を共通化し切られた側で後景画像が見えるように修正
+日時(JST): 2026-03-17 16:17:20 JST
+summary: 入力登録共通化とcapture処理整理でe68a550時点の挙動を維持した
+対象:
+・scripts/common/input_action_utils.gd
+・scripts/ui/title_main.gd
+・scripts/game/base_main.gd
 code_changes:
-・stage_cover_polygon を _rebuild_stage_cover_polygon_from_polygon 経由で確定するようにし 初期化時と capture 確定時の両方で同じ経路を通すようにした
-・capture 確定時は retained_candidate の polygon を優先して前景描画用 polygon を再構築し 残存 polygon と前景 polygon のサイズを最小ログで確認できるようにした
+・InputMap 反映と InputEvent 生成だけを共通 helper に切り出し title と game の既存 action 登録仕様を維持した
+・capture_closed 処理を epsilon 解決と loop 選定と claimed 反映と最終反映に分割し更新順と warning 条件を維持した
+・stage cover の常設ログを削除し polygon と UV の再構築だけを担う構成へ整理した
 verification:
-・C:\Godot\godot.exe --headless --path . --script scripts/game/base_main.gd --check-only
-・Godot headless の一時検証スクリプトで capture 後に stage_cover_polygon が remaining_polygon と一致し claimed 側が前景 polygon 外になることを確認
+・godot_console.exe --headless --path . --check-only --script res://scripts/common/input_action_utils.gd
+・godot_console.exe --headless --path . --check-only --script res://scripts/ui/title_main.gd
+・godot_console.exe --headless --path . --check-only --script res://scripts/game/base_main.gd
+・godot_console.exe --headless --path . --quit-after 5
+・headless SceneTree 検証で title→base の InputMap と qix_draw と pause と qix_start と capture_closed signal と stage_cover_polygon/UV を確認した

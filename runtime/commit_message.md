@@ -1,5 +1,6 @@
-前景背景ポリゴン更新経路を共通化して切断面の後景表示を修正
+入力登録共通化とcapture処理整理
 
-・stage_cover_polygon を初期化時と capture 確定時の両方で _rebuild_stage_cover_polygon_from_polygon 経由に統一した
-・retained_candidate の polygon から前景描画用 polygon を再構築し remaining_polygon と stage_cover_polygon の最小ログを追加した
-・Godot headless の check-only と一時検証で capture 後に retained 側のみ前景が残ることを確認した
+・InputMap 反映と InputEvent 生成を共通 helper に切り出し既存の action 登録挙動を維持した
+・capture_closed の更新順と warning 条件を変えずに責務分割した
+・stage cover の常設ログを削除し polygon と UV の再構築経路を整理した
+・Godot headless の構文確認と title→base の InputMap と signal と stage cover 検証を実施した
