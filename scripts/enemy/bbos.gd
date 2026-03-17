@@ -2,6 +2,7 @@ extends Node2D
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const MAX_REFLECTIONS_PER_FRAME := 2
+const VIEWPORT_HEIGHT_RATIO := 0.5
 
 @export var move_speed: float = 140.0
 @export var direction_change_interval_min: float = 1.5
@@ -23,13 +24,20 @@ var rng := RandomNumberGenerator.new()
 var has_spawned := false
 var velocity := Vector2.ZERO
 var direction_change_timer := 0.0
+var base_scale := Vector2.ONE
+var base_collision_radius := 0.0
 
 
 func _ready() -> void:
 	rng.randomize()
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
-	set_collision_radius(collision_radius)
+	base_scale = scale
+	base_collision_radius = maxf(collision_radius, maxf(min_collision_radius, 0.0))
+	_sync_size_to_viewport()
+	var viewport := get_viewport()
+	if is_instance_valid(viewport) and !viewport.size_changed.is_connected(_on_viewport_size_changed):
+		viewport.size_changed.connect(_on_viewport_size_changed)
 	_reset_direction_change_timer()
 	_pick_new_velocity()
 
@@ -134,6 +142,24 @@ func set_collision_radius(radius: float) -> void:
 		)
 	elif playfield_rect.size.x > 0.0 and playfield_rect.size.y > 0.0:
 		position = _clamp_point_to_rect(position, _get_spawnable_rect(playfield_rect))
+
+
+func _on_viewport_size_changed() -> void:
+	_sync_size_to_viewport()
+
+
+func _sync_size_to_viewport() -> void:
+	var viewport_rect := get_viewport_rect()
+	if viewport_rect.size.y <= 0.0:
+		return
+
+	var target_diameter := viewport_rect.size.y * VIEWPORT_HEIGHT_RATIO
+	var source_diameter := base_collision_radius * 2.0
+	if source_diameter <= 0.0:
+		return
+
+	scale = base_scale * (target_diameter / source_diameter)
+	set_collision_radius(target_diameter * 0.5)
 
 
 func _get_spawnable_rect(rect: Rect2) -> Rect2:
