@@ -10,10 +10,13 @@ func _ready() -> void:
 	get_tree().paused = false
 	_register_input_map()
 	title_screen.setup({})
+	call_deferred("_grab_window_focus")
 
 
-func _unhandled_input(_event: InputEvent) -> void:
-	if Input.is_action_just_pressed("ui_accept"):
+func _input(event: InputEvent) -> void:
+	if !event.is_pressed() or event.is_echo():
+		return
+	if Input.is_action_just_pressed("qix_start"):
 		get_tree().change_scene_to_file(MAIN_SCENE_PATH)
 
 
@@ -30,9 +33,15 @@ func _register_input_map() -> void:
 	_ensure_action("move_right", [_key_event(KEY_RIGHT), _key_event(KEY_D), _joypad_button(JOY_BUTTON_DPAD_RIGHT)])
 	_ensure_action("move_up", [_key_event(KEY_UP), _key_event(KEY_W), _joypad_button(JOY_BUTTON_DPAD_UP)])
 	_ensure_action("move_down", [_key_event(KEY_DOWN), _key_event(KEY_S), _joypad_button(JOY_BUTTON_DPAD_DOWN)])
-	_ensure_action("ui_accept", [_key_event(KEY_ENTER), _key_event(KEY_SPACE), _joypad_button(JOY_BUTTON_A), _joypad_button(JOY_BUTTON_START)])
+	_ensure_action("qix_start", [_key_event(KEY_ENTER), _key_event(KEY_SPACE), _joypad_button(JOY_BUTTON_A), _joypad_button(JOY_BUTTON_START)])
 	_ensure_action("ui_cancel", [_key_event(KEY_ESCAPE), _joypad_button(JOY_BUTTON_B), _joypad_button(JOY_BUTTON_BACK)])
 	_ensure_action("pause", [_key_event(KEY_P), _joypad_button(JOY_BUTTON_START)])
+
+
+func _grab_window_focus() -> void:
+	var window := get_window()
+	if window != null:
+		window.grab_focus()
 
 
 func _ensure_action(action_name: String, events: Array[InputEvent]) -> void:

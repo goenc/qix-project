@@ -1,5 +1,6 @@
-1280x720固定ウィンドウ設定を追加
+タイトル開始入力を qix_start に分離
 
-・ベース画面を1280x720固定かつリサイズ不可に設定した。
-・project.godot に display/window/size/viewport_width=1280 と display/window/size/viewport_height=720 と display/window/size/resizable=false を追加した。
-・Godot 4.6.1 のヘッドレス起動でプロジェクトが終了コード0で起動できることを確認した。
+・project.godot に qix_start を追加し Enter Space A START をタイトル開始専用入力として登録
+・title_main.gd の開始判定を qix_start ベースの _input に変更し setup 後にウィンドウフォーカスを戻す処理を追加
+・title.gd の開始文言を PRESS A / ENTER TO START に変更
+・Godot headless で対象スクリプトの check-only とプロジェクト短時間起動を確認
