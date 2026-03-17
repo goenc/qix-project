@@ -1,11 +1,27 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=5 format=3]
 
 [ext_resource type="Script" path="res://scripts/game/base_main.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/player/base_player.tscn" id="2_player_scene"]
 [ext_resource type="PackedScene" path="res://scenes/enemy/bbos.tscn" id="3_bbos_scene"]
+[ext_resource type="Texture2D" path="res://assets/backgrounds/common/game_background_1280x720.png" id="4_background"]
 
 [node name="BaseMain" type="Node2D"]
 script = ExtResource("1_script")
+
+[node name="BackgroundLayer" type="CanvasLayer" parent="."]
+layer = -100
+
+[node name="GameBackground" type="TextureRect" parent="BackgroundLayer"]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 0.0
+offset_top = 0.0
+offset_right = 0.0
+offset_bottom = 0.0
+mouse_filter = 2
+texture = ExtResource("4_background")
 
 [node name="BasePlayer" parent="." instance=ExtResource("2_player_scene")]
 
