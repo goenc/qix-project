@@ -9,7 +9,9 @@ const MAX_REFLECTIONS_PER_FRAME := 2
 @export var bounce_epsilon: float = 0.5
 @export var collision_radius: float = 32.0
 @export var min_collision_radius: float = 8.0
+@export var body_rotation_speed_deg: float = 90.0
 
+@onready var body: Node2D = $Body
 @onready var pick_area: Area2D = $PickArea
 @onready var base_player: Node = get_node_or_null("../BasePlayer")
 
@@ -33,6 +35,9 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if is_instance_valid(body):
+		body.rotation += deg_to_rad(body_rotation_speed_deg) * delta
+
 	if active_outer_loop.size() < 3:
 		return
 

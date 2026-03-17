@@ -1,15 +1,17 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=4 format=3]
 
 [ext_resource type="Script" path="res://scripts/enemy/bbos.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/enemy/black_hole.png" id="2_texture"]
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_pick"]
 size = Vector2(64, 64)
 
 [node name="BBOS" type="Node2D" groups=["debug_bbos_collision"]]
 script = ExtResource("1_script")
 
-[node name="Body" type="Polygon2D" parent="."]
-color = Color(0.85, 0.2, 0.2, 1)
-polygon = PackedVector2Array(-32, -32, 32, -32, 32, 32, -32, 32)
+[node name="Body" type="Sprite2D" parent="."]
+scale = Vector2(1.333333, 1.333333)
+texture = ExtResource("2_texture")
+centered = true
 
 [node name="PickArea" type="Area2D" parent="."]
 

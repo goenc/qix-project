@@ -1,8 +1,1 @@
-日時(JST): 2026-03-17 16:37:48 JST
-summary: 敵アセットとしてblack_hole画像を追加した
-対象:
-・assets/enemy/black_hole.png
-code_changes:
-・敵アセット用の black_hole.png を assets/enemy に追加した
-verification:
-・追加ファイルの存在を確認した
+日時: 2026-03-17 16:50:32 JST 対象: BBOS の見た目差し替え summary: BBOS の赤い四角表示を black_hole 画像へ置き換え、Body のみを右回転させるようにした。 code_changes: ・scenes/enemy/bbos.tscn の Body を Polygon2D から Sprite2D に差し替え、res://assets/enemy/black_hole.png を中心基準かつ約 64x64 相当で表示する設定にした。 ・scripts/enemy/bbos.gd に body_rotation_speed_deg と Body 参照を追加し、_process の先頭で Body のみ正の角速度で回転させる処理を加えた。 verification: ・C:\Godot\godot_console.exe --headless --editor --quit --path . で debug build 相当のアセット再インポートを実施した。 ・headless 検証で Body が Sprite2D として black_hole.png を参照し、_process 呼び出しで回転角が増加することを確認した。
