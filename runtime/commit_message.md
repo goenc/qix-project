@@ -1,4 +1,5 @@
-stage_001 背景画像参照へ切り替え
+前景背景ポリゴン更新経路を共通化して切断面の後景表示を修正
 
-・背景画像2件の preload 参照先を assets/backgrounds/stages/stage_001 配下へ変更
-・Godot のヘッドレス起動でプロジェクト読み込み成功を確認
+・stage_cover_polygon を初期化時と capture 確定時の両方で _rebuild_stage_cover_polygon_from_polygon 経由に統一した
+・retained_candidate の polygon から前景描画用 polygon を再構築し remaining_polygon と stage_cover_polygon の最小ログを追加した
+・Godot headless の check-only と一時検証で capture 後に retained 側のみ前景が残ることを確認した

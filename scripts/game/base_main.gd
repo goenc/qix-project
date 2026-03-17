@@ -230,7 +230,9 @@ func _connect_player_signal() -> void:
 func _initialize_outer_loop_from_rect() -> void:
 	current_outer_loop = PlayfieldBoundary.create_rect_loop(playfield_rect)
 	remaining_polygon = _create_playfield_cover_polygon()
-	set_stage_cover_polygon(remaining_polygon)
+	var initial_stage_cover_source := remaining_polygon if remaining_polygon.size() >= 3 else _create_playfield_cover_polygon()
+	_rebuild_stage_cover_polygon_from_polygon(initial_stage_cover_source)
+	_log_stage_cover_polygon_sizes("initialize")
 	inactive_border_segments.clear()
 	if claimed_polygons.is_empty():
 		claimed_area = 0.0
@@ -280,7 +282,12 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 
 	var retained_candidate: Dictionary = candidate_loops[retained_index]
 	current_outer_loop = retained_candidate.get("loop", PackedVector2Array())
-	remaining_polygon = retained_candidate.get("polygon", PackedVector2Array())
+	var retained_polygon: PackedVector2Array = retained_candidate.get("polygon", PackedVector2Array())
+	if retained_polygon.size() >= 3:
+		remaining_polygon = retained_polygon
+	var stage_cover_source := retained_polygon if retained_polygon.size() >= 3 else remaining_polygon
+	_rebuild_stage_cover_polygon_from_polygon(stage_cover_source)
+	_log_stage_cover_polygon_sizes("capture", retained_polygon.size())
 	inactive_border_segments.clear()
 
 	for index in range(candidate_loops.size()):
@@ -356,13 +363,15 @@ func _create_playfield_cover_polygon() -> PackedVector2Array:
 	return polygon
 
 
-func set_stage_cover_polygon(points: PackedVector2Array) -> void:
-	if points.size() < 3:
-		stage_cover_polygon = PackedVector2Array()
-		queue_redraw()
+func _rebuild_stage_cover_polygon_from_polygon(source_polygon: PackedVector2Array) -> void:
+	if source_polygon.size() < 3:
 		return
 
-	stage_cover_polygon = points.duplicate()
+	var rebuilt_polygon := PlayfieldBoundary.sanitize_loop(source_polygon)
+	if rebuilt_polygon.size() < 3:
+		return
+
+	stage_cover_polygon = rebuilt_polygon.duplicate()
 	queue_redraw()
 
 
@@ -377,6 +386,30 @@ func _build_stage_cover_uvs(points: PackedVector2Array) -> PackedVector2Array:
 			clampf((point.y - playfield_rect.position.y) / playfield_rect.size.y, 0.0, 1.0)
 		))
 	return uvs
+
+
+func _log_stage_cover_polygon_sizes(context: String, retained_polygon_size: int = -1) -> void:
+	if retained_polygon_size >= 0:
+		print(
+			"Stage cover sync ",
+			context,
+			": remaining=",
+			remaining_polygon.size(),
+			" stage_cover=",
+			stage_cover_polygon.size(),
+			" retained=",
+			retained_polygon_size
+		)
+		return
+
+	print(
+		"Stage cover sync ",
+		context,
+		": remaining=",
+		remaining_polygon.size(),
+		" stage_cover=",
+		stage_cover_polygon.size()
+	)
 
 
 func _draw_border_loop(loop: PackedVector2Array, color: Color) -> void:
