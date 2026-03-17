@@ -17,3 +17,13 @@
 確認:
 ・Godot headless で base_main.gd の check-only が成功した
 ・Godot headless で base_main.tscn を --quit 付きで起動しエラーなく終了した
+
+日時: 2026-03-17 15:08:35 +09:00
+対象: ゲーム画面の枠内背景二層化
+変更:
+・scripts/game/base_main.gd に 904x640 の playfield rect と stage_cover_polygon API を追加し全画面背景を変更せず枠内だけを二層化した
+・scripts/game/base_main.gd の _draw に枠内後景の常時表示と playfield 基準 UV の前景 polygon 描画を追加した
+・assets/backgrounds/stages に remaining_background_904x640.png と cover_background_904x640.png を配置して指定パスから参照できるようにした
+確認:
+・Godot headless で base_main.gd の check-only が成功した
+・Godot headless で base_main.tscn を quit-after 1 で起動しエラーなく終了した

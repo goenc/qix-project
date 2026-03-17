@@ -4,6 +4,9 @@ const TITLE_SCENE_PATH := "res://scenes/title_main.tscn"
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const BBOS_SCENE = preload("res://scenes/enemy/bbos.tscn")
 const ACTION_QIX_DRAW := &"qix_draw"
+const PLAYFIELD_SIZE := Vector2(904.0, 640.0)
+const STAGE_REMAINING_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/remaining_background_904x640.png")
+const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/cover_background_904x640.png")
 
 @export var playfield_margin := Vector2(32.0, 40.0)
 @export var playfield_min_size := Vector2(180.0, 120.0)
@@ -27,6 +30,7 @@ const ACTION_QIX_DRAW := &"qix_draw"
 @onready var result_label: Label = $Ui/Root/ResultLabel
 
 var playfield_rect: Rect2 = Rect2()
+var stage_cover_polygon: PackedVector2Array = PackedVector2Array()
 var claimed_polygons: Array[PackedVector2Array] = []
 var current_outer_loop: PackedVector2Array = PackedVector2Array()
 var remaining_polygon: PackedVector2Array = PackedVector2Array()
@@ -170,6 +174,13 @@ func _draw() -> void:
 	if current_outer_loop.size() < 3:
 		return
 
+	draw_texture_rect(STAGE_REMAINING_BACKGROUND_TEXTURE, playfield_rect, false)
+	if stage_cover_polygon.size() >= 3:
+		var cover_colors := PackedColorArray()
+		for _index in range(stage_cover_polygon.size()):
+			cover_colors.append(Color.WHITE)
+		draw_polygon(stage_cover_polygon, cover_colors, _build_stage_cover_uvs(stage_cover_polygon), STAGE_COVER_BACKGROUND_TEXTURE)
+
 	var outer_rect := playfield_rect.grow(playfield_outer_frame_padding)
 	for polygon in claimed_polygons:
 		if polygon.size() >= 3:
@@ -192,20 +203,7 @@ func _on_viewport_size_changed() -> void:
 
 
 func _recalculate_playfield_rect() -> void:
-	var viewport_rect := get_viewport_rect()
-	var margin_x := minf(playfield_margin.x, viewport_rect.size.x * 0.08)
-	var margin_y := minf(playfield_margin.y, viewport_rect.size.y * 0.1)
-	var usable_width := maxf(playfield_min_size.x, viewport_rect.size.x - margin_x * 2.0)
-	var dynamic_gap := minf(hud_gap, maxf(12.0, usable_width * 0.04))
-	var preferred_hud_width := minf(hud_width, maxf(180.0, usable_width * 0.28))
-	var max_hud_width := maxf(0.0, usable_width - 120.0 - dynamic_gap)
-	var dynamic_hud_width := minf(preferred_hud_width, max_hud_width)
-	var playfield_width := maxf(120.0, usable_width - dynamic_hud_width - dynamic_gap)
-	var playfield_height := maxf(playfield_min_size.y, viewport_rect.size.y - margin_y * 2.0)
-	playfield_rect = Rect2(
-		Vector2(viewport_rect.position.x + margin_x, viewport_rect.position.y + margin_y),
-		Vector2(playfield_width, playfield_height)
-	)
+	playfield_rect = _create_playfield_rect()
 
 
 func _ensure_bbos_node() -> void:
@@ -231,7 +229,8 @@ func _connect_player_signal() -> void:
 
 func _initialize_outer_loop_from_rect() -> void:
 	current_outer_loop = PlayfieldBoundary.create_rect_loop(playfield_rect)
-	remaining_polygon = current_outer_loop
+	remaining_polygon = _create_playfield_cover_polygon()
+	set_stage_cover_polygon(remaining_polygon)
 	inactive_border_segments.clear()
 	if claimed_polygons.is_empty():
 		claimed_area = 0.0
@@ -340,6 +339,44 @@ func _polyline_to_segments(points: PackedVector2Array) -> Array[PackedVector2Arr
 		segment.append(segment_end)
 		segments.append(segment)
 	return segments
+
+
+func _create_playfield_rect() -> Rect2:
+	var viewport_rect := get_viewport_rect()
+	return Rect2(viewport_rect.position + playfield_margin, PLAYFIELD_SIZE)
+
+
+func _create_playfield_cover_polygon() -> PackedVector2Array:
+	var rect := playfield_rect
+	var polygon := PackedVector2Array()
+	polygon.append(rect.position)
+	polygon.append(rect.position + Vector2(rect.size.x, 0.0))
+	polygon.append(rect.position + rect.size)
+	polygon.append(rect.position + Vector2(0.0, rect.size.y))
+	return polygon
+
+
+func set_stage_cover_polygon(points: PackedVector2Array) -> void:
+	if points.size() < 3:
+		stage_cover_polygon = PackedVector2Array()
+		queue_redraw()
+		return
+
+	stage_cover_polygon = points.duplicate()
+	queue_redraw()
+
+
+func _build_stage_cover_uvs(points: PackedVector2Array) -> PackedVector2Array:
+	var uvs := PackedVector2Array()
+	if is_zero_approx(playfield_rect.size.x) or is_zero_approx(playfield_rect.size.y):
+		return uvs
+
+	for point in points:
+		uvs.append(Vector2(
+			clampf((point.x - playfield_rect.position.x) / playfield_rect.size.x, 0.0, 1.0),
+			clampf((point.y - playfield_rect.position.y) / playfield_rect.size.y, 0.0, 1.0)
+		))
+	return uvs
 
 
 func _draw_border_loop(loop: PackedVector2Array, color: Color) -> void:
