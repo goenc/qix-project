@@ -5,8 +5,8 @@ const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const BBOS_SCENE = preload("res://scenes/enemy/bbos.tscn")
 const ACTION_QIX_DRAW := &"qix_draw"
 const PLAYFIELD_SIZE := Vector2(904.0, 640.0)
-const STAGE_REMAINING_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/remaining_background_904x640.png")
-const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/cover_background_904x640.png")
+const STAGE_REMAINING_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/stage_001/claimed_background_904x640.png")
+const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/stage_001/cover_background_904x640.png")
 
 @export var playfield_margin := Vector2(32.0, 40.0)
 @export var playfield_min_size := Vector2(180.0, 120.0)
