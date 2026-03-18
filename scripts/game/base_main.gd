@@ -44,6 +44,8 @@ var guide_segments: Array[Dictionary] = []
 var claimed_area := 0.0
 var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
 var game_over := false
+var show_vertical_guides := true
+var show_horizontal_guides := true
 
 
 func _ready() -> void:
@@ -56,6 +58,7 @@ func _ready() -> void:
 	_connect_player_signal()
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
+	_sync_debug_guide_visibility()
 	_sync_boss_marker()
 	var viewport := get_viewport()
 	if is_instance_valid(viewport) and !viewport.size_changed.is_connected(_on_viewport_size_changed):
@@ -79,6 +82,20 @@ func set_paused_from_debug(enabled: bool) -> void:
 		return
 	get_tree().paused = enabled
 	_sync_hud()
+
+
+func set_show_vertical_guides_from_debug(enabled: bool) -> void:
+	if show_vertical_guides == enabled:
+		return
+	show_vertical_guides = enabled
+	queue_redraw()
+
+
+func set_show_horizontal_guides_from_debug(enabled: bool) -> void:
+	if show_horizontal_guides == enabled:
+		return
+	show_horizontal_guides = enabled
+	queue_redraw()
 
 
 func _process(_delta: float) -> void:
@@ -441,6 +458,11 @@ func _draw_guide_segments() -> void:
 		var direction: Vector2 = guide_segment.get("dir", Vector2.ZERO)
 		if start.distance_to(end) <= epsilon:
 			continue
+		var is_vertical := absf(direction.y) > 0.0
+		if is_vertical and !show_vertical_guides:
+			continue
+		if absf(direction.x) > 0.0 and !show_horizontal_guides:
+			continue
 		var guide_color := guide_vertical_color if absf(direction.y) > 0.0 else guide_segment_color
 		draw_line(start, end, guide_color, guide_segment_width)
 
@@ -737,6 +759,16 @@ func _normalize_guide_direction(direction: Vector2) -> Vector2:
 
 func _get_guide_epsilon() -> float:
 	return maxf(PlayfieldBoundary.DEFAULT_EPSILON * 10.0, _resolve_capture_epsilon() * 0.25)
+
+
+func _sync_debug_guide_visibility() -> void:
+	var debug_manager := get_node_or_null("/root/DebugManager")
+	if !is_instance_valid(debug_manager):
+		return
+	if debug_manager.has_method("is_vertical_guides_enabled"):
+		show_vertical_guides = bool(debug_manager.call("is_vertical_guides_enabled"))
+	if debug_manager.has_method("is_horizontal_guides_enabled"):
+		show_horizontal_guides = bool(debug_manager.call("is_horizontal_guides_enabled"))
 
 
 func _update_hp_label() -> void:

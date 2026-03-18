@@ -14,6 +14,8 @@ const HITBOX_DEBUG_OVERLAY_SCENE := preload("res://debug/overlays/hitbox/hitbox_
 var _windows: Dictionary = {}
 var _hitbox_overlay_enabled := false
 var _hitbox_overlay: CanvasItem = null
+var _show_vertical_guides := true
+var _show_horizontal_guides := true
 
 
 func _ready() -> void:
@@ -35,6 +37,8 @@ func _process(_delta: float) -> void:
 func open_manager_window() -> void:
 	_show_window(MANAGER_WINDOW_ID)
 	_sync_manager_window_pause_state()
+	_sync_manager_window_guide_states()
+	_apply_guide_visibility_to_scene()
 
 
 func open_input_debugger_window() -> void:
@@ -62,12 +66,32 @@ func set_game_paused(enabled: bool) -> void:
 	_sync_manager_window_pause_state()
 
 
+func set_vertical_guides_enabled(enabled: bool) -> void:
+	_show_vertical_guides = enabled
+	_apply_guide_visibility_to_scene()
+	_sync_manager_window_vertical_guides_state()
+
+
+func set_horizontal_guides_enabled(enabled: bool) -> void:
+	_show_horizontal_guides = enabled
+	_apply_guide_visibility_to_scene()
+	_sync_manager_window_horizontal_guides_state()
+
+
 func is_hitbox_overlay_enabled() -> bool:
 	return _hitbox_overlay_enabled
 
 
 func is_game_paused() -> bool:
 	return get_tree().paused
+
+
+func is_vertical_guides_enabled() -> bool:
+	return _show_vertical_guides
+
+
+func is_horizontal_guides_enabled() -> bool:
+	return _show_horizontal_guides
 
 
 func _show_window(window_id: StringName) -> void:
@@ -122,6 +146,8 @@ func _configure_manager_window(window: DebugManagerWindow) -> void:
 	_connect_manager_window_signals(window)
 	window.set_hitbox_overlay_enabled(_hitbox_overlay_enabled)
 	window.set_pause_enabled(is_game_paused())
+	window.set_vertical_guides_enabled(_show_vertical_guides)
+	window.set_horizontal_guides_enabled(_show_horizontal_guides)
 
 
 func _connect_manager_window_signals(window: DebugManagerWindow) -> void:
@@ -135,6 +161,10 @@ func _connect_manager_window_signals(window: DebugManagerWindow) -> void:
 		window.hitbox_overlay_toggled.connect(set_hitbox_overlay_enabled)
 	if !window.pause_toggled.is_connected(set_game_paused):
 		window.pause_toggled.connect(set_game_paused)
+	if !window.vertical_guides_toggled.is_connected(set_vertical_guides_enabled):
+		window.vertical_guides_toggled.connect(set_vertical_guides_enabled)
+	if !window.horizontal_guides_toggled.is_connected(set_horizontal_guides_enabled):
+		window.horizontal_guides_toggled.connect(set_horizontal_guides_enabled)
 
 
 func _sync_hitbox_overlay_visibility() -> void:
@@ -156,6 +186,25 @@ func _sync_manager_window_pause_state() -> void:
 	if !is_instance_valid(manager_window):
 		return
 	manager_window.set_pause_enabled(is_game_paused())
+
+
+func _sync_manager_window_guide_states() -> void:
+	_sync_manager_window_vertical_guides_state()
+	_sync_manager_window_horizontal_guides_state()
+
+
+func _sync_manager_window_vertical_guides_state() -> void:
+	var manager_window := _windows.get(MANAGER_WINDOW_ID) as DebugManagerWindow
+	if !is_instance_valid(manager_window):
+		return
+	manager_window.set_vertical_guides_enabled(_show_vertical_guides)
+
+
+func _sync_manager_window_horizontal_guides_state() -> void:
+	var manager_window := _windows.get(MANAGER_WINDOW_ID) as DebugManagerWindow
+	if !is_instance_valid(manager_window):
+		return
+	manager_window.set_horizontal_guides_enabled(_show_horizontal_guides)
 
 
 func _can_toggle_pause_from_debug_input() -> bool:
@@ -186,6 +235,44 @@ func _is_pause_controller(node: Node) -> bool:
 	return is_instance_valid(node) \
 		and node.has_method("set_paused_from_debug") \
 		and node.has_method("is_pause_toggle_allowed")
+
+
+func _apply_guide_visibility_to_scene() -> void:
+	var guide_controller := _resolve_debug_method_target(
+		PackedStringArray([
+			"set_show_vertical_guides_from_debug",
+			"set_show_horizontal_guides_from_debug"
+		])
+	)
+	if !is_instance_valid(guide_controller):
+		return
+	guide_controller.call("set_show_vertical_guides_from_debug", _show_vertical_guides)
+	guide_controller.call("set_show_horizontal_guides_from_debug", _show_horizontal_guides)
+
+
+func _resolve_debug_method_target(method_names: PackedStringArray) -> Node:
+	var current_scene := get_tree().current_scene
+	if _node_has_methods(current_scene, method_names):
+		return current_scene
+	if !is_instance_valid(current_scene):
+		return null
+	var nodes_to_visit: Array[Node] = [current_scene]
+	while !nodes_to_visit.is_empty():
+		var node: Node = nodes_to_visit.pop_back()
+		if _node_has_methods(node, method_names):
+			return node
+		for child in node.get_children():
+			nodes_to_visit.append(child)
+	return null
+
+
+func _node_has_methods(node: Node, method_names: PackedStringArray) -> bool:
+	if !is_instance_valid(node):
+		return false
+	for method_name in method_names:
+		if !node.has_method(method_name):
+			return false
+	return true
 
 
 func _get_or_create_hitbox_overlay() -> CanvasItem:

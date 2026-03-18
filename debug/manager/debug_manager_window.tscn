@@ -6,7 +6,7 @@
 oversampling_override = 1.0
 title = "Debug Manager"
 initial_position = 2
-size = Vector2i(220, 236)
+size = Vector2i(220, 320)
 wrap_controls = true
 unresizable = true
 script = ExtResource("1_manager_script")
@@ -50,7 +50,25 @@ text = "Pause"
 [node name="OpenObjectInspectorButton" type="Button" parent="FeatureButtons"]
 layout_mode = 0
 offset_left = 14.0
+offset_top = 266.0
+offset_right = 206.0
+offset_bottom = 298.0
+text = "Object Inspector"
+
+[node name="ToggleVerticalGuidesButton" type="CheckButton" parent="FeatureButtons"]
+layout_mode = 0
+offset_left = 14.0
 offset_top = 182.0
 offset_right = 206.0
 offset_bottom = 214.0
-text = "Object Inspector"
+button_pressed = true
+text = "Vertical Guides"
+
+[node name="ToggleHorizontalGuidesButton" type="CheckButton" parent="FeatureButtons"]
+layout_mode = 0
+offset_left = 14.0
+offset_top = 224.0
+offset_right = 206.0
+offset_bottom = 256.0
+button_pressed = true
+text = "Horizontal Guides"

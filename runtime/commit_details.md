@@ -1,8 +1,12 @@
-日時: 2026-03-18 23:35 JST
+日時: 2026-03-18 23:45:08 JST
 対象:
+- debug/manager/debug_manager_window.tscn
+- debug/manager/debug_manager_window.gd
+- debug/DebugManager.gd
 - scripts/game/base_main.gd
 変更:
-・区分補助線の描画色を dir の軸方向で分岐し横線は既存の赤色を維持しつつ縦線用の紫色を追加した
+・デバッグマネージャーに縦補助線と横補助線の表示トグルを追加しゲーム画面へ即時反映する連携を実装した
+・base_main.gd の補助線描画に縦横別の表示スキップ条件を追加し既存の色と内部データを維持した
 確認:
-・Godot 4.6.1 で headless 起動と通常起動の短時間実行を行いエラーなく終了することを確認した
-
+・Godot を headless で起動して構文エラーなく読み込めることを確認した
+・Godot を通常起動してプロジェクトが起動できることを確認した
