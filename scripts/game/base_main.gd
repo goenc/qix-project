@@ -273,18 +273,27 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 	_finalize_capture_closed()
 
 
-func _on_player_guide_turn_created(turn_point: Vector2, previous_direction: Vector2) -> void:
-	var guide_direction := _normalize_guide_direction(previous_direction)
-	if guide_direction == Vector2.ZERO:
-		return
+func _on_player_guide_turn_created(
+	turn_point: Vector2,
+	previous_direction: Vector2,
+	new_direction: Vector2
+) -> void:
+	var guide_directions := [
+		_normalize_guide_direction(previous_direction),
+		_normalize_guide_direction(-new_direction)
+	]
 
-	var guide_segment := {
-		"start": turn_point,
-		"end": turn_point,
-		"dir": guide_direction,
-		"active": false
-	}
-	guide_segments.append(_resolve_guide_segment(guide_segment))
+	for guide_direction in guide_directions:
+		if guide_direction == Vector2.ZERO:
+			continue
+
+		var guide_segment := {
+			"start": turn_point,
+			"end": turn_point,
+			"dir": guide_direction,
+			"active": false
+		}
+		guide_segments.append(_resolve_guide_segment(guide_segment))
 	queue_redraw()
 
 

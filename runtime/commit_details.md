@@ -1,35 +1,9 @@
-日時: 2026-03-17 16:50:32 JST 対象: BBOS の見た目差し替え summary: BBOS の赤い四角表示を black_hole 画像へ置き換え、Body のみを右回転させるようにした。 code_changes: ・scenes/enemy/bbos.tscn の Body を Polygon2D から Sprite2D に差し替え、res://assets/enemy/black_hole.png を中心基準かつ約 64x64 相当で表示する設定にした。 ・scripts/enemy/bbos.gd に body_rotation_speed_deg と Body 参照を追加し、_process の先頭で Body のみ正の角速度で回転させる処理を加えた。 verification: ・C:\Godot\godot_console.exe --headless --editor --quit --path . で debug build 相当のアセット再インポートを実施した。 ・headless 検証で Body が Sprite2D として black_hole.png を参照し、_process 呼び出しで回転角が増加することを確認した。
-
-日時: 2026-03-17 23:12:28 JST
-対象: BBOS のサイズ調整
-summary: BBOS の縦サイズを viewport 高の半分に自動同期するようにした。
-code_changes:
-・scripts/enemy/bbos.gd に viewport 高比率 0.5 のサイズ同期処理を追加し、ready 時と viewport サイズ変更時に BBOS のスケールを更新するようにした。
-・scripts/enemy/bbos.gd で見た目スケール変更に合わせて collision_radius も同期し、反射や被弾の当たり判定を表示サイズと一致させた。
-verification:
-・C:\Godot\godot.exe --headless --path . --scene res://scenes/base_main.tscn --quit-after 1 が成功し、BBOS を含むベースシーンの初期化が通ることを確認した。
-
-日時: 2026-03-18 22:05:20 JST
+日時: 2026-03-18 23:23:32 +09:00
 対象:
-- 区分補助線の独立管理
+- scripts/player/base_player.gd
+- scripts/game/base_main.gd
 変更:
-・scripts/player/base_player.gd に guide_turn_created signal を追加し、曲がる直前の進行方向を trail_points 更新と分離して通知するようにした
-・scripts/game/base_main.gd に guide_segments を追加し、remaining_polygon と claimed_polygons の境界から終点を動的再計算する赤い補助線描画を実装した
+・曲がり通知で旧方向と新方向を渡し base_main 側で曲がり点から旧方向と新方向逆向きの guide を2本追加するよう拡張した
 確認:
-・C:\Godot\godot_console.exe --headless --path . --script res://scripts/player/base_player.gd --check-only が成功した
-・C:\Godot\godot_console.exe --headless --path . --script res://scripts/game/base_main.gd --check-only が成功した
-・C:\Godot\godot_console.exe --headless --path . res://scenes/base_main.tscn --quit-after 10 が成功した
-・C:\Godot\godot_console.exe --path . res://scenes/base_main.tscn --quit-after 10 が成功した
-
-日時: 2026-03-18 23:02:20 JST
-対象:
-- 区分補助線の capture 後終点補正
-変更:
-・scripts/game/base_main.gd の guide 終点解決を通常計算と capture 後補正に分離し、capture 確定時だけ start-end 区間を end から start へ 1 ドット逆走査して残存領域の最後の点まで end を詰めるようにした
-・scripts/game/base_main.gd に claimed 側と inactive 側を無効扱いにする判定を追加し、有効領域が無い補助線は active=false にするようにした
-確認:
-・scripts/player/base_player.gd で guide_turn_created signal と axis_changed 時の emit が work ブランチ上で既に実装済みであることを確認した
-・C:\Godot\godot_console.exe --headless --path . --script res://scripts/player/base_player.gd --check-only が成功した
-・C:\Godot\godot_console.exe --headless --path . --script res://scripts/game/base_main.gd --check-only が成功した
-・C:\Godot\godot_console.exe --headless --path . --scene res://scenes/base_main.tscn --quit-after 10 が成功した
-・C:\Godot\godot.exe --path . --scene res://scenes/base_main.tscn --quit-after 10 が成功した
+・headless で base_main シーンを起動し解釈エラーが出ないことを確認した
+・通常起動で base_main シーンが起動してすぐ終了できることを確認した
