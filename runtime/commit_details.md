@@ -20,3 +20,16 @@ verification:
 ・C:\Godot\godot_console.exe --headless --path . --script res://scripts/game/base_main.gd --check-only が成功した
 ・C:\Godot\godot_console.exe --headless --path . res://scenes/base_main.tscn --quit-after 10 が成功した
 ・C:\Godot\godot_console.exe --path . res://scenes/base_main.tscn --quit-after 10 が成功した
+
+日時: 2026-03-18 23:02:20 JST
+対象:
+- 区分補助線の capture 後終点補正
+変更:
+・scripts/game/base_main.gd の guide 終点解決を通常計算と capture 後補正に分離し、capture 確定時だけ start-end 区間を end から start へ 1 ドット逆走査して残存領域の最後の点まで end を詰めるようにした
+・scripts/game/base_main.gd に claimed 側と inactive 側を無効扱いにする判定を追加し、有効領域が無い補助線は active=false にするようにした
+確認:
+・scripts/player/base_player.gd で guide_turn_created signal と axis_changed 時の emit が work ブランチ上で既に実装済みであることを確認した
+・C:\Godot\godot_console.exe --headless --path . --script res://scripts/player/base_player.gd --check-only が成功した
+・C:\Godot\godot_console.exe --headless --path . --script res://scripts/game/base_main.gd --check-only が成功した
+・C:\Godot\godot_console.exe --headless --path . --scene res://scenes/base_main.tscn --quit-after 10 が成功した
+・C:\Godot\godot.exe --path . --scene res://scenes/base_main.tscn --quit-after 10 が成功した

@@ -338,7 +338,7 @@ func _finalize_capture_closed() -> void:
 	_recalculate_claimed_area()
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
-	_refresh_guide_segments()
+	_refresh_guide_segments(true)
 	_sync_boss_marker()
 	queue_redraw()
 	_sync_hud()
@@ -449,12 +449,12 @@ func _draw_border_segments(segments: Array[PackedVector2Array], color: Color) ->
 			draw_line(segment[index], segment[index + 1], color, playfield_border_width)
 
 
-func _refresh_guide_segments() -> void:
+func _refresh_guide_segments(apply_capture_correction: bool = false) -> void:
 	for index in range(guide_segments.size()):
-		guide_segments[index] = _resolve_guide_segment(guide_segments[index])
+		guide_segments[index] = _resolve_guide_segment(guide_segments[index], apply_capture_correction)
 
 
-func _resolve_guide_segment(guide_segment: Dictionary) -> Dictionary:
+func _resolve_guide_segment(guide_segment: Dictionary, apply_capture_correction: bool = false) -> Dictionary:
 	var epsilon := _get_guide_epsilon()
 	var resolved_segment := guide_segment.duplicate()
 	var start: Vector2 = resolved_segment.get("start", Vector2.ZERO)
@@ -465,23 +465,148 @@ func _resolve_guide_segment(guide_segment: Dictionary) -> Dictionary:
 	resolved_segment["active"] = false
 	if direction == Vector2.ZERO:
 		return resolved_segment
-	if !_is_point_in_remaining_region(start, epsilon):
+
+	var end_result := _resolve_guide_segment_end(start, direction, epsilon)
+	if !bool(end_result.get("hit", false)):
 		return resolved_segment
 
-	var probe_distance := maxf(PlayfieldBoundary.DEFAULT_EPSILON * 10.0, epsilon * 0.5)
-	if !_is_point_in_remaining_region(start + direction * probe_distance, epsilon):
-		return resolved_segment
-
-	var hit := _find_first_guide_boundary_hit(start, direction, epsilon)
-	if !bool(hit.get("hit", false)):
-		return resolved_segment
-
-	var end_point: Vector2 = hit.get("point", start)
+	var end_point: Vector2 = end_result.get("end", start)
 	if start.distance_to(end_point) <= epsilon:
 		return resolved_segment
 	resolved_segment["end"] = end_point
 	resolved_segment["active"] = true
+	if apply_capture_correction:
+		return _apply_capture_guide_segment_correction(resolved_segment, epsilon)
 	return resolved_segment
+
+
+func _resolve_guide_segment_end(start: Vector2, direction: Vector2, epsilon: float) -> Dictionary:
+	var hit := _find_first_guide_boundary_hit(start, direction, epsilon)
+	if !bool(hit.get("hit", false)):
+		return {
+			"hit": false,
+			"end": start
+		}
+
+	var end_point: Vector2 = hit.get("point", start)
+	if start.distance_to(end_point) <= epsilon:
+		return {
+			"hit": false,
+			"end": start
+		}
+
+	return {
+		"hit": true,
+		"end": end_point
+	}
+
+
+func _apply_capture_guide_segment_correction(guide_segment: Dictionary, epsilon: float) -> Dictionary:
+	var corrected_segment := guide_segment.duplicate()
+	if !bool(corrected_segment.get("active", false)):
+		return corrected_segment
+
+	var start: Vector2 = corrected_segment.get("start", Vector2.ZERO)
+	var end: Vector2 = corrected_segment.get("end", start)
+	var direction := _normalize_guide_direction(corrected_segment.get("dir", Vector2.ZERO))
+	var correction_result := _find_last_valid_guide_point_on_segment(start, end, direction, epsilon)
+	if !bool(correction_result.get("found", false)):
+		corrected_segment["end"] = start
+		corrected_segment["active"] = false
+		return corrected_segment
+
+	var corrected_end: Vector2 = correction_result.get("point", start)
+	if start.distance_to(corrected_end) <= epsilon:
+		corrected_segment["end"] = start
+		corrected_segment["active"] = false
+		return corrected_segment
+
+	corrected_segment["end"] = corrected_end
+	corrected_segment["active"] = true
+	return corrected_segment
+
+
+func _find_last_valid_guide_point_on_segment(
+	start: Vector2,
+	end: Vector2,
+	direction: Vector2,
+	epsilon: float
+) -> Dictionary:
+	var scan_bounds := _get_guide_scan_bounds(start, end, direction)
+	if !bool(scan_bounds.get("valid", false)):
+		return {"found": false}
+
+	var scan_from := int(scan_bounds.get("from", 0))
+	var scan_to := int(scan_bounds.get("to", 0))
+	var scan_step := int(scan_bounds.get("step", 0))
+	var max_iterations := int(ceil(start.distance_to(end))) + 2
+	for iteration in range(max_iterations):
+		var axis_value := scan_from + scan_step * iteration
+		if scan_step < 0 and axis_value < scan_to:
+			axis_value = scan_to
+		elif scan_step > 0 and axis_value > scan_to:
+			axis_value = scan_to
+
+		var sample_point := _build_guide_scan_point(scan_bounds, axis_value)
+		if _is_point_in_valid_guide_region(sample_point, epsilon):
+			return {
+				"found": true,
+				"point": sample_point
+			}
+
+		if axis_value == scan_to:
+			break
+
+	return {"found": false}
+
+
+func _get_guide_scan_bounds(start: Vector2, end: Vector2, direction: Vector2) -> Dictionary:
+	if absf(direction.x) > 0.0:
+		if direction.x > 0.0:
+			return {
+				"valid": true,
+				"horizontal": true,
+				"from": int(floor(end.x)),
+				"to": int(ceil(start.x)),
+				"fixed": int(round(start.y)),
+				"step": -1
+			}
+		return {
+			"valid": true,
+			"horizontal": true,
+			"from": int(ceil(end.x)),
+			"to": int(floor(start.x)),
+			"fixed": int(round(start.y)),
+			"step": 1
+		}
+
+	if absf(direction.y) > 0.0:
+		if direction.y > 0.0:
+			return {
+				"valid": true,
+				"horizontal": false,
+				"from": int(floor(end.y)),
+				"to": int(ceil(start.y)),
+				"fixed": int(round(start.x)),
+				"step": -1
+			}
+		return {
+			"valid": true,
+			"horizontal": false,
+			"from": int(ceil(end.y)),
+			"to": int(floor(start.y)),
+			"fixed": int(round(start.x)),
+			"step": 1
+		}
+
+	return {"valid": false}
+
+
+func _build_guide_scan_point(scan_bounds: Dictionary, axis_value: int) -> Vector2:
+	var fixed_axis := float(scan_bounds.get("fixed", 0))
+	if bool(scan_bounds.get("horizontal", false)):
+		return Vector2(float(axis_value), fixed_axis)
+	return Vector2(fixed_axis, float(axis_value))
 
 
 func _find_first_guide_boundary_hit(start: Vector2, direction: Vector2, epsilon: float) -> Dictionary:
@@ -543,6 +668,42 @@ func _get_guide_boundary_loop() -> PackedVector2Array:
 	if remaining_polygon.size() >= 3:
 		return remaining_polygon
 	return current_outer_loop
+
+
+func _is_point_in_valid_guide_region(point: Vector2, epsilon: float) -> bool:
+	if _is_point_in_claimed_region(point, epsilon):
+		return false
+	if _is_point_on_inactive_border(point, epsilon):
+		return false
+	return _is_point_in_remaining_region(point, epsilon)
+
+
+func _is_point_in_claimed_region(point: Vector2, epsilon: float) -> bool:
+	for polygon in claimed_polygons:
+		if polygon.size() < 3:
+			continue
+		if Geometry2D.is_point_in_polygon(point, polygon) or PlayfieldBoundary.is_point_on_loop(polygon, point, epsilon):
+			return true
+	return false
+
+
+func _is_point_on_inactive_border(point: Vector2, epsilon: float) -> bool:
+	for segment in inactive_border_segments:
+		for index in range(segment.size() - 1):
+			if _is_point_on_segment(point, segment[index], segment[index + 1], epsilon):
+				return true
+	return false
+
+
+func _is_point_on_segment(point: Vector2, segment_start: Vector2, segment_end: Vector2, epsilon: float) -> bool:
+	var segment := segment_end - segment_start
+	var segment_length_squared := segment.length_squared()
+	if segment_length_squared <= epsilon * epsilon:
+		return point.distance_to(segment_start) <= epsilon
+
+	var projection := clampf((point - segment_start).dot(segment) / segment_length_squared, 0.0, 1.0)
+	var projected_point := segment_start + segment * projection
+	return projected_point.distance_to(point) <= epsilon
 
 
 func _is_point_in_remaining_region(point: Vector2, epsilon: float) -> bool:
