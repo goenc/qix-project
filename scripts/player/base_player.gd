@@ -5,6 +5,7 @@ const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const ACTION_QIX_DRAW := &"qix_draw"
 
 signal capture_closed(trail_points: PackedVector2Array)
+signal guide_turn_created(turn_point: Vector2, previous_direction: Vector2)
 signal hp_changed(current_hp: int, max_hp: int)
 signal defeated()
 
@@ -464,6 +465,8 @@ func _update_drawing_segment(direction: Vector2, current_position: Vector2) -> v
 		or (direction.y != 0.0 and drawing_segment_direction.x != 0.0)
 	)
 	if axis_changed:
+		if drawing_segment_direction != Vector2.ZERO:
+			guide_turn_created.emit(current_position, drawing_segment_direction)
 		_append_trail_corner_point(current_position)
 
 	drawing_segment_direction = direction

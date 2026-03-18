@@ -19,6 +19,8 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 @export var playfield_border_color := Color(1.0, 1.0, 1.0, 1.0)
 @export var playfield_border_width := 3.0
 @export var playfield_outer_frame_padding := 12.0
+@export var guide_segment_color := Color(1.0, 0.0, 0.0, 1.0)
+@export var guide_segment_width := 2.0
 
 @onready var base_player = get_node_or_null("BasePlayer")
 @onready var bbos: Node2D = get_node_or_null("BBOS")
@@ -37,6 +39,7 @@ var claimed_polygons: Array[PackedVector2Array] = []
 var current_outer_loop: PackedVector2Array = PackedVector2Array()
 var remaining_polygon: PackedVector2Array = PackedVector2Array()
 var inactive_border_segments: Array[PackedVector2Array] = []
+var guide_segments: Array[Dictionary] = []
 var claimed_area := 0.0
 var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
 var game_over := false
@@ -170,6 +173,7 @@ func _draw() -> void:
 		if polygon.size() >= 3:
 			draw_colored_polygon(polygon, claimed_fill_color)
 	_draw_border_segments(inactive_border_segments, inactive_border_color)
+	_draw_guide_segments()
 	_draw_border_loop(current_outer_loop, playfield_border_color)
 	draw_rect(outer_rect, playfield_outer_frame_color, false, 2.0)
 
@@ -207,6 +211,8 @@ func _connect_player_signal() -> void:
 		return
 	if !base_player.capture_closed.is_connected(_on_player_capture_closed):
 		base_player.capture_closed.connect(_on_player_capture_closed)
+	if base_player.has_signal("guide_turn_created") and !base_player.guide_turn_created.is_connected(_on_player_guide_turn_created):
+		base_player.guide_turn_created.connect(_on_player_guide_turn_created)
 	if base_player.has_signal("hp_changed") and !base_player.hp_changed.is_connected(_on_player_hp_changed):
 		base_player.hp_changed.connect(_on_player_hp_changed)
 	if base_player.has_signal("defeated") and !base_player.defeated.is_connected(_on_player_defeated):
@@ -222,6 +228,7 @@ func _initialize_outer_loop_from_rect() -> void:
 	inactive_border_segments.clear()
 	if claimed_polygons.is_empty():
 		claimed_area = 0.0
+	_refresh_guide_segments()
 
 
 func _apply_playfield_to_player() -> void:
@@ -264,6 +271,21 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 	_apply_retained_capture_loop(candidate_loops[retained_index])
 	_append_claimed_capture_results(candidate_loops, retained_index)
 	_finalize_capture_closed()
+
+
+func _on_player_guide_turn_created(turn_point: Vector2, previous_direction: Vector2) -> void:
+	var guide_direction := _normalize_guide_direction(previous_direction)
+	if guide_direction == Vector2.ZERO:
+		return
+
+	var guide_segment := {
+		"start": turn_point,
+		"end": turn_point,
+		"dir": guide_direction,
+		"active": false
+	}
+	guide_segments.append(_resolve_guide_segment(guide_segment))
+	queue_redraw()
 
 
 func _get_boss_selection_point() -> Vector2:
@@ -316,6 +338,7 @@ func _finalize_capture_closed() -> void:
 	_recalculate_claimed_area()
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
+	_refresh_guide_segments()
 	_sync_boss_marker()
 	queue_redraw()
 	_sync_hud()
@@ -394,8 +417,20 @@ func _build_stage_cover_uvs(points: PackedVector2Array) -> PackedVector2Array:
 		uvs.append(Vector2(
 			clampf((point.x - playfield_rect.position.x) / playfield_rect.size.x, 0.0, 1.0),
 			clampf((point.y - playfield_rect.position.y) / playfield_rect.size.y, 0.0, 1.0)
-		))
+	))
 	return uvs
+
+
+func _draw_guide_segments() -> void:
+	var epsilon := _get_guide_epsilon()
+	for guide_segment in guide_segments:
+		if !bool(guide_segment.get("active", false)):
+			continue
+		var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
+		var end: Vector2 = guide_segment.get("end", start)
+		if start.distance_to(end) <= epsilon:
+			continue
+		draw_line(start, end, guide_segment_color, guide_segment_width)
 
 
 func _draw_border_loop(loop: PackedVector2Array, color: Color) -> void:
@@ -412,6 +447,123 @@ func _draw_border_segments(segments: Array[PackedVector2Array], color: Color) ->
 			continue
 		for index in range(segment.size() - 1):
 			draw_line(segment[index], segment[index + 1], color, playfield_border_width)
+
+
+func _refresh_guide_segments() -> void:
+	for index in range(guide_segments.size()):
+		guide_segments[index] = _resolve_guide_segment(guide_segments[index])
+
+
+func _resolve_guide_segment(guide_segment: Dictionary) -> Dictionary:
+	var epsilon := _get_guide_epsilon()
+	var resolved_segment := guide_segment.duplicate()
+	var start: Vector2 = resolved_segment.get("start", Vector2.ZERO)
+	var direction := _normalize_guide_direction(resolved_segment.get("dir", Vector2.ZERO))
+	resolved_segment["start"] = start
+	resolved_segment["end"] = start
+	resolved_segment["dir"] = direction
+	resolved_segment["active"] = false
+	if direction == Vector2.ZERO:
+		return resolved_segment
+	if !_is_point_in_remaining_region(start, epsilon):
+		return resolved_segment
+
+	var probe_distance := maxf(PlayfieldBoundary.DEFAULT_EPSILON * 10.0, epsilon * 0.5)
+	if !_is_point_in_remaining_region(start + direction * probe_distance, epsilon):
+		return resolved_segment
+
+	var hit := _find_first_guide_boundary_hit(start, direction, epsilon)
+	if !bool(hit.get("hit", false)):
+		return resolved_segment
+
+	var end_point: Vector2 = hit.get("point", start)
+	if start.distance_to(end_point) <= epsilon:
+		return resolved_segment
+	resolved_segment["end"] = end_point
+	resolved_segment["active"] = true
+	return resolved_segment
+
+
+func _find_first_guide_boundary_hit(start: Vector2, direction: Vector2, epsilon: float) -> Dictionary:
+	var ray_end := _build_guide_ray_end(start, direction, epsilon)
+	var best_hit := {"hit": false}
+	best_hit = _pick_nearest_guide_hit(best_hit, _find_guide_loop_hit(start, ray_end, _get_guide_boundary_loop(), epsilon), epsilon)
+	for polygon in claimed_polygons:
+		best_hit = _pick_nearest_guide_hit(best_hit, _find_guide_loop_hit(start, ray_end, polygon, epsilon), epsilon)
+	return best_hit
+
+
+func _find_guide_loop_hit(
+	start: Vector2,
+	ray_end: Vector2,
+	loop: PackedVector2Array,
+	epsilon: float
+) -> Dictionary:
+	if loop.size() < 2:
+		return {"hit": false}
+
+	var hit := PlayfieldBoundary.find_first_boundary_hit(start, ray_end, loop, epsilon)
+	if !bool(hit.get("hit", false)):
+		return {"hit": false}
+
+	var hit_point: Vector2 = hit.get("point", start)
+	var hit_distance := start.distance_to(hit_point)
+	if hit_distance <= epsilon:
+		return {"hit": false}
+
+	return {
+		"hit": true,
+		"point": hit_point,
+		"distance": hit_distance
+	}
+
+
+func _pick_nearest_guide_hit(current_hit: Dictionary, candidate_hit: Dictionary, epsilon: float) -> Dictionary:
+	if !bool(candidate_hit.get("hit", false)):
+		return current_hit
+	if !bool(current_hit.get("hit", false)):
+		return candidate_hit
+	if float(candidate_hit.get("distance", INF)) < float(current_hit.get("distance", INF)) - epsilon:
+		return candidate_hit
+	return current_hit
+
+
+func _build_guide_ray_end(start: Vector2, direction: Vector2, epsilon: float) -> Vector2:
+	var margin := maxf(epsilon * 8.0, 8.0)
+	if absf(direction.x) > 0.0:
+		var target_x := playfield_rect.end.x + margin if direction.x > 0.0 else playfield_rect.position.x - margin
+		return Vector2(target_x, start.y)
+	if absf(direction.y) > 0.0:
+		var target_y := playfield_rect.end.y + margin if direction.y > 0.0 else playfield_rect.position.y - margin
+		return Vector2(start.x, target_y)
+	return start
+
+
+func _get_guide_boundary_loop() -> PackedVector2Array:
+	if remaining_polygon.size() >= 3:
+		return remaining_polygon
+	return current_outer_loop
+
+
+func _is_point_in_remaining_region(point: Vector2, epsilon: float) -> bool:
+	var boundary_loop := _get_guide_boundary_loop()
+	if boundary_loop.size() >= 3:
+		return Geometry2D.is_point_in_polygon(point, boundary_loop) or PlayfieldBoundary.is_point_on_loop(boundary_loop, point, epsilon)
+	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0:
+		return false
+	return playfield_rect.has_point(point)
+
+
+func _normalize_guide_direction(direction: Vector2) -> Vector2:
+	if absf(direction.x) > absf(direction.y):
+		return Vector2(signf(direction.x), 0.0)
+	if absf(direction.y) > 0.0:
+		return Vector2(0.0, signf(direction.y))
+	return Vector2.ZERO
+
+
+func _get_guide_epsilon() -> float:
+	return maxf(PlayfieldBoundary.DEFAULT_EPSILON * 10.0, _resolve_capture_epsilon() * 0.25)
 
 
 func _update_hp_label() -> void:

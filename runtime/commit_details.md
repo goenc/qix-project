@@ -8,3 +8,15 @@ code_changes:
 ・scripts/enemy/bbos.gd で見た目スケール変更に合わせて collision_radius も同期し、反射や被弾の当たり判定を表示サイズと一致させた。
 verification:
 ・C:\Godot\godot.exe --headless --path . --scene res://scenes/base_main.tscn --quit-after 1 が成功し、BBOS を含むベースシーンの初期化が通ることを確認した。
+
+日時: 2026-03-18 22:05:20 JST
+対象:
+- 区分補助線の独立管理
+変更:
+・scripts/player/base_player.gd に guide_turn_created signal を追加し、曲がる直前の進行方向を trail_points 更新と分離して通知するようにした
+・scripts/game/base_main.gd に guide_segments を追加し、remaining_polygon と claimed_polygons の境界から終点を動的再計算する赤い補助線描画を実装した
+確認:
+・C:\Godot\godot_console.exe --headless --path . --script res://scripts/player/base_player.gd --check-only が成功した
+・C:\Godot\godot_console.exe --headless --path . --script res://scripts/game/base_main.gd --check-only が成功した
+・C:\Godot\godot_console.exe --headless --path . res://scenes/base_main.tscn --quit-after 10 が成功した
+・C:\Godot\godot_console.exe --path . res://scenes/base_main.tscn --quit-after 10 が成功した
