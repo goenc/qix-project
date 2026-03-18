@@ -20,6 +20,7 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 @export var playfield_border_width := 3.0
 @export var playfield_outer_frame_padding := 12.0
 @export var guide_segment_color := Color(1.0, 0.0, 0.0, 1.0)
+@export var guide_vertical_color := Color(0.7, 0.0, 1.0, 1.0)
 @export var guide_segment_width := 2.0
 
 @onready var base_player = get_node_or_null("BasePlayer")
@@ -437,9 +438,11 @@ func _draw_guide_segments() -> void:
 			continue
 		var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
 		var end: Vector2 = guide_segment.get("end", start)
+		var direction: Vector2 = guide_segment.get("dir", Vector2.ZERO)
 		if start.distance_to(end) <= epsilon:
 			continue
-		draw_line(start, end, guide_segment_color, guide_segment_width)
+		var guide_color := guide_vertical_color if absf(direction.y) > 0.0 else guide_segment_color
+		draw_line(start, end, guide_color, guide_segment_width)
 
 
 func _draw_border_loop(loop: PackedVector2Array, color: Color) -> void:
