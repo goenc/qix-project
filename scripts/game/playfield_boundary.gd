@@ -171,6 +171,54 @@ static func is_point_on_loop(
 	return float(project_point_to_loop(loop, point, metrics).get("distance", INF)) <= epsilon
 
 
+static func find_vertex_index_at_point(
+	loop: PackedVector2Array,
+	point: Vector2,
+	epsilon: float = DEFAULT_EPSILON
+) -> int:
+	if loop.is_empty():
+		return -1
+
+	var safe_epsilon := maxf(epsilon, DEFAULT_EPSILON)
+	var max_distance_squared := safe_epsilon * safe_epsilon
+	for index in range(loop.size()):
+		if loop[index].distance_squared_to(point) <= max_distance_squared:
+			return index
+	return -1
+
+
+static func get_vertex_tangent_directions(
+	loop: PackedVector2Array,
+	vertex_index: int,
+	epsilon: float = DEFAULT_EPSILON
+) -> Dictionary:
+	if loop.size() < 2 or vertex_index < 0 or vertex_index >= loop.size():
+		return {
+			"previous": Vector2.ZERO,
+			"next": Vector2.ZERO
+		}
+
+	var safe_epsilon := maxf(epsilon, DEFAULT_EPSILON)
+	var current_point: Vector2 = loop[vertex_index]
+	var previous_index := (vertex_index - 1 + loop.size()) % loop.size()
+	var next_index := (vertex_index + 1) % loop.size()
+	var previous_direction := loop[previous_index] - current_point
+	var next_direction := loop[next_index] - current_point
+	if previous_direction.length_squared() > safe_epsilon * safe_epsilon:
+		previous_direction = previous_direction.normalized()
+	else:
+		previous_direction = Vector2.ZERO
+	if next_direction.length_squared() > safe_epsilon * safe_epsilon:
+		next_direction = next_direction.normalized()
+	else:
+		next_direction = Vector2.ZERO
+
+	return {
+		"previous": previous_direction,
+		"next": next_direction
+	}
+
+
 static func split_outer_loop_by_trail(
 	loop: PackedVector2Array,
 	trail_points: PackedVector2Array,

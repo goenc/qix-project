@@ -796,7 +796,78 @@ func _is_on_border(point: Vector2) -> bool:
 	return PlayfieldBoundary.is_point_on_loop(active_outer_loop, point, border_epsilon, outer_loop_metrics)
 
 
+func _get_corner_adjusted_border_progress(direction: Vector2) -> Dictionary:
+	if direction == Vector2.ZERO or active_outer_loop.is_empty():
+		return {"matched": false}
+
+	var vertex_index := PlayfieldBoundary.find_vertex_index_at_point(active_outer_loop, position, border_epsilon)
+	if vertex_index < 0:
+		return {"matched": false}
+
+	var tangent_directions := PlayfieldBoundary.get_vertex_tangent_directions(
+		active_outer_loop,
+		vertex_index,
+		border_epsilon
+	)
+	var best_result := {"matched": false}
+	var best_score := 0.0
+	var is_ambiguous := false
+	var score_margin := 0.001
+
+	var previous_direction: Vector2 = tangent_directions.get("previous", Vector2.ZERO)
+	var previous_score := direction.dot(previous_direction)
+	if previous_score > score_margin:
+		var previous_result := _build_corner_progress_result(vertex_index, false)
+		if bool(previous_result.get("matched", false)):
+			best_result = previous_result
+			best_score = previous_score
+
+	var next_direction: Vector2 = tangent_directions.get("next", Vector2.ZERO)
+	var next_score := direction.dot(next_direction)
+	if next_score > score_margin:
+		var next_result := _build_corner_progress_result(vertex_index, true)
+		if bool(next_result.get("matched", false)):
+			if !bool(best_result.get("matched", false)) or next_score > best_score + score_margin:
+				best_result = next_result
+				best_score = next_score
+				is_ambiguous = false
+			elif absf(next_score - best_score) <= score_margin:
+				is_ambiguous = true
+
+	if is_ambiguous:
+		return {"matched": false}
+	return best_result
+
+
+func _build_corner_progress_result(vertex_index: int, use_next_edge: bool) -> Dictionary:
+	if outer_loop_starts.size() != active_outer_loop.size() or outer_loop_lengths.size() != active_outer_loop.size():
+		return {"matched": false}
+
+	var segment_index := vertex_index if use_next_edge else (vertex_index - 1 + active_outer_loop.size()) % active_outer_loop.size()
+	if segment_index < 0 or segment_index >= outer_loop_lengths.size():
+		return {"matched": false}
+
+	var segment_length := float(outer_loop_lengths[segment_index])
+	if segment_length <= PlayfieldBoundary.DEFAULT_EPSILON:
+		return {"matched": false}
+
+	var offset := minf(
+		maxf(border_epsilon * 0.5, PlayfieldBoundary.DEFAULT_EPSILON * 10.0),
+		segment_length * 0.5
+	)
+	var vertex_progress := float(outer_loop_starts[vertex_index])
+	var adjusted_progress := vertex_progress + offset if use_next_edge else vertex_progress - offset
+	return {
+		"matched": true,
+		"progress": _wrap_border_progress(adjusted_progress)
+	}
+
+
 func _move_along_border(direction: Vector2, delta: float) -> void:
+	var corner_progress := _get_corner_adjusted_border_progress(direction)
+	if bool(corner_progress.get("matched", false)):
+		border_progress = float(corner_progress.get("progress", border_progress))
+
 	var cw_dir := _border_tangent_cw(border_progress)
 	var ccw_dir := _border_tangent_ccw(border_progress)
 	var cw_amount := maxf(0.0, direction.dot(cw_dir))
