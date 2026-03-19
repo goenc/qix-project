@@ -1,5 +1,5 @@
-外形の角で入力方向に応じて辺を切り替える軽量補正を追加
+外形移動を線分インデックス主体の点列管理へ変更
 
-・PlayfieldBoundary に頂点判定と接続辺方向取得の軽量関数を追加
-・BasePlayer の BORDER 移動で角入力時だけ border_progress を選択辺へ補正
-・ヘッドレス検証で角の progress 切り替えとプロジェクト起動を確認
+・BasePlayer の BORDER 移動を current_border_segment_index と border_distance_on_segment 主体へ置換
+・PlayfieldBoundary に線分取得と頂点遷移の軽量補助関数を追加
+・Godot headless 起動と一時検証スクリプトで角移動と外形更新後の再同期を確認

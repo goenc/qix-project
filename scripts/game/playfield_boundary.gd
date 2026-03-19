@@ -73,6 +73,211 @@ static func build_loop_metrics(loop: PackedVector2Array) -> Dictionary:
 	}
 
 
+static func get_segment_count(loop: PackedVector2Array) -> int:
+	return loop.size() if loop.size() >= 2 else 0
+
+
+static func get_segment_start(loop: PackedVector2Array, segment_index: int) -> Vector2:
+	var segment_count := get_segment_count(loop)
+	if segment_count <= 0:
+		return Vector2.ZERO
+	var wrapped_index := ((segment_index % segment_count) + segment_count) % segment_count
+	return loop[wrapped_index]
+
+
+static func get_segment_end(loop: PackedVector2Array, segment_index: int) -> Vector2:
+	var segment_count := get_segment_count(loop)
+	if segment_count <= 0:
+		return Vector2.ZERO
+	var wrapped_index := ((segment_index % segment_count) + segment_count) % segment_count
+	return loop[(wrapped_index + 1) % segment_count]
+
+
+static func get_segment_length(
+	loop: PackedVector2Array,
+	segment_index: int,
+	metrics: Dictionary = {}
+) -> float:
+	var segment_count := get_segment_count(loop)
+	if segment_count <= 0:
+		return 0.0
+
+	var wrapped_index := ((segment_index % segment_count) + segment_count) % segment_count
+	var segment_lengths: PackedFloat32Array = metrics.get("segment_lengths", PackedFloat32Array())
+	if segment_lengths.size() == segment_count:
+		return float(segment_lengths[wrapped_index])
+	return get_segment_start(loop, wrapped_index).distance_to(get_segment_end(loop, wrapped_index))
+
+
+static func get_segment_direction(
+	loop: PackedVector2Array,
+	segment_index: int,
+	epsilon: float = DEFAULT_EPSILON
+) -> Vector2:
+	var segment_vector := get_segment_end(loop, segment_index) - get_segment_start(loop, segment_index)
+	var safe_epsilon := maxf(epsilon, DEFAULT_EPSILON)
+	if segment_vector.length_squared() <= safe_epsilon * safe_epsilon:
+		return Vector2.ZERO
+	return segment_vector.normalized()
+
+
+static func point_at_segment_distance(
+	loop: PackedVector2Array,
+	segment_index: int,
+	distance_on_segment: float,
+	metrics: Dictionary = {}
+) -> Vector2:
+	var segment_start := get_segment_start(loop, segment_index)
+	var segment_end := get_segment_end(loop, segment_index)
+	var segment_length := get_segment_length(loop, segment_index, metrics)
+	if segment_length <= DEFAULT_EPSILON:
+		return segment_start
+
+	var clamped_distance := clampf(distance_on_segment, 0.0, segment_length)
+	return segment_start.lerp(segment_end, clamped_distance / segment_length)
+
+
+static func locate_point_on_loop_segment(
+	loop: PackedVector2Array,
+	point: Vector2,
+	epsilon: float = DEFAULT_EPSILON,
+	metrics: Dictionary = {}
+) -> Dictionary:
+	var projection: Dictionary = project_point_to_loop(loop, point, metrics)
+	var segment_index := int(projection.get("segment_index", -1))
+	if segment_index < 0:
+		return {
+			"point": projection.get("point", point),
+			"progress": float(projection.get("progress", 0.0)),
+			"distance": float(projection.get("distance", 0.0)),
+			"segment_index": -1,
+			"distance_on_segment": 0.0,
+			"vertex_index": -1
+		}
+
+	var resolved_metrics: Dictionary = metrics if !metrics.is_empty() else build_loop_metrics(loop)
+	var segment_starts: PackedFloat32Array = resolved_metrics.get("segment_starts", PackedFloat32Array())
+	var segment_length := get_segment_length(loop, segment_index, resolved_metrics)
+	var distance_on_segment := 0.0
+	if segment_index < segment_starts.size():
+		distance_on_segment = clampf(
+			float(projection.get("progress", 0.0)) - float(segment_starts[segment_index]),
+			0.0,
+			segment_length
+		)
+	else:
+		distance_on_segment = clampf(
+			get_segment_start(loop, segment_index).distance_to(projection.get("point", point)),
+			0.0,
+			segment_length
+		)
+
+	var projected_point: Vector2 = projection.get("point", point)
+	var safe_epsilon := maxf(epsilon, DEFAULT_EPSILON)
+	var vertex_index := -1
+	if projected_point.distance_to(get_segment_start(loop, segment_index)) <= safe_epsilon:
+		vertex_index = segment_index
+	elif projected_point.distance_to(get_segment_end(loop, segment_index)) <= safe_epsilon:
+		vertex_index = (segment_index + 1) % loop.size()
+
+	return {
+		"point": projected_point,
+		"progress": float(projection.get("progress", 0.0)),
+		"distance": float(projection.get("distance", 0.0)),
+		"segment_index": segment_index,
+		"distance_on_segment": distance_on_segment,
+		"vertex_index": vertex_index
+	}
+
+
+static func get_vertex_connected_segment_indices(loop: PackedVector2Array, vertex_index: int) -> Dictionary:
+	var segment_count := get_segment_count(loop)
+	if segment_count <= 0 or vertex_index < 0 or vertex_index >= loop.size():
+		return {
+			"previous": -1,
+			"next": -1
+		}
+
+	return {
+		"previous": (vertex_index - 1 + segment_count) % segment_count,
+		"next": vertex_index % segment_count
+	}
+
+
+static func choose_segment_at_vertex(
+	loop: PackedVector2Array,
+	vertex_index: int,
+	input_direction: Vector2,
+	current_segment_index: int = -1,
+	epsilon: float = DEFAULT_EPSILON,
+	metrics: Dictionary = {}
+) -> Dictionary:
+	var segment_count := get_segment_count(loop)
+	if segment_count <= 0 or input_direction == Vector2.ZERO:
+		return {"matched": false}
+	if vertex_index < 0 or vertex_index >= loop.size():
+		return {"matched": false}
+
+	var safe_input_direction := input_direction.normalized() if input_direction.length_squared() > 1.0 else input_direction
+	var connected_segments: Dictionary = get_vertex_connected_segment_indices(loop, vertex_index)
+	var previous_segment_index := int(connected_segments.get("previous", -1))
+	var next_segment_index := int(connected_segments.get("next", -1))
+	var candidates: Array[Dictionary] = [
+		{
+			"segment_index": previous_segment_index,
+			"distance_on_segment": get_segment_length(loop, previous_segment_index, metrics),
+			"direction": -get_segment_direction(loop, previous_segment_index, epsilon)
+		},
+		{
+			"segment_index": next_segment_index,
+			"distance_on_segment": 0.0,
+			"direction": get_segment_direction(loop, next_segment_index, epsilon)
+		}
+	]
+
+	var best_candidate: Dictionary = {"matched": false}
+	var best_score := -INF
+	var score_margin := 0.001
+	for candidate in candidates:
+		var candidate_direction: Vector2 = candidate.get("direction", Vector2.ZERO)
+		if candidate_direction == Vector2.ZERO:
+			continue
+
+		var score := safe_input_direction.dot(candidate_direction)
+		if score <= score_margin:
+			continue
+
+		if !bool(best_candidate.get("matched", false)) or score > best_score + score_margin:
+			best_candidate = {
+				"matched": true,
+				"segment_index": int(candidate.get("segment_index", -1)),
+				"distance_on_segment": float(candidate.get("distance_on_segment", 0.0)),
+				"direction": candidate_direction
+			}
+			best_score = score
+			continue
+
+		if absf(score - best_score) > score_margin:
+			continue
+
+		var best_is_reverse := int(best_candidate.get("segment_index", -1)) == current_segment_index
+		var candidate_is_reverse := int(candidate.get("segment_index", -1)) == current_segment_index
+		if best_is_reverse and !candidate_is_reverse:
+			best_candidate = {
+				"matched": true,
+				"segment_index": int(candidate.get("segment_index", -1)),
+				"distance_on_segment": float(candidate.get("distance_on_segment", 0.0)),
+				"direction": candidate_direction
+			}
+			best_score = score
+
+	if !bool(best_candidate.get("matched", false)):
+		return {"matched": false}
+
+	best_candidate["point"] = loop[vertex_index]
+	return best_candidate
+
+
 static func point_at_progress(loop: PackedVector2Array, metrics: Dictionary, progress: float) -> Vector2:
 	if loop.size() < 2:
 		return Vector2.ZERO
