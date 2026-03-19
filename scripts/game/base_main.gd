@@ -287,8 +287,8 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 		return
 
 	_apply_retained_capture_loop(candidate_loops[retained_index])
-	_append_claimed_capture_results(candidate_loops, retained_index)
-	_finalize_capture_closed()
+	var capture_delta := _append_claimed_capture_results(candidate_loops, retained_index)
+	_finalize_capture_closed(capture_delta)
 
 
 func _on_player_guide_turn_created(
@@ -350,22 +350,129 @@ func _apply_retained_capture_loop(retained_candidate: Dictionary) -> void:
 	inactive_border_segments.clear()
 
 
-func _append_claimed_capture_results(candidate_loops: Array[Dictionary], retained_index: int) -> void:
+func _append_claimed_capture_results(candidate_loops: Array[Dictionary], retained_index: int) -> Dictionary:
+	var captured_polygons_delta: Array[PackedVector2Array] = []
+	var inactive_segments_delta: Array[PackedVector2Array] = []
 	for index in range(candidate_loops.size()):
 		if index == retained_index:
 			continue
 		var captured_polygon: PackedVector2Array = candidate_loops[index].get("polygon", PackedVector2Array())
 		if captured_polygon.size() >= 3:
 			claimed_polygons.append(captured_polygon)
+			captured_polygons_delta.append(captured_polygon)
 		var removed_path: PackedVector2Array = candidate_loops[index].get("boundary_path", PackedVector2Array())
-		inactive_border_segments.append_array(_polyline_to_segments(removed_path))
+		var removed_segments := _polyline_to_segments(removed_path)
+		if removed_segments.is_empty():
+			continue
+		inactive_border_segments.append_array(removed_segments)
+		inactive_segments_delta.append_array(removed_segments)
+
+	return {
+		"captured_polygons": captured_polygons_delta,
+		"inactive_segments": inactive_segments_delta
+	}
 
 
-func _finalize_capture_closed() -> void:
+func _collect_dirty_guide_indices_from_capture_delta(capture_delta: Dictionary) -> Array[int]:
+	var dirty_indices: Array[int] = []
+	var captured_polygons_delta: Array[PackedVector2Array] = []
+	if capture_delta.has("captured_polygons"):
+		captured_polygons_delta = capture_delta["captured_polygons"]
+	var inactive_segments_delta: Array[PackedVector2Array] = []
+	if capture_delta.has("inactive_segments"):
+		inactive_segments_delta = capture_delta["inactive_segments"]
+	if captured_polygons_delta.is_empty() and inactive_segments_delta.is_empty():
+		return dirty_indices
+
+	var epsilon := _get_guide_epsilon()
+	var captured_rects: Array[Rect2] = []
+	for polygon in captured_polygons_delta:
+		if polygon.size() < 3:
+			continue
+		captured_rects.append(_build_points_aabb(polygon))
+
+	var inactive_rects: Array[Rect2] = []
+	for segment in inactive_segments_delta:
+		if segment.size() < 2:
+			continue
+		inactive_rects.append(_build_points_aabb(segment))
+
+	for index in range(guide_segments.size()):
+		if _guide_segment_overlaps_capture_delta(guide_segments[index], captured_rects, inactive_rects, epsilon):
+			dirty_indices.append(index)
+	return dirty_indices
+
+
+func _guide_segment_overlaps_capture_delta(
+	guide_segment: Dictionary,
+	captured_rects: Array[Rect2],
+	inactive_rects: Array[Rect2],
+	epsilon: float
+) -> bool:
+	var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
+	if direction == Vector2.ZERO:
+		return false
+
+	var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
+	var end: Vector2 = guide_segment.get("end", start)
+	for rect in captured_rects:
+		if _segment_overlaps_rect(start, end, direction, rect, epsilon):
+			return true
+	for rect in inactive_rects:
+		if _segment_overlaps_rect(start, end, direction, rect, epsilon):
+			return true
+	return false
+
+
+func _segment_overlaps_rect(
+	start: Vector2,
+	end: Vector2,
+	direction: Vector2,
+	rect: Rect2,
+	epsilon: float
+) -> bool:
+	if absf(direction.x) > 0.0:
+		var segment_min_x := minf(start.x, end.x)
+		var segment_max_x := maxf(start.x, end.x)
+		return (
+			start.y >= rect.position.y - epsilon
+			and start.y <= rect.end.y + epsilon
+			and segment_max_x >= rect.position.x - epsilon
+			and segment_min_x <= rect.end.x + epsilon
+		)
+
+	var segment_min_y := minf(start.y, end.y)
+	var segment_max_y := maxf(start.y, end.y)
+	return (
+		start.x >= rect.position.x - epsilon
+		and start.x <= rect.end.x + epsilon
+		and segment_max_y >= rect.position.y - epsilon
+		and segment_min_y <= rect.end.y + epsilon
+	)
+
+
+func _build_points_aabb(points: PackedVector2Array) -> Rect2:
+	if points.is_empty():
+		return Rect2()
+
+	var min_point := points[0]
+	var max_point := points[0]
+	for index in range(1, points.size()):
+		var point := points[index]
+		min_point.x = minf(min_point.x, point.x)
+		min_point.y = minf(min_point.y, point.y)
+		max_point.x = maxf(max_point.x, point.x)
+		max_point.y = maxf(max_point.y, point.y)
+	return Rect2(min_point, max_point - min_point)
+
+
+func _finalize_capture_closed(capture_delta: Dictionary) -> void:
 	_recalculate_claimed_area()
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
-	_refresh_guide_segments(true)
+	var dirty_indices := _collect_dirty_guide_indices_from_capture_delta(capture_delta)
+	if !dirty_indices.is_empty():
+		_refresh_dirty_guide_segments(dirty_indices, true)
 	_sync_boss_marker()
 	queue_redraw()
 	_sync_hud()
@@ -485,6 +592,13 @@ func _draw_border_segments(segments: Array[PackedVector2Array], color: Color) ->
 
 func _refresh_guide_segments(apply_capture_correction: bool = false) -> void:
 	for index in range(guide_segments.size()):
+		guide_segments[index] = _resolve_guide_segment(guide_segments[index], apply_capture_correction)
+
+
+func _refresh_dirty_guide_segments(dirty_indices: Array[int], apply_capture_correction: bool = true) -> void:
+	for index in dirty_indices:
+		if index < 0 or index >= guide_segments.size():
+			continue
 		guide_segments[index] = _resolve_guide_segment(guide_segments[index], apply_capture_correction)
 
 
