@@ -4,6 +4,8 @@ const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const MAX_REFLECTIONS_PER_FRAME := 2
 const VIEWPORT_HEIGHT_RATIO := 0.5
 
+signal position_changed(world_position: Vector2)
+
 @export var move_speed: float = 140.0
 @export var direction_change_interval_min: float = 1.5
 @export var direction_change_interval_max: float = 3.0
@@ -26,6 +28,7 @@ var velocity := Vector2.ZERO
 var direction_change_timer := 0.0
 var base_scale := Vector2.ONE
 var base_collision_radius := 0.0
+var last_reported_position := Vector2(INF, INF)
 
 
 func _ready() -> void:
@@ -40,6 +43,7 @@ func _ready() -> void:
 		viewport.size_changed.connect(_on_viewport_size_changed)
 	_reset_direction_change_timer()
 	_pick_new_velocity()
+	_emit_position_changed_if_needed(true)
 
 
 func _process(delta: float) -> void:
@@ -76,6 +80,7 @@ func _process(delta: float) -> void:
 		if !bool(boundary_hit.get("hit", false)):
 			position = _ensure_position_inside_active_boundary(next_position, safe_radius, safe_epsilon)
 			_attempt_player_hit(segment_start, position, safe_radius)
+			_emit_position_changed_if_needed()
 			return
 
 		position = boundary_hit["point"]
@@ -91,6 +96,7 @@ func _process(delta: float) -> void:
 		var segment_start := position
 		position = _ensure_position_inside_active_boundary(position + velocity * remaining_time, safe_radius, safe_epsilon)
 		_attempt_player_hit(segment_start, position, safe_radius)
+	_emit_position_changed_if_needed()
 
 
 func set_playfield_rect(rect: Rect2) -> void:
@@ -105,6 +111,7 @@ func set_playfield_rect(rect: Rect2) -> void:
 		var spawnable_rect := _get_spawnable_rect(playfield_rect)
 		if !_rect_has_point(spawnable_rect, position):
 			position = _clamp_point_to_rect(position, spawnable_rect)
+	_emit_position_changed_if_needed()
 
 
 func set_active_outer_loop(loop: PackedVector2Array) -> void:
@@ -125,6 +132,7 @@ func set_active_outer_loop(loop: PackedVector2Array) -> void:
 			_get_effective_collision_radius(),
 			maxf(bounce_epsilon, 0.001)
 		)
+	_emit_position_changed_if_needed()
 
 
 func set_collision_radius(radius: float) -> void:
@@ -142,6 +150,7 @@ func set_collision_radius(radius: float) -> void:
 		)
 	elif playfield_rect.size.x > 0.0 and playfield_rect.size.y > 0.0:
 		position = _clamp_point_to_rect(position, _get_spawnable_rect(playfield_rect))
+	_emit_position_changed_if_needed()
 
 
 func _on_viewport_size_changed() -> void:
@@ -272,15 +281,32 @@ func _attempt_player_hit(from_point: Vector2, to_point: Vector2, attack_radius: 
 
 	var targets: Dictionary = player.call("get_boss_hit_targets")
 	var best_hit := {"hit": false}
+	var swept_aabb := _build_swept_aabb(from_point, to_point, attack_radius)
 
 	if bool(targets.get("player", false)) and player.has_method("get_body_damage_rect"):
 		var body_rect: Rect2 = player.call("get_body_damage_rect")
-		var body_hit := _find_segment_rect_contact(from_point, to_point, body_rect, attack_radius)
-		if bool(body_hit.get("hit", false)):
-			best_hit = body_hit
+		if _rects_overlap(swept_aabb, body_rect):
+			var body_hit := _find_segment_rect_contact(from_point, to_point, body_rect, attack_radius)
+			if bool(body_hit.get("hit", false)):
+				best_hit = body_hit
 
 	if bool(targets.get("trail", false)) and player.has_method("get_active_damage_trail_segments"):
-		var trail_hit := _find_trail_hit(from_point, to_point, attack_radius, player.call("get_active_damage_trail_segments"))
+		var trail_segments: Array = []
+		var trail_segment_aabbs: Array = []
+		if player.has_method("get_active_damage_trail_data"):
+			var trail_data: Dictionary = player.call("get_active_damage_trail_data")
+			trail_segments = trail_data.get("segments", [])
+			trail_segment_aabbs = trail_data.get("aabbs", [])
+		else:
+			trail_segments = player.call("get_active_damage_trail_segments")
+		var trail_hit := _find_trail_hit(
+			from_point,
+			to_point,
+			attack_radius,
+			trail_segments,
+			trail_segment_aabbs,
+			swept_aabb
+		)
 		if bool(trail_hit.get("hit", false)):
 			if (
 				!bool(best_hit.get("hit", false))
@@ -303,12 +329,22 @@ func _find_trail_hit(
 	from_point: Vector2,
 	to_point: Vector2,
 	attack_radius: float,
-	trail_segments: Array
+	trail_segments: Array,
+	trail_segment_aabbs: Array,
+	swept_aabb: Rect2
 ) -> Dictionary:
 	var best_hit := {"hit": false}
-	for segment_variant in trail_segments:
+	for index in range(trail_segments.size()):
+		var segment_variant = trail_segments[index]
 		var segment: PackedVector2Array = segment_variant
 		if segment.size() < 2:
+			continue
+		var segment_aabb := Rect2()
+		if index < trail_segment_aabbs.size():
+			segment_aabb = trail_segment_aabbs[index]
+		else:
+			segment_aabb = _build_swept_aabb(segment[0], segment[1], 0.0)
+		if !_rects_overlap(swept_aabb, segment_aabb):
 			continue
 		var contact := _find_segment_segment_contact(
 			from_point,
@@ -444,3 +480,24 @@ func _find_segment_segment_contact(
 		"distance": a0.distance_to(closest_a),
 		"point": closest_a
 	}
+
+
+func _build_swept_aabb(from_point: Vector2, to_point: Vector2, padding: float) -> Rect2:
+	var min_point := Vector2(minf(from_point.x, to_point.x), minf(from_point.y, to_point.y))
+	var max_point := Vector2(maxf(from_point.x, to_point.x), maxf(from_point.y, to_point.y))
+	return Rect2(min_point, max_point - min_point).grow(maxf(padding, 0.0))
+
+
+func _rects_overlap(a: Rect2, b: Rect2) -> bool:
+	return (
+		a.position.x <= b.end.x
+		and a.end.x >= b.position.x
+		and a.position.y <= b.end.y
+		and a.end.y >= b.position.y
+	)
+
+
+func _emit_position_changed_if_needed(force := false) -> void:
+	if force or position.distance_to(last_reported_position) > 0.001:
+		last_reported_position = position
+		position_changed.emit(global_position)

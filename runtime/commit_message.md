@@ -1,5 +1,6 @@
-capture 中の補助線を pending 扱いに変更
+広域ポーリングを外して capture 差分中心に軽量化
 
-・capture 中は補助線の確定 end を保存せず 仮表示だけを行うようにした
-・capture 確定後に今回 generation の補助線を削除判定と確定解決へ分離した
-・base_main シーンを headless と通常起動で確認した
+・base_main の HUD 更新と pending guide 掃除をイベント駆動へ移行
+・guide 軸キーと claimed / inactive border の AABB で guide / claimed 判定の前段を軽量化
+・base_player の trail キャッシュと bbos の swept AABB で当たり判定候補を絞り込み
+・Godot 4.6.1 の headless / 非 headless 起動で確認

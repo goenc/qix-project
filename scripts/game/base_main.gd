@@ -37,18 +37,23 @@ var playfield_rect: Rect2 = Rect2()
 var stage_cover_polygon: PackedVector2Array = PackedVector2Array()
 var stage_cover_uvs: PackedVector2Array = PackedVector2Array()
 var claimed_polygons: Array[PackedVector2Array] = []
+var claimed_polygon_aabbs: Array[Rect2] = []
 var current_outer_loop: PackedVector2Array = PackedVector2Array()
 var remaining_polygon: PackedVector2Array = PackedVector2Array()
 var inactive_border_segments: Array[PackedVector2Array] = []
+var inactive_border_segment_aabbs: Array[Rect2] = []
 var guide_segments: Array[Dictionary] = []
 var vertical_guide_indices_by_x: Dictionary = {}
 var horizontal_guide_indices_by_y: Dictionary = {}
+var vertical_guide_axis_keys: Array[int] = []
+var horizontal_guide_axis_keys: Array[int] = []
 var claimed_area := 0.0
 var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
 var game_over := false
 var show_vertical_guides := true
 var show_horizontal_guides := true
 var current_capture_generation := 0
+var capture_preview_active := false
 
 
 func _ready() -> void:
@@ -59,6 +64,7 @@ func _ready() -> void:
 	_recalculate_playfield_rect()
 	_initialize_outer_loop_from_rect()
 	_connect_player_signal()
+	_connect_bbos_signal()
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
 	_sync_debug_guide_visibility()
@@ -99,12 +105,6 @@ func set_show_horizontal_guides_from_debug(enabled: bool) -> void:
 		return
 	show_horizontal_guides = enabled
 	queue_redraw()
-
-
-func _process(_delta: float) -> void:
-	_cleanup_pending_guides_outside_capture()
-	_sync_boss_marker()
-	_sync_hud()
 
 
 func _sync_hud() -> void:
@@ -239,6 +239,21 @@ func _connect_player_signal() -> void:
 		base_player.hp_changed.connect(_on_player_hp_changed)
 	if base_player.has_signal("defeated") and !base_player.defeated.is_connected(_on_player_defeated):
 		base_player.defeated.connect(_on_player_defeated)
+	if base_player.has_signal("debug_status_changed") and !base_player.debug_status_changed.is_connected(_on_player_debug_status_changed):
+		base_player.debug_status_changed.connect(_on_player_debug_status_changed)
+	if base_player.has_signal("capture_preview_changed") and !base_player.capture_preview_changed.is_connected(_on_player_capture_preview_changed):
+		base_player.capture_preview_changed.connect(_on_player_capture_preview_changed)
+	if base_player.has_method("get_state_text"):
+		var mode_text := String(base_player.call("get_state_text"))
+		capture_preview_active = mode_text == "DRAWING" or mode_text == "REWINDING"
+
+
+func _connect_bbos_signal() -> void:
+	if !is_instance_valid(bbos):
+		return
+	var position_changed_callable := Callable(self, "_on_bbos_position_changed")
+	if bbos.has_signal("position_changed") and !bbos.is_connected("position_changed", position_changed_callable):
+		bbos.connect("position_changed", position_changed_callable)
 
 
 func _initialize_outer_loop_from_rect() -> void:
@@ -248,8 +263,10 @@ func _initialize_outer_loop_from_rect() -> void:
 	_rebuild_stage_cover_polygon_from_polygon(initial_stage_cover_source)
 	queue_redraw()
 	inactive_border_segments.clear()
+	capture_preview_active = false
 	if claimed_polygons.is_empty():
 		claimed_area = 0.0
+	_rebuild_spatial_caches()
 	_rebuild_guide_axis_indices()
 	_refresh_guide_segments()
 
@@ -434,13 +451,41 @@ func _collect_candidate_guide_indices_from_rects(
 func _append_axis_index_candidates_from_rect(rect: Rect2, epsilon: float, candidate_index_set: Dictionary) -> void:
 	var min_x := int(floor(rect.position.x - epsilon))
 	var max_x := int(ceil(rect.end.x + epsilon))
-	for axis_key in range(min_x, max_x + 1):
-		_append_axis_index_bucket_candidates(vertical_guide_indices_by_x, axis_key, true, candidate_index_set)
+	_append_axis_index_candidates_in_range(
+		vertical_guide_axis_keys,
+		vertical_guide_indices_by_x,
+		min_x,
+		max_x,
+		true,
+		candidate_index_set
+	)
 
 	var min_y := int(floor(rect.position.y - epsilon))
 	var max_y := int(ceil(rect.end.y + epsilon))
-	for axis_key in range(min_y, max_y + 1):
-		_append_axis_index_bucket_candidates(horizontal_guide_indices_by_y, axis_key, false, candidate_index_set)
+	_append_axis_index_candidates_in_range(
+		horizontal_guide_axis_keys,
+		horizontal_guide_indices_by_y,
+		min_y,
+		max_y,
+		false,
+		candidate_index_set
+	)
+
+
+func _append_axis_index_candidates_in_range(
+	axis_keys: Array[int],
+	axis_indices: Dictionary,
+	min_axis_key: int,
+	max_axis_key: int,
+	expect_vertical: bool,
+	candidate_index_set: Dictionary
+) -> void:
+	for axis_key in axis_keys:
+		if axis_key < min_axis_key:
+			continue
+		if axis_key > max_axis_key:
+			break
+		_append_axis_index_bucket_candidates(axis_indices, axis_key, expect_vertical, candidate_index_set)
 
 
 func _append_axis_index_bucket_candidates(
@@ -478,12 +523,28 @@ func _append_axis_index_bucket_candidates(
 func _clear_guide_axis_indices() -> void:
 	vertical_guide_indices_by_x.clear()
 	horizontal_guide_indices_by_y.clear()
+	vertical_guide_axis_keys.clear()
+	horizontal_guide_axis_keys.clear()
 
 
 func _rebuild_guide_axis_indices() -> void:
 	_clear_guide_axis_indices()
 	for index in range(guide_segments.size()):
 		_register_guide_axis_index(index, guide_segments[index])
+	_rebuild_guide_axis_key_lists()
+
+
+func _rebuild_guide_axis_key_lists() -> void:
+	vertical_guide_axis_keys = _sorted_axis_keys(vertical_guide_indices_by_x)
+	horizontal_guide_axis_keys = _sorted_axis_keys(horizontal_guide_indices_by_y)
+
+
+func _sorted_axis_keys(axis_indices: Dictionary) -> Array[int]:
+	var sorted_keys: Array[int] = []
+	for axis_key in axis_indices.keys():
+		sorted_keys.append(int(axis_key))
+	sorted_keys.sort()
+	return sorted_keys
 
 
 func _register_guide_axis_index(index: int, guide_segment: Dictionary) -> void:
@@ -580,6 +641,58 @@ func _build_points_aabb(points: PackedVector2Array) -> Rect2:
 	return Rect2(min_point, max_point - min_point)
 
 
+func _rebuild_spatial_caches() -> void:
+	_rebuild_claimed_polygon_aabbs()
+	_rebuild_inactive_border_segment_aabbs()
+
+
+func _rebuild_claimed_polygon_aabbs() -> void:
+	claimed_polygon_aabbs = _build_polygon_aabbs(claimed_polygons)
+
+
+func _rebuild_inactive_border_segment_aabbs() -> void:
+	inactive_border_segment_aabbs = _build_segment_aabbs(inactive_border_segments)
+
+
+func _build_polygon_aabbs(polygons: Array[PackedVector2Array]) -> Array[Rect2]:
+	var aabbs: Array[Rect2] = []
+	for polygon in polygons:
+		aabbs.append(_build_points_aabb(polygon))
+	return aabbs
+
+
+func _build_segment_aabbs(segments: Array[PackedVector2Array]) -> Array[Rect2]:
+	var aabbs: Array[Rect2] = []
+	for segment in segments:
+		aabbs.append(_build_points_aabb(segment))
+	return aabbs
+
+
+func _build_segment_aabb_from_points(segment_start: Vector2, segment_end: Vector2) -> Rect2:
+	var segment := PackedVector2Array()
+	segment.append(segment_start)
+	segment.append(segment_end)
+	return _build_points_aabb(segment)
+
+
+func _point_overlaps_rect(point: Vector2, rect: Rect2, epsilon: float) -> bool:
+	return (
+		point.x >= rect.position.x - epsilon
+		and point.x <= rect.end.x + epsilon
+		and point.y >= rect.position.y - epsilon
+		and point.y <= rect.end.y + epsilon
+	)
+
+
+func _rects_overlap(a: Rect2, b: Rect2, padding: float = 0.0) -> bool:
+	return (
+		a.position.x <= b.end.x + padding
+		and a.end.x >= b.position.x - padding
+		and a.position.y <= b.end.y + padding
+		and a.end.y >= b.position.y - padding
+	)
+
+
 func _extract_captured_polygons_from_capture_delta(capture_delta: Dictionary) -> Array[PackedVector2Array]:
 	var captured_polygons_delta: Array[PackedVector2Array] = []
 	if capture_delta.has("captured_polygons"):
@@ -598,9 +711,13 @@ func _is_guide_created_in_current_capture(guide_segment: Dictionary, capture_gen
 func _is_point_in_any_polygon(
 	point: Vector2,
 	polygons: Array[PackedVector2Array],
+	polygon_aabbs: Array[Rect2],
 	epsilon: float
 ) -> bool:
-	for polygon in polygons:
+	for index in range(polygons.size()):
+		if index < polygon_aabbs.size() and !_point_overlaps_rect(point, polygon_aabbs[index], epsilon):
+			continue
+		var polygon := polygons[index]
 		if polygon.size() < 3:
 			continue
 		if Geometry2D.is_point_in_polygon(point, polygon) or PlayfieldBoundary.is_point_on_loop(polygon, point, epsilon):
@@ -611,18 +728,20 @@ func _is_point_in_any_polygon(
 func _guide_end_is_inside_capture_delta(
 	guide_segment: Dictionary,
 	captured_polygons_delta: Array[PackedVector2Array],
+	captured_polygon_aabbs: Array[Rect2],
 	epsilon: float
 ) -> bool:
 	if !bool(guide_segment.get("active", false)):
 		return false
 	var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
 	var end: Vector2 = guide_segment.get("end", start)
-	return _is_point_in_any_polygon(end, captured_polygons_delta, epsilon)
+	return _is_point_in_any_polygon(end, captured_polygons_delta, captured_polygon_aabbs, epsilon)
 
 
 func _guide_body_is_inside_capture_delta(
 	guide_segment: Dictionary,
 	captured_polygons_delta: Array[PackedVector2Array],
+	captured_polygon_aabbs: Array[Rect2],
 	epsilon: float
 ) -> bool:
 	if !bool(guide_segment.get("active", false)):
@@ -658,7 +777,7 @@ func _guide_body_is_inside_capture_delta(
 			if axis_value == scan_to:
 				break
 			continue
-		if _is_point_in_any_polygon(sample_point, captured_polygons_delta, epsilon):
+		if _is_point_in_any_polygon(sample_point, captured_polygons_delta, captured_polygon_aabbs, epsilon):
 			return true
 
 		if axis_value == scan_to:
@@ -669,16 +788,18 @@ func _guide_body_is_inside_capture_delta(
 func _guide_end_or_body_is_inside_capture_delta(
 	guide_segment: Dictionary,
 	captured_polygons_delta: Array[PackedVector2Array],
+	captured_polygon_aabbs: Array[Rect2],
 	epsilon: float
 ) -> bool:
-	if _guide_end_is_inside_capture_delta(guide_segment, captured_polygons_delta, epsilon):
+	if _guide_end_is_inside_capture_delta(guide_segment, captured_polygons_delta, captured_polygon_aabbs, epsilon):
 		return true
-	return _guide_body_is_inside_capture_delta(guide_segment, captured_polygons_delta, epsilon)
+	return _guide_body_is_inside_capture_delta(guide_segment, captured_polygons_delta, captured_polygon_aabbs, epsilon)
 
 
 func _guide_segment_touches_capture_delta(
 	guide_segment: Dictionary,
 	captured_polygons_delta: Array[PackedVector2Array],
+	captured_polygon_aabbs: Array[Rect2],
 	epsilon: float
 ) -> bool:
 	if !bool(guide_segment.get("active", false)):
@@ -689,7 +810,7 @@ func _guide_segment_touches_capture_delta(
 	var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
 	if direction == Vector2.ZERO:
 		return false
-	if _is_point_in_any_polygon(end, captured_polygons_delta, epsilon):
+	if _is_point_in_any_polygon(end, captured_polygons_delta, captured_polygon_aabbs, epsilon):
 		return true
 
 	var scan_bounds := _get_guide_scan_bounds(start, end, direction)
@@ -712,7 +833,7 @@ func _guide_segment_touches_capture_delta(
 			if axis_value == scan_to:
 				break
 			continue
-		if _is_point_in_any_polygon(sample_point, captured_polygons_delta, epsilon):
+		if _is_point_in_any_polygon(sample_point, captured_polygons_delta, captured_polygon_aabbs, epsilon):
 			return true
 
 		if axis_value == scan_to:
@@ -724,11 +845,12 @@ func _guide_newly_enters_capture_delta(
 	guide_segment: Dictionary,
 	capture_generation: int,
 	captured_polygons_delta: Array[PackedVector2Array],
+	captured_polygon_aabbs: Array[Rect2],
 	epsilon: float
 ) -> bool:
 	if _is_guide_created_in_current_capture(guide_segment, capture_generation):
 		return false
-	return _guide_segment_touches_capture_delta(guide_segment, captured_polygons_delta, epsilon)
+	return _guide_segment_touches_capture_delta(guide_segment, captured_polygons_delta, captured_polygon_aabbs, epsilon)
 
 
 func _reset_guide_segment_for_reresolve(guide_segment: Dictionary) -> Dictionary:
@@ -760,11 +882,17 @@ func _collect_pending_guide_indices_for_capture(capture_generation: int) -> Arra
 func _is_pending_guide_captured(
 	resolved_guide_segment: Dictionary,
 	captured_polygons_delta: Array[PackedVector2Array],
+	captured_polygon_aabbs: Array[Rect2],
 	epsilon: float
 ) -> bool:
 	if !bool(resolved_guide_segment.get("active", false)):
 		return true
-	return _guide_end_or_body_is_inside_capture_delta(resolved_guide_segment, captured_polygons_delta, epsilon)
+	return _guide_end_or_body_is_inside_capture_delta(
+		resolved_guide_segment,
+		captured_polygons_delta,
+		captured_polygon_aabbs,
+		epsilon
+	)
 
 
 func _collect_guide_capture_actions(
@@ -777,11 +905,12 @@ func _collect_guide_capture_actions(
 		"reresolve": []
 	}
 	var captured_polygons_delta := _extract_captured_polygons_from_capture_delta(capture_delta)
+	var captured_polygon_aabbs := _build_polygon_aabbs(captured_polygons_delta)
 	var epsilon := _get_guide_epsilon()
 	var pending_indices := _collect_pending_guide_indices_for_capture(capture_generation)
 	for index in pending_indices:
 		var resolved_segment := _resolve_guide_segment(_build_confirmed_guide_segment(guide_segments[index]), true)
-		if _is_pending_guide_captured(resolved_segment, captured_polygons_delta, epsilon):
+		if _is_pending_guide_captured(resolved_segment, captured_polygons_delta, captured_polygon_aabbs, epsilon):
 			actions["remove"].append(index)
 			continue
 		actions["confirm"].append({
@@ -802,10 +931,16 @@ func _collect_guide_capture_actions(
 		if !bool(guide_segment.get("active", false)):
 			continue
 		if _is_guide_created_in_current_capture(guide_segment, capture_generation):
-			if _guide_end_is_inside_capture_delta(guide_segment, captured_polygons_delta, epsilon):
+			if _guide_end_is_inside_capture_delta(guide_segment, captured_polygons_delta, captured_polygon_aabbs, epsilon):
 				actions["remove"].append(index)
 			continue
-		if _guide_newly_enters_capture_delta(guide_segment, capture_generation, captured_polygons_delta, epsilon):
+		if _guide_newly_enters_capture_delta(
+			guide_segment,
+			capture_generation,
+			captured_polygons_delta,
+			captured_polygon_aabbs,
+			epsilon
+		):
 			actions["reresolve"].append(index)
 	return actions
 
@@ -850,6 +985,7 @@ func _apply_capture_guide_actions(capture_actions: Dictionary) -> void:
 
 func _finalize_capture_closed(capture_delta: Dictionary, capture_generation: int) -> void:
 	_recalculate_claimed_area()
+	_rebuild_spatial_caches()
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
 	var capture_actions := _collect_guide_capture_actions(capture_delta, capture_generation)
@@ -1203,10 +1339,13 @@ func _build_guide_scan_point(scan_bounds: Dictionary, axis_value: int) -> Vector
 
 func _find_first_guide_boundary_hit(start: Vector2, direction: Vector2, epsilon: float) -> Dictionary:
 	var ray_end := _build_guide_ray_end(start, direction, epsilon)
+	var ray_rect := _build_segment_aabb_from_points(start, ray_end)
 	var best_hit := {"hit": false}
 	best_hit = _pick_nearest_guide_hit(best_hit, _find_guide_loop_hit(start, ray_end, _get_guide_boundary_loop(), epsilon), epsilon)
-	for polygon in claimed_polygons:
-		best_hit = _pick_nearest_guide_hit(best_hit, _find_guide_loop_hit(start, ray_end, polygon, epsilon), epsilon)
+	for index in range(claimed_polygons.size()):
+		if index < claimed_polygon_aabbs.size() and !_rects_overlap(ray_rect, claimed_polygon_aabbs[index], epsilon):
+			continue
+		best_hit = _pick_nearest_guide_hit(best_hit, _find_guide_loop_hit(start, ray_end, claimed_polygons[index], epsilon), epsilon)
 	return best_hit
 
 
@@ -1277,7 +1416,10 @@ func _is_point_in_valid_guide_region(point: Vector2, epsilon: float) -> bool:
 
 
 func _is_point_in_claimed_region(point: Vector2, epsilon: float) -> bool:
-	for polygon in claimed_polygons:
+	for index in range(claimed_polygons.size()):
+		if index < claimed_polygon_aabbs.size() and !_point_overlaps_rect(point, claimed_polygon_aabbs[index], epsilon):
+			continue
+		var polygon := claimed_polygons[index]
 		if polygon.size() < 3:
 			continue
 		if Geometry2D.is_point_in_polygon(point, polygon) or PlayfieldBoundary.is_point_on_loop(polygon, point, epsilon):
@@ -1286,9 +1428,12 @@ func _is_point_in_claimed_region(point: Vector2, epsilon: float) -> bool:
 
 
 func _is_point_on_inactive_border(point: Vector2, epsilon: float) -> bool:
-	for segment in inactive_border_segments:
-		for index in range(segment.size() - 1):
-			if _is_point_on_segment(point, segment[index], segment[index + 1], epsilon):
+	for index in range(inactive_border_segments.size()):
+		if index < inactive_border_segment_aabbs.size() and !_point_overlaps_rect(point, inactive_border_segment_aabbs[index], epsilon):
+			continue
+		var segment := inactive_border_segments[index]
+		for segment_index in range(segment.size() - 1):
+			if _is_point_on_segment(point, segment[segment_index], segment[segment_index + 1], epsilon):
 				return true
 	return false
 
@@ -1328,7 +1473,7 @@ func _get_guide_epsilon() -> float:
 func _cleanup_pending_guides_outside_capture() -> void:
 	if !_has_pending_guides():
 		return
-	if _is_capture_preview_active():
+	if capture_preview_active:
 		return
 	_remove_pending_guides()
 	queue_redraw()
@@ -1339,14 +1484,6 @@ func _has_pending_guides() -> bool:
 		if _is_pending_guide_segment(guide_segment):
 			return true
 	return false
-
-
-func _is_capture_preview_active() -> bool:
-	if !is_instance_valid(base_player):
-		return false
-	var status: Dictionary = base_player.get_debug_status()
-	var mode_text := str(status.get("mode_text", "BORDER"))
-	return mode_text == "DRAWING" or mode_text == "REWINDING"
 
 
 func _remove_pending_guides() -> void:
@@ -1392,3 +1529,17 @@ func _on_player_defeated() -> void:
 	game_over = true
 	get_tree().paused = true
 	_sync_hud()
+
+
+func _on_player_debug_status_changed(_status: Dictionary) -> void:
+	_sync_hud()
+
+
+func _on_player_capture_preview_changed(active: bool) -> void:
+	capture_preview_active = active
+	if !capture_preview_active:
+		_cleanup_pending_guides_outside_capture()
+
+
+func _on_bbos_position_changed(_world_position: Vector2) -> void:
+	_sync_boss_marker()

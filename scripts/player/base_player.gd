@@ -8,6 +8,8 @@ signal capture_closed(trail_points: PackedVector2Array)
 signal guide_turn_created(turn_point: Vector2, previous_direction: Vector2, new_direction: Vector2)
 signal hp_changed(current_hp: int, max_hp: int)
 signal defeated()
+signal debug_status_changed(status: Dictionary)
+signal capture_preview_changed(active: bool)
 
 @export var move_speed := 240.0
 @export var border_epsilon := 2.0
@@ -61,6 +63,10 @@ var current_hp := 0
 var invincibility_timer := 0.0
 var is_defeated := false
 var is_draw_action_configured := true
+var last_debug_status_snapshot: Dictionary = {}
+var last_capture_preview_active := false
+var active_damage_trail_segments: Array[PackedVector2Array] = []
+var active_damage_trail_aabbs: Array[Rect2] = []
 
 
 func _ready() -> void:
@@ -76,8 +82,10 @@ func _ready() -> void:
 		trail_line.top_level = true
 		trail_line.global_position = Vector2.ZERO
 		trail_line.points = PackedVector2Array()
+	_refresh_damage_trail_cache(PackedVector2Array())
 	_apply_state_visuals()
 	_update_damage_hitboxes()
+	_refresh_debug_notifications(true)
 
 
 func set_playfield_rect(rect: Rect2) -> void:
@@ -100,6 +108,7 @@ func set_playfield_rect(rect: Rect2) -> void:
 	border_progress = _point_to_border_progress(position)
 	_apply_state_visuals()
 	_apply_movement_constraints()
+	_refresh_debug_notifications()
 
 
 func set_playfield(rect: Rect2) -> void:
@@ -121,6 +130,7 @@ func set_active_outer_loop(loop: PackedVector2Array) -> void:
 
 	border_progress = _point_to_border_progress(position)
 	_apply_movement_constraints()
+	_refresh_debug_notifications()
 
 
 func set_active_border(border_loop: PackedVector2Array, _allowed_polygon: PackedVector2Array = PackedVector2Array()) -> void:
@@ -167,6 +177,7 @@ func _process(delta: float) -> void:
 
 	_apply_movement_constraints()
 	_update_damage_hitboxes()
+	_refresh_debug_notifications()
 
 
 func get_state_text() -> String:
@@ -262,19 +273,14 @@ func get_active_damage_trail_segments() -> Array[PackedVector2Array]:
 	if !bool(targets.get("trail", false)):
 		var empty_segments: Array[PackedVector2Array] = []
 		return empty_segments
+	return active_damage_trail_segments
 
-	var visible_points := _build_visible_trail_points()
-	var segments: Array[PackedVector2Array] = []
-	for i in range(visible_points.size() - 1):
-		var segment_start: Vector2 = visible_points[i]
-		var segment_end: Vector2 = visible_points[i + 1]
-		if segment_start.is_equal_approx(segment_end):
-			continue
-		var segment := PackedVector2Array()
-		segment.append(segment_start)
-		segment.append(segment_end)
-		segments.append(segment)
-	return segments
+
+func get_active_damage_trail_data() -> Dictionary:
+	return {
+		"segments": active_damage_trail_segments,
+		"aabbs": active_damage_trail_aabbs
+	}
 
 
 func apply_boss_damage() -> bool:
@@ -291,6 +297,7 @@ func apply_boss_damage() -> bool:
 	hp_changed.emit(current_hp, get_max_hp())
 	_apply_state_visuals()
 	_update_damage_hitboxes()
+	_refresh_debug_notifications()
 	if is_defeated:
 		defeated.emit()
 	return true
@@ -485,8 +492,10 @@ func _append_trail_corner_point(point: Vector2) -> void:
 
 
 func _update_trail_line() -> void:
+	var visible_points := _build_visible_trail_points()
 	if is_instance_valid(trail_line):
-		trail_line.points = _build_visible_trail_points()
+		trail_line.points = visible_points
+	_refresh_damage_trail_cache(visible_points)
 
 
 func _build_visible_trail_points() -> PackedVector2Array:
@@ -880,3 +889,49 @@ func _is_draw_action_pressed() -> bool:
 
 func _is_draw_action_just_pressed() -> bool:
 	return is_draw_action_configured and Input.is_action_just_pressed(ACTION_QIX_DRAW)
+
+
+func _refresh_damage_trail_cache(visible_points: PackedVector2Array) -> void:
+	active_damage_trail_segments.clear()
+	active_damage_trail_aabbs.clear()
+	for i in range(visible_points.size() - 1):
+		var segment_start: Vector2 = visible_points[i]
+		var segment_end: Vector2 = visible_points[i + 1]
+		if segment_start.is_equal_approx(segment_end):
+			continue
+		var segment := PackedVector2Array()
+		segment.append(segment_start)
+		segment.append(segment_end)
+		active_damage_trail_segments.append(segment)
+		active_damage_trail_aabbs.append(_build_segment_aabb(segment_start, segment_end))
+
+
+func _build_segment_aabb(segment_start: Vector2, segment_end: Vector2) -> Rect2:
+	var min_point := Vector2(minf(segment_start.x, segment_end.x), minf(segment_start.y, segment_end.y))
+	var max_point := Vector2(maxf(segment_start.x, segment_end.x), maxf(segment_start.y, segment_end.y))
+	return Rect2(min_point, max_point - min_point)
+
+
+func _refresh_debug_notifications(force := false) -> void:
+	var status_snapshot := _build_debug_status_snapshot()
+	if force or status_snapshot != last_debug_status_snapshot:
+		last_debug_status_snapshot = status_snapshot
+		debug_status_changed.emit(get_debug_status())
+
+	var preview_active := _is_capture_preview_active_state()
+	if force or preview_active != last_capture_preview_active:
+		last_capture_preview_active = preview_active
+		capture_preview_changed.emit(preview_active)
+
+
+func _build_debug_status_snapshot() -> Dictionary:
+	return {
+		"mode_text": get_state_text(),
+		"position": Vector2i(int(round(position.x)), int(round(position.y))),
+		"hp": current_hp,
+		"max_hp": get_max_hp()
+	}
+
+
+func _is_capture_preview_active_state() -> bool:
+	return state == PlayerState.DRAWING or state == PlayerState.REWINDING
