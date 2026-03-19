@@ -41,6 +41,8 @@ var current_outer_loop: PackedVector2Array = PackedVector2Array()
 var remaining_polygon: PackedVector2Array = PackedVector2Array()
 var inactive_border_segments: Array[PackedVector2Array] = []
 var guide_segments: Array[Dictionary] = []
+var vertical_guide_indices_by_x: Dictionary = {}
+var horizontal_guide_indices_by_y: Dictionary = {}
 var claimed_area := 0.0
 var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
 var game_over := false
@@ -246,6 +248,7 @@ func _initialize_outer_loop_from_rect() -> void:
 	inactive_border_segments.clear()
 	if claimed_polygons.is_empty():
 		claimed_area = 0.0
+	_rebuild_guide_axis_indices()
 	_refresh_guide_segments()
 
 
@@ -312,6 +315,7 @@ func _on_player_guide_turn_created(
 			"active": false
 		}
 		guide_segments.append(_resolve_guide_segment(guide_segment))
+		_register_guide_axis_index(guide_segments.size() - 1, guide_segment)
 	queue_redraw()
 
 
@@ -397,10 +401,109 @@ func _collect_dirty_guide_indices_from_capture_delta(capture_delta: Dictionary) 
 			continue
 		inactive_rects.append(_build_points_aabb(segment))
 
-	for index in range(guide_segments.size()):
+	var candidate_indices := _collect_candidate_guide_indices_from_rects(captured_rects, inactive_rects, epsilon)
+	for index in candidate_indices:
 		if _guide_segment_overlaps_capture_delta(guide_segments[index], captured_rects, inactive_rects, epsilon):
 			dirty_indices.append(index)
 	return dirty_indices
+
+
+func _collect_candidate_guide_indices_from_rects(
+	captured_rects: Array[Rect2],
+	inactive_rects: Array[Rect2],
+	epsilon: float
+) -> Array[int]:
+	var candidate_index_set: Dictionary = {}
+	for rect in captured_rects:
+		_append_axis_index_candidates_from_rect(rect, epsilon, candidate_index_set)
+	for rect in inactive_rects:
+		_append_axis_index_candidates_from_rect(rect, epsilon, candidate_index_set)
+
+	var candidate_indices: Array[int] = []
+	for index in candidate_index_set.keys():
+		candidate_indices.append(int(index))
+	candidate_indices.sort()
+	return candidate_indices
+
+
+func _append_axis_index_candidates_from_rect(rect: Rect2, epsilon: float, candidate_index_set: Dictionary) -> void:
+	var min_x := int(floor(rect.position.x - epsilon))
+	var max_x := int(ceil(rect.end.x + epsilon))
+	for axis_key in range(min_x, max_x + 1):
+		_append_axis_index_bucket_candidates(vertical_guide_indices_by_x, axis_key, true, candidate_index_set)
+
+	var min_y := int(floor(rect.position.y - epsilon))
+	var max_y := int(ceil(rect.end.y + epsilon))
+	for axis_key in range(min_y, max_y + 1):
+		_append_axis_index_bucket_candidates(horizontal_guide_indices_by_y, axis_key, false, candidate_index_set)
+
+
+func _append_axis_index_bucket_candidates(
+	axis_indices: Dictionary,
+	axis_key: int,
+	expect_vertical: bool,
+	candidate_index_set: Dictionary
+) -> void:
+	if !axis_indices.has(axis_key):
+		return
+
+	var bucket: Array = axis_indices[axis_key]
+	for raw_index in bucket:
+		var index := int(raw_index)
+		if index < 0 or index >= guide_segments.size():
+			continue
+
+		var guide_segment := guide_segments[index]
+		var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
+		if direction == Vector2.ZERO:
+			continue
+
+		var is_vertical := absf(direction.y) > 0.0
+		if is_vertical != expect_vertical:
+			continue
+		if _get_guide_axis_key(guide_segment) != axis_key:
+			continue
+		candidate_index_set[index] = true
+
+
+func _clear_guide_axis_indices() -> void:
+	vertical_guide_indices_by_x.clear()
+	horizontal_guide_indices_by_y.clear()
+
+
+func _rebuild_guide_axis_indices() -> void:
+	_clear_guide_axis_indices()
+	for index in range(guide_segments.size()):
+		_register_guide_axis_index(index, guide_segments[index])
+
+
+func _register_guide_axis_index(index: int, guide_segment: Dictionary) -> void:
+	var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
+	if direction == Vector2.ZERO:
+		return
+
+	var axis_key := _get_guide_axis_key(guide_segment)
+	if absf(direction.y) > 0.0:
+		_append_guide_axis_index(vertical_guide_indices_by_x, axis_key, index)
+		return
+	if absf(direction.x) > 0.0:
+		_append_guide_axis_index(horizontal_guide_indices_by_y, axis_key, index)
+
+
+func _append_guide_axis_index(axis_indices: Dictionary, axis_key: int, index: int) -> void:
+	var bucket: Array = axis_indices.get(axis_key, [])
+	bucket.append(index)
+	axis_indices[axis_key] = bucket
+
+
+func _get_guide_axis_key(guide_segment: Dictionary) -> int:
+	var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
+	var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
+	if absf(direction.y) > 0.0:
+		return int(round(start.x))
+	if absf(direction.x) > 0.0:
+		return int(round(start.y))
+	return 0
 
 
 func _guide_segment_overlaps_capture_delta(

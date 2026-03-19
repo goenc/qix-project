@@ -1,8 +1,7 @@
-日時: 2026-03-19 14:26:49 JST
+日時: 2026-03-19 14:43:12 +09:00
 対象:
 - scripts/game/base_main.gd
 変更:
-・capture ごとの差分 polygon と inactive border segment を収集し、AABB ベースで dirty guide のみ再計算するよう変更
+・guide の軸座標インデックスを追加し capture 差分 AABB に重なる座標帯から dirty guide 候補を抽出するよう変更
 確認:
-・Godot 4.6.1 で scenes/base_main.tscn を headless 起動しエラーなく終了することを確認
-・Godot 4.6.1 で scenes/base_main.tscn を通常起動し短時間で正常終了することを確認
+・godot_console で headless 起動と通常起動を短時間実行し エラーなく終了することを確認
