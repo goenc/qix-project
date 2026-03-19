@@ -48,6 +48,7 @@ var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
 var game_over := false
 var show_vertical_guides := true
 var show_horizontal_guides := true
+var current_capture_generation := 0
 
 
 func _ready() -> void:
@@ -289,9 +290,11 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 		push_warning("Capture skipped: boss-side outer loop could not be determined.")
 		return
 
+	var completed_capture_generation := current_capture_generation
+	current_capture_generation += 1
 	_apply_retained_capture_loop(candidate_loops[retained_index])
 	var capture_delta := _append_claimed_capture_results(candidate_loops, retained_index)
-	_finalize_capture_closed(capture_delta)
+	_finalize_capture_closed(capture_delta, completed_capture_generation)
 
 
 func _on_player_guide_turn_created(
@@ -312,7 +315,8 @@ func _on_player_guide_turn_created(
 			"start": turn_point,
 			"end": turn_point,
 			"dir": guide_direction,
-			"active": false
+			"active": false,
+			"capture_generation": current_capture_generation
 		}
 		guide_segments.append(_resolve_guide_segment(guide_segment))
 		_register_guide_axis_index(guide_segments.size() - 1, guide_segment)
@@ -454,6 +458,8 @@ func _append_axis_index_bucket_candidates(
 			continue
 
 		var guide_segment := guide_segments[index]
+		if !bool(guide_segment.get("active", false)):
+			continue
 		var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
 		if direction == Vector2.ZERO:
 			continue
@@ -569,13 +575,157 @@ func _build_points_aabb(points: PackedVector2Array) -> Rect2:
 	return Rect2(min_point, max_point - min_point)
 
 
-func _finalize_capture_closed(capture_delta: Dictionary) -> void:
+func _extract_captured_polygons_from_capture_delta(capture_delta: Dictionary) -> Array[PackedVector2Array]:
+	var captured_polygons_delta: Array[PackedVector2Array] = []
+	if capture_delta.has("captured_polygons"):
+		captured_polygons_delta = capture_delta["captured_polygons"]
+	return captured_polygons_delta
+
+
+func _is_guide_created_in_current_capture(guide_segment: Dictionary, capture_generation: int) -> bool:
+	return int(guide_segment.get("capture_generation", -1)) == capture_generation
+
+
+func _is_point_in_any_polygon(
+	point: Vector2,
+	polygons: Array[PackedVector2Array],
+	epsilon: float
+) -> bool:
+	for polygon in polygons:
+		if polygon.size() < 3:
+			continue
+		if Geometry2D.is_point_in_polygon(point, polygon) or PlayfieldBoundary.is_point_on_loop(polygon, point, epsilon):
+			return true
+	return false
+
+
+func _guide_end_is_inside_capture_delta(
+	guide_segment: Dictionary,
+	captured_polygons_delta: Array[PackedVector2Array],
+	epsilon: float
+) -> bool:
+	if !bool(guide_segment.get("active", false)):
+		return false
+	var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
+	var end: Vector2 = guide_segment.get("end", start)
+	return _is_point_in_any_polygon(end, captured_polygons_delta, epsilon)
+
+
+func _guide_segment_touches_capture_delta(
+	guide_segment: Dictionary,
+	captured_polygons_delta: Array[PackedVector2Array],
+	epsilon: float
+) -> bool:
+	if !bool(guide_segment.get("active", false)):
+		return false
+
+	var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
+	var end: Vector2 = guide_segment.get("end", start)
+	var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
+	if direction == Vector2.ZERO:
+		return false
+	if _is_point_in_any_polygon(end, captured_polygons_delta, epsilon):
+		return true
+
+	var scan_bounds := _get_guide_scan_bounds(start, end, direction)
+	if !bool(scan_bounds.get("valid", false)):
+		return false
+
+	var scan_from := int(scan_bounds.get("from", 0))
+	var scan_to := int(scan_bounds.get("to", 0))
+	var scan_step := int(scan_bounds.get("step", 0))
+	var max_iterations := int(ceil(start.distance_to(end))) + 2
+	for iteration in range(max_iterations):
+		var axis_value := scan_from + scan_step * iteration
+		if scan_step < 0 and axis_value < scan_to:
+			axis_value = scan_to
+		elif scan_step > 0 and axis_value > scan_to:
+			axis_value = scan_to
+
+		var sample_point := _build_guide_scan_point(scan_bounds, axis_value)
+		if !_is_point_on_segment(sample_point, start, end, epsilon):
+			if axis_value == scan_to:
+				break
+			continue
+		if _is_point_in_any_polygon(sample_point, captured_polygons_delta, epsilon):
+			return true
+
+		if axis_value == scan_to:
+			break
+	return false
+
+
+func _guide_newly_enters_capture_delta(
+	guide_segment: Dictionary,
+	capture_generation: int,
+	captured_polygons_delta: Array[PackedVector2Array],
+	epsilon: float
+) -> bool:
+	if _is_guide_created_in_current_capture(guide_segment, capture_generation):
+		return false
+	return _guide_segment_touches_capture_delta(guide_segment, captured_polygons_delta, epsilon)
+
+
+func _reset_guide_segment_for_reresolve(guide_segment: Dictionary) -> Dictionary:
+	var reset_segment := guide_segment.duplicate()
+	var start: Vector2 = reset_segment.get("start", Vector2.ZERO)
+	reset_segment["end"] = start
+	reset_segment["active"] = false
+	return reset_segment
+
+
+func _collect_guide_capture_actions(
+	capture_delta: Dictionary,
+	capture_generation: int
+) -> Dictionary:
+	var actions := {
+		"remove": [],
+		"reresolve": []
+	}
+	var captured_polygons_delta := _extract_captured_polygons_from_capture_delta(capture_delta)
+	if captured_polygons_delta.is_empty():
+		return actions
+
+	var epsilon := _get_guide_epsilon()
+	var candidate_indices := _collect_dirty_guide_indices_from_capture_delta(capture_delta)
+	for index in candidate_indices:
+		if index < 0 or index >= guide_segments.size():
+			continue
+		var guide_segment := guide_segments[index]
+		if !bool(guide_segment.get("active", false)):
+			continue
+		if _is_guide_created_in_current_capture(guide_segment, capture_generation):
+			if _guide_end_is_inside_capture_delta(guide_segment, captured_polygons_delta, epsilon):
+				actions["remove"].append(index)
+			continue
+		if _guide_newly_enters_capture_delta(guide_segment, capture_generation, captured_polygons_delta, epsilon):
+			actions["reresolve"].append(index)
+	return actions
+
+
+func _apply_capture_guide_actions(capture_actions: Dictionary) -> void:
+	var remove_indices: Array = capture_actions.get("remove", [])
+	for raw_index in remove_indices:
+		var index := int(raw_index)
+		if index < 0 or index >= guide_segments.size():
+			continue
+		guide_segments[index] = _reset_guide_segment_for_reresolve(guide_segments[index])
+
+	var reresolve_indices: Array = capture_actions.get("reresolve", [])
+	for raw_index in reresolve_indices:
+		var index := int(raw_index)
+		if index < 0 or index >= guide_segments.size():
+			continue
+		var reset_segment := _reset_guide_segment_for_reresolve(guide_segments[index])
+		guide_segments[index] = _resolve_guide_segment(reset_segment, true)
+
+
+func _finalize_capture_closed(capture_delta: Dictionary, capture_generation: int) -> void:
 	_recalculate_claimed_area()
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
-	var dirty_indices := _collect_dirty_guide_indices_from_capture_delta(capture_delta)
-	if !dirty_indices.is_empty():
-		_refresh_dirty_guide_segments(dirty_indices, true)
+	var capture_actions := _collect_guide_capture_actions(capture_delta, capture_generation)
+	_apply_capture_guide_actions(capture_actions)
 	_sync_boss_marker()
 	queue_redraw()
 	_sync_hud()
