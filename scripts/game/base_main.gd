@@ -543,7 +543,7 @@ func _apply_capture_guide_segment_correction(guide_segment: Dictionary, epsilon:
 	var start: Vector2 = corrected_segment.get("start", Vector2.ZERO)
 	var end: Vector2 = corrected_segment.get("end", start)
 	var direction := _normalize_guide_direction(corrected_segment.get("dir", Vector2.ZERO))
-	var correction_result := _find_last_valid_guide_point_on_segment(start, end, direction, epsilon)
+	var correction_result := _find_first_valid_guide_region_end_on_segment(start, end, direction, epsilon)
 	if !bool(correction_result.get("found", false)):
 		corrected_segment["end"] = start
 		corrected_segment["active"] = false
@@ -560,7 +560,7 @@ func _apply_capture_guide_segment_correction(guide_segment: Dictionary, epsilon:
 	return corrected_segment
 
 
-func _find_last_valid_guide_point_on_segment(
+func _find_first_valid_guide_region_end_on_segment(
 	start: Vector2,
 	end: Vector2,
 	direction: Vector2,
@@ -574,6 +574,8 @@ func _find_last_valid_guide_point_on_segment(
 	var scan_to := int(scan_bounds.get("to", 0))
 	var scan_step := int(scan_bounds.get("step", 0))
 	var max_iterations := int(ceil(start.distance_to(end))) + 2
+	var found_valid_region := false
+	var last_valid_point := start
 	for iteration in range(max_iterations):
 		var axis_value := scan_from + scan_step * iteration
 		if scan_step < 0 and axis_value < scan_to:
@@ -582,15 +584,24 @@ func _find_last_valid_guide_point_on_segment(
 			axis_value = scan_to
 
 		var sample_point := _build_guide_scan_point(scan_bounds, axis_value)
-		if _is_point_in_valid_guide_region(sample_point, epsilon):
+		var is_valid_point := _is_point_in_valid_guide_region(sample_point, epsilon)
+		if is_valid_point:
+			found_valid_region = true
+			last_valid_point = sample_point
+		elif found_valid_region:
 			return {
 				"found": true,
-				"point": sample_point
+				"point": last_valid_point
 			}
 
 		if axis_value == scan_to:
 			break
 
+	if found_valid_region:
+		return {
+			"found": true,
+			"point": end
+		}
 	return {"found": false}
 
 
@@ -600,18 +611,18 @@ func _get_guide_scan_bounds(start: Vector2, end: Vector2, direction: Vector2) ->
 			return {
 				"valid": true,
 				"horizontal": true,
-				"from": int(floor(end.x)),
-				"to": int(ceil(start.x)),
+				"from": int(ceil(start.x)),
+				"to": int(floor(end.x)),
 				"fixed": int(round(start.y)),
-				"step": -1
+				"step": 1
 			}
 		return {
 			"valid": true,
 			"horizontal": true,
-			"from": int(ceil(end.x)),
-			"to": int(floor(start.x)),
+			"from": int(floor(start.x)),
+			"to": int(ceil(end.x)),
 			"fixed": int(round(start.y)),
-			"step": 1
+			"step": -1
 		}
 
 	if absf(direction.y) > 0.0:
@@ -619,18 +630,18 @@ func _get_guide_scan_bounds(start: Vector2, end: Vector2, direction: Vector2) ->
 			return {
 				"valid": true,
 				"horizontal": false,
-				"from": int(floor(end.y)),
-				"to": int(ceil(start.y)),
+				"from": int(ceil(start.y)),
+				"to": int(floor(end.y)),
 				"fixed": int(round(start.x)),
-				"step": -1
+				"step": 1
 			}
 		return {
 			"valid": true,
 			"horizontal": false,
-			"from": int(ceil(end.y)),
-			"to": int(floor(start.y)),
+			"from": int(floor(start.y)),
+			"to": int(ceil(end.y)),
 			"fixed": int(round(start.x)),
-			"step": 1
+			"step": -1
 		}
 
 	return {"valid": false}
