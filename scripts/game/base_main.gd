@@ -54,6 +54,8 @@ var show_vertical_guides := true
 var show_horizontal_guides := true
 var current_capture_generation := 0
 var capture_preview_active := false
+var last_synced_boss_marker_position := Vector2.ZERO
+var has_last_synced_boss_marker_position := false
 
 
 func _ready() -> void:
@@ -120,7 +122,7 @@ func _sync_hud() -> void:
 		result_label.text = "GAME OVER"
 		help_label.text = "ESC: TITLE"
 		if is_instance_valid(base_player):
-			position_label.text = "POS: (%d, %d)" % [int(round(base_player.position.x)), int(round(base_player.position.y))]
+			_sync_hud_position(base_player.position)
 		else:
 			position_label.text = "POS: (-, -)"
 		return
@@ -140,13 +142,8 @@ func _sync_hud() -> void:
 		return
 
 	var status: Dictionary = base_player.get_debug_status()
-	var mode_text := str(status.get("mode_text", "BORDER"))
-	var current_position: Vector2 = status.get("position", base_player.position)
-
-	state_label.text = "MODE: %s" % mode_text
-	position_label.text = "POS: (%d, %d)" % [int(round(current_position.x)), int(round(current_position.y))]
-	result_label.text = ""
-	help_label.text = "MOVE: ARROWS/WASD DRAW: SHIFT/PAD-A ESC: TITLE"
+	_sync_hud_status(status)
+	_sync_hud_position(status.get("position", base_player.position))
 
 
 func _register_input_map() -> void:
@@ -241,6 +238,8 @@ func _connect_player_signal() -> void:
 		base_player.defeated.connect(_on_player_defeated)
 	if base_player.has_signal("debug_status_changed") and !base_player.debug_status_changed.is_connected(_on_player_debug_status_changed):
 		base_player.debug_status_changed.connect(_on_player_debug_status_changed)
+	if base_player.has_signal("debug_position_changed") and !base_player.debug_position_changed.is_connected(_on_player_debug_position_changed):
+		base_player.debug_position_changed.connect(_on_player_debug_position_changed)
 	if base_player.has_signal("capture_preview_changed") and !base_player.capture_preview_changed.is_connected(_on_player_capture_preview_changed):
 		base_player.capture_preview_changed.connect(_on_player_capture_preview_changed)
 	if base_player.has_method("get_state_text"):
@@ -1007,11 +1006,28 @@ func _recalculate_claimed_area() -> void:
 func _sync_boss_marker() -> void:
 	if !is_instance_valid(boss):
 		return
+
+	var target_position := boss.global_position
+	var has_target_position := false
 	if is_instance_valid(bbos):
-		boss.global_position = bbos.global_position
+		target_position = bbos.global_position
+		has_target_position = true
+	elif current_outer_loop.size() >= 3:
+		target_position = PlayfieldBoundary.ensure_point_inside(current_outer_loop, boss.global_position, 2.0)
+		has_target_position = true
+
+	if !has_target_position:
 		return
-	if current_outer_loop.size() >= 3:
-		boss.global_position = PlayfieldBoundary.ensure_point_inside(current_outer_loop, boss.global_position, 2.0)
+	if (
+		has_last_synced_boss_marker_position
+		and last_synced_boss_marker_position.is_equal_approx(target_position)
+		and boss.global_position.is_equal_approx(target_position)
+	):
+		return
+
+	boss.global_position = target_position
+	last_synced_boss_marker_position = target_position
+	has_last_synced_boss_marker_position = true
 
 
 func _polyline_to_segments(points: PackedVector2Array) -> Array[PackedVector2Array]:
@@ -1521,6 +1537,21 @@ func _update_hp_label() -> void:
 	hp_label.text = "HP: -/-"
 
 
+func _sync_hud_status(status: Dictionary) -> void:
+	if game_over or get_tree().paused or !is_instance_valid(base_player):
+		_sync_hud()
+		return
+
+	var mode_text := str(status.get("mode_text", "BORDER"))
+	state_label.text = "MODE: %s" % mode_text
+	result_label.text = ""
+	help_label.text = "MOVE: ARROWS/WASD DRAW: SHIFT/PAD-A ESC: TITLE"
+
+
+func _sync_hud_position(current_position: Vector2) -> void:
+	position_label.text = "POS: (%d, %d)" % [int(round(current_position.x)), int(round(current_position.y))]
+
+
 func _on_player_hp_changed(_current_hp: int, _max_hp: int) -> void:
 	_sync_hud()
 
@@ -1531,8 +1562,15 @@ func _on_player_defeated() -> void:
 	_sync_hud()
 
 
-func _on_player_debug_status_changed(_status: Dictionary) -> void:
-	_sync_hud()
+func _on_player_debug_status_changed(status: Dictionary) -> void:
+	_sync_hud_status(status)
+
+
+func _on_player_debug_position_changed(world_position: Vector2) -> void:
+	if game_over or get_tree().paused or !is_instance_valid(base_player):
+		_sync_hud()
+		return
+	_sync_hud_position(world_position)
 
 
 func _on_player_capture_preview_changed(active: bool) -> void:

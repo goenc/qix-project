@@ -9,6 +9,7 @@ signal guide_turn_created(turn_point: Vector2, previous_direction: Vector2, new_
 signal hp_changed(current_hp: int, max_hp: int)
 signal defeated()
 signal debug_status_changed(status: Dictionary)
+signal debug_position_changed(world_position: Vector2)
 signal capture_preview_changed(active: bool)
 
 @export var move_speed := 240.0
@@ -64,9 +65,12 @@ var invincibility_timer := 0.0
 var is_defeated := false
 var is_draw_action_configured := true
 var last_debug_status_snapshot: Dictionary = {}
+var last_debug_position_snapshot := Vector2.ZERO
+var has_last_debug_position_snapshot := false
 var last_capture_preview_active := false
 var active_damage_trail_segments: Array[PackedVector2Array] = []
 var active_damage_trail_aabbs: Array[Rect2] = []
+var last_visible_trail_cache_points: PackedVector2Array = PackedVector2Array()
 
 
 func _ready() -> void:
@@ -495,7 +499,7 @@ func _update_trail_line() -> void:
 	var visible_points := _build_visible_trail_points()
 	if is_instance_valid(trail_line):
 		trail_line.points = visible_points
-	_refresh_damage_trail_cache(visible_points)
+	_refresh_damage_trail_cache_if_needed(visible_points)
 
 
 func _build_visible_trail_points() -> PackedVector2Array:
@@ -913,11 +917,54 @@ func _build_segment_aabb(segment_start: Vector2, segment_end: Vector2) -> Rect2:
 
 
 func _refresh_debug_notifications(force := false) -> void:
-	var status_snapshot := _build_debug_status_snapshot()
-	if force or status_snapshot != last_debug_status_snapshot:
-		last_debug_status_snapshot = status_snapshot
-		debug_status_changed.emit(get_debug_status())
+	var status_changed := _refresh_debug_status_notification(force)
+	_refresh_debug_position_notification(force or status_changed)
+	_refresh_capture_preview_notification(force)
 
+
+func _refresh_damage_trail_cache_if_needed(visible_points: PackedVector2Array) -> void:
+	if _visible_trail_points_match(last_visible_trail_cache_points, visible_points):
+		return
+
+	last_visible_trail_cache_points = visible_points.duplicate()
+	_refresh_damage_trail_cache(visible_points)
+
+
+func _visible_trail_points_match(lhs: PackedVector2Array, rhs: PackedVector2Array) -> bool:
+	if lhs.size() != rhs.size():
+		return false
+
+	for i in range(lhs.size()):
+		if !lhs[i].is_equal_approx(rhs[i]):
+			return false
+	return true
+
+
+func _refresh_debug_status_notification(force := false) -> bool:
+	var status_snapshot := _build_debug_status_snapshot()
+	if !force and status_snapshot == last_debug_status_snapshot:
+		return false
+
+	last_debug_status_snapshot = status_snapshot
+	debug_status_changed.emit(get_debug_status())
+	return true
+
+
+func _refresh_debug_position_notification(force := false) -> void:
+	var notify_distance := maxf(trail_min_point_distance, border_epsilon)
+	if (
+		!force
+		and has_last_debug_position_snapshot
+		and position.distance_to(last_debug_position_snapshot) < notify_distance
+	):
+		return
+
+	last_debug_position_snapshot = position
+	has_last_debug_position_snapshot = true
+	debug_position_changed.emit(position)
+
+
+func _refresh_capture_preview_notification(force := false) -> void:
 	var preview_active := _is_capture_preview_active_state()
 	if force or preview_active != last_capture_preview_active:
 		last_capture_preview_active = preview_active
@@ -927,7 +974,6 @@ func _refresh_debug_notifications(force := false) -> void:
 func _build_debug_status_snapshot() -> Dictionary:
 	return {
 		"mode_text": get_state_text(),
-		"position": Vector2i(int(round(position.x)), int(round(position.y))),
 		"hp": current_hp,
 		"max_hp": get_max_hp()
 	}

@@ -1,6 +1,6 @@
-広域ポーリングを外して capture 差分中心に軽量化
+HUD通知とtrail cacheとboss marker同期の更新頻度を安全に削減
 
-・base_main の HUD 更新と pending guide 掃除をイベント駆動へ移行
-・guide 軸キーと claimed / inactive border の AABB で guide / claimed 判定の前段を軽量化
-・base_player の trail キャッシュと bbos の swept AABB で当たり判定候補を絞り込み
-・Godot 4.6.1 の headless / 非 headless 起動で確認
+・base_player の HUD 通知を state と position で分離し position は一定距離移動時のみ通知するようにした
+・visible trail が変化しないフレームでは trail damage cache を再構築しないようにした
+・base_main の boss marker 同期で同一座標の再代入を抑制し marker drift は再同期で戻すようにした
+・Godot 4.6.1 で headless 起動と非 headless 起動と headless 回帰確認を実施した
