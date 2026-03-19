@@ -1,6 +1,5 @@
-capture 後の guide 再解決対象を差分ベースで絞り込む
+capture 中の補助線を pending 扱いに変更
 
-・guide に capture_generation を付与し 今回生成 guide と既存 guide を判別できるようにした
-・今回生成 guide のうち END が今回 captured polygon 内にあるものを論理削除するようにした
-・既存 guide のうち capture delta に触れたものだけ start 起点で再解決するようにした
-・Godot 4.6.1 の headless 起動と通常起動が終了コード 0 で通ることを確認した
+・capture 中は補助線の確定 end を保存せず 仮表示だけを行うようにした
+・capture 確定後に今回 generation の補助線を削除判定と確定解決へ分離した
+・base_main シーンを headless と通常起動で確認した

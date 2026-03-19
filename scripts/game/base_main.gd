@@ -102,6 +102,7 @@ func set_show_horizontal_guides_from_debug(enabled: bool) -> void:
 
 
 func _process(_delta: float) -> void:
+	_cleanup_pending_guides_outside_capture()
 	_sync_boss_marker()
 	_sync_hud()
 
@@ -316,10 +317,10 @@ func _on_player_guide_turn_created(
 			"end": turn_point,
 			"dir": guide_direction,
 			"active": false,
-			"capture_generation": current_capture_generation
+			"capture_generation": current_capture_generation,
+			"pending": true
 		}
-		guide_segments.append(_resolve_guide_segment(guide_segment))
-		_register_guide_axis_index(guide_segments.size() - 1, guide_segment)
+		guide_segments.append(guide_segment)
 	queue_redraw()
 
 
@@ -458,6 +459,8 @@ func _append_axis_index_bucket_candidates(
 			continue
 
 		var guide_segment := guide_segments[index]
+		if _is_pending_guide_segment(guide_segment):
+			continue
 		if !bool(guide_segment.get("active", false)):
 			continue
 		var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
@@ -484,6 +487,8 @@ func _rebuild_guide_axis_indices() -> void:
 
 
 func _register_guide_axis_index(index: int, guide_segment: Dictionary) -> void:
+	if _is_pending_guide_segment(guide_segment):
+		return
 	var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
 	if direction == Vector2.ZERO:
 		return
@@ -582,6 +587,10 @@ func _extract_captured_polygons_from_capture_delta(capture_delta: Dictionary) ->
 	return captured_polygons_delta
 
 
+func _is_pending_guide_segment(guide_segment: Dictionary) -> bool:
+	return bool(guide_segment.get("pending", false))
+
+
 func _is_guide_created_in_current_capture(guide_segment: Dictionary, capture_generation: int) -> bool:
 	return int(guide_segment.get("capture_generation", -1)) == capture_generation
 
@@ -609,6 +618,62 @@ func _guide_end_is_inside_capture_delta(
 	var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
 	var end: Vector2 = guide_segment.get("end", start)
 	return _is_point_in_any_polygon(end, captured_polygons_delta, epsilon)
+
+
+func _guide_body_is_inside_capture_delta(
+	guide_segment: Dictionary,
+	captured_polygons_delta: Array[PackedVector2Array],
+	epsilon: float
+) -> bool:
+	if !bool(guide_segment.get("active", false)):
+		return false
+
+	var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
+	var end: Vector2 = guide_segment.get("end", start)
+	var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
+	if direction == Vector2.ZERO:
+		return false
+
+	var scan_bounds := _get_guide_scan_bounds(start, end, direction)
+	if !bool(scan_bounds.get("valid", false)):
+		return false
+
+	var scan_from := int(scan_bounds.get("from", 0))
+	var scan_to := int(scan_bounds.get("to", 0))
+	var scan_step := int(scan_bounds.get("step", 0))
+	var max_iterations := int(ceil(start.distance_to(end))) + 2
+	for iteration in range(max_iterations):
+		var axis_value := scan_from + scan_step * iteration
+		if scan_step < 0 and axis_value < scan_to:
+			axis_value = scan_to
+		elif scan_step > 0 and axis_value > scan_to:
+			axis_value = scan_to
+
+		var sample_point := _build_guide_scan_point(scan_bounds, axis_value)
+		if sample_point.distance_to(start) <= epsilon:
+			if axis_value == scan_to:
+				break
+			continue
+		if !_is_point_on_segment(sample_point, start, end, epsilon):
+			if axis_value == scan_to:
+				break
+			continue
+		if _is_point_in_any_polygon(sample_point, captured_polygons_delta, epsilon):
+			return true
+
+		if axis_value == scan_to:
+			break
+	return false
+
+
+func _guide_end_or_body_is_inside_capture_delta(
+	guide_segment: Dictionary,
+	captured_polygons_delta: Array[PackedVector2Array],
+	epsilon: float
+) -> bool:
+	if _guide_end_is_inside_capture_delta(guide_segment, captured_polygons_delta, epsilon):
+		return true
+	return _guide_body_is_inside_capture_delta(guide_segment, captured_polygons_delta, epsilon)
 
 
 func _guide_segment_touches_capture_delta(
@@ -674,24 +739,66 @@ func _reset_guide_segment_for_reresolve(guide_segment: Dictionary) -> Dictionary
 	return reset_segment
 
 
+func _build_confirmed_guide_segment(guide_segment: Dictionary) -> Dictionary:
+	var confirmed_segment := guide_segment.duplicate()
+	confirmed_segment["pending"] = false
+	return confirmed_segment
+
+
+func _collect_pending_guide_indices_for_capture(capture_generation: int) -> Array[int]:
+	var pending_indices: Array[int] = []
+	for index in range(guide_segments.size()):
+		var guide_segment := guide_segments[index]
+		if !_is_pending_guide_segment(guide_segment):
+			continue
+		if !_is_guide_created_in_current_capture(guide_segment, capture_generation):
+			continue
+		pending_indices.append(index)
+	return pending_indices
+
+
+func _is_pending_guide_captured(
+	resolved_guide_segment: Dictionary,
+	captured_polygons_delta: Array[PackedVector2Array],
+	epsilon: float
+) -> bool:
+	if !bool(resolved_guide_segment.get("active", false)):
+		return true
+	return _guide_end_or_body_is_inside_capture_delta(resolved_guide_segment, captured_polygons_delta, epsilon)
+
+
 func _collect_guide_capture_actions(
 	capture_delta: Dictionary,
 	capture_generation: int
 ) -> Dictionary:
 	var actions := {
 		"remove": [],
+		"confirm": [],
 		"reresolve": []
 	}
 	var captured_polygons_delta := _extract_captured_polygons_from_capture_delta(capture_delta)
+	var epsilon := _get_guide_epsilon()
+	var pending_indices := _collect_pending_guide_indices_for_capture(capture_generation)
+	for index in pending_indices:
+		var resolved_segment := _resolve_guide_segment(_build_confirmed_guide_segment(guide_segments[index]), true)
+		if _is_pending_guide_captured(resolved_segment, captured_polygons_delta, epsilon):
+			actions["remove"].append(index)
+			continue
+		actions["confirm"].append({
+			"index": index,
+			"segment": resolved_segment
+		})
+
 	if captured_polygons_delta.is_empty():
 		return actions
 
-	var epsilon := _get_guide_epsilon()
 	var candidate_indices := _collect_dirty_guide_indices_from_capture_delta(capture_delta)
 	for index in candidate_indices:
 		if index < 0 or index >= guide_segments.size():
 			continue
 		var guide_segment := guide_segments[index]
+		if _is_pending_guide_segment(guide_segment):
+			continue
 		if !bool(guide_segment.get("active", false)):
 			continue
 		if _is_guide_created_in_current_capture(guide_segment, capture_generation):
@@ -703,13 +810,26 @@ func _collect_guide_capture_actions(
 	return actions
 
 
+func _sort_unique_descending_indices(indices: Array) -> Array[int]:
+	var unique_indices: Dictionary = {}
+	for raw_index in indices:
+		unique_indices[int(raw_index)] = true
+
+	var sorted_indices: Array[int] = []
+	for index in unique_indices.keys():
+		sorted_indices.append(int(index))
+	sorted_indices.sort()
+	sorted_indices.reverse()
+	return sorted_indices
+
+
 func _apply_capture_guide_actions(capture_actions: Dictionary) -> void:
-	var remove_indices: Array = capture_actions.get("remove", [])
-	for raw_index in remove_indices:
-		var index := int(raw_index)
+	var confirm_updates: Array = capture_actions.get("confirm", [])
+	for update in confirm_updates:
+		var index := int(update.get("index", -1))
 		if index < 0 or index >= guide_segments.size():
 			continue
-		guide_segments[index] = _reset_guide_segment_for_reresolve(guide_segments[index])
+		guide_segments[index] = update.get("segment", guide_segments[index])
 
 	var reresolve_indices: Array = capture_actions.get("reresolve", [])
 	for raw_index in reresolve_indices:
@@ -718,6 +838,14 @@ func _apply_capture_guide_actions(capture_actions: Dictionary) -> void:
 			continue
 		var reset_segment := _reset_guide_segment_for_reresolve(guide_segments[index])
 		guide_segments[index] = _resolve_guide_segment(reset_segment, true)
+
+	var remove_indices := _sort_unique_descending_indices(capture_actions.get("remove", []))
+	for index in remove_indices:
+		if index < 0 or index >= guide_segments.size():
+			continue
+		guide_segments.remove_at(index)
+
+	_rebuild_guide_axis_indices()
 
 
 func _finalize_capture_closed(capture_delta: Dictionary, capture_generation: int) -> void:
@@ -811,11 +939,14 @@ func _build_stage_cover_uvs(points: PackedVector2Array) -> PackedVector2Array:
 func _draw_guide_segments() -> void:
 	var epsilon := _get_guide_epsilon()
 	for guide_segment in guide_segments:
-		if !bool(guide_segment.get("active", false)):
+		var draw_segment := guide_segment
+		if _is_pending_guide_segment(guide_segment):
+			draw_segment = _build_pending_guide_preview_segment(guide_segment)
+		if !bool(draw_segment.get("active", false)):
 			continue
-		var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
-		var end: Vector2 = guide_segment.get("end", start)
-		var direction: Vector2 = guide_segment.get("dir", Vector2.ZERO)
+		var start: Vector2 = draw_segment.get("start", Vector2.ZERO)
+		var end: Vector2 = draw_segment.get("end", start)
+		var direction: Vector2 = draw_segment.get("dir", Vector2.ZERO)
 		if start.distance_to(end) <= epsilon:
 			continue
 		var is_vertical := absf(direction.y) > 0.0
@@ -845,6 +976,8 @@ func _draw_border_segments(segments: Array[PackedVector2Array], color: Color) ->
 
 func _refresh_guide_segments(apply_capture_correction: bool = false) -> void:
 	for index in range(guide_segments.size()):
+		if _is_pending_guide_segment(guide_segments[index]):
+			continue
 		guide_segments[index] = _resolve_guide_segment(guide_segments[index], apply_capture_correction)
 
 
@@ -852,7 +985,33 @@ func _refresh_dirty_guide_segments(dirty_indices: Array[int], apply_capture_corr
 	for index in dirty_indices:
 		if index < 0 or index >= guide_segments.size():
 			continue
+		if _is_pending_guide_segment(guide_segments[index]):
+			continue
 		guide_segments[index] = _resolve_guide_segment(guide_segments[index], apply_capture_correction)
+
+
+func _build_pending_guide_preview_segment(guide_segment: Dictionary) -> Dictionary:
+	var preview_segment := _build_confirmed_guide_segment(guide_segment)
+	var epsilon := _get_guide_epsilon()
+	var start: Vector2 = preview_segment.get("start", Vector2.ZERO)
+	var direction := _normalize_guide_direction(preview_segment.get("dir", Vector2.ZERO))
+	preview_segment["start"] = start
+	preview_segment["end"] = start
+	preview_segment["dir"] = direction
+	preview_segment["active"] = false
+	if direction == Vector2.ZERO:
+		return preview_segment
+
+	var end_result := _resolve_pending_guide_preview_end(start, direction, epsilon)
+	if !bool(end_result.get("hit", false)):
+		return preview_segment
+
+	var end_point: Vector2 = end_result.get("end", start)
+	if start.distance_to(end_point) <= epsilon:
+		return preview_segment
+	preview_segment["end"] = end_point
+	preview_segment["active"] = true
+	return preview_segment
 
 
 func _resolve_guide_segment(guide_segment: Dictionary, apply_capture_correction: bool = false) -> Dictionary:
@@ -879,6 +1038,27 @@ func _resolve_guide_segment(guide_segment: Dictionary, apply_capture_correction:
 	if apply_capture_correction:
 		return _apply_capture_guide_segment_correction(resolved_segment, epsilon)
 	return resolved_segment
+
+
+func _resolve_pending_guide_preview_end(start: Vector2, direction: Vector2, epsilon: float) -> Dictionary:
+	var hit := _find_pending_guide_preview_hit(start, direction, epsilon)
+	if !bool(hit.get("hit", false)):
+		return {
+			"hit": false,
+			"end": start
+		}
+
+	var end_point: Vector2 = hit.get("point", start)
+	if start.distance_to(end_point) <= epsilon:
+		return {
+			"hit": false,
+			"end": start
+		}
+
+	return {
+		"hit": true,
+		"end": end_point
+	}
 
 
 func _resolve_guide_segment_end(start: Vector2, direction: Vector2, epsilon: float) -> Dictionary:
@@ -1030,6 +1210,12 @@ func _find_first_guide_boundary_hit(start: Vector2, direction: Vector2, epsilon:
 	return best_hit
 
 
+func _find_pending_guide_preview_hit(start: Vector2, direction: Vector2, epsilon: float) -> Dictionary:
+	var preview_loop := current_outer_loop if current_outer_loop.size() >= 3 else _get_guide_boundary_loop()
+	var ray_end := _build_guide_ray_end(start, direction, epsilon)
+	return _find_guide_loop_hit(start, ray_end, preview_loop, epsilon)
+
+
 func _find_guide_loop_hit(
 	start: Vector2,
 	ray_end: Vector2,
@@ -1137,6 +1323,40 @@ func _normalize_guide_direction(direction: Vector2) -> Vector2:
 
 func _get_guide_epsilon() -> float:
 	return maxf(PlayfieldBoundary.DEFAULT_EPSILON * 10.0, _resolve_capture_epsilon() * 0.25)
+
+
+func _cleanup_pending_guides_outside_capture() -> void:
+	if !_has_pending_guides():
+		return
+	if _is_capture_preview_active():
+		return
+	_remove_pending_guides()
+	queue_redraw()
+
+
+func _has_pending_guides() -> bool:
+	for guide_segment in guide_segments:
+		if _is_pending_guide_segment(guide_segment):
+			return true
+	return false
+
+
+func _is_capture_preview_active() -> bool:
+	if !is_instance_valid(base_player):
+		return false
+	var status: Dictionary = base_player.get_debug_status()
+	var mode_text := str(status.get("mode_text", "BORDER"))
+	return mode_text == "DRAWING" or mode_text == "REWINDING"
+
+
+func _remove_pending_guides() -> void:
+	var kept_segments: Array[Dictionary] = []
+	for guide_segment in guide_segments:
+		if _is_pending_guide_segment(guide_segment):
+			continue
+		kept_segments.append(guide_segment)
+	guide_segments = kept_segments
+	_rebuild_guide_axis_indices()
 
 
 func _sync_debug_guide_visibility() -> void:
