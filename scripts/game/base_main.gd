@@ -1161,7 +1161,12 @@ func _collect_guide_partition_rects() -> Array[Rect2]:
 	for index in range(unique_vertical_guides.size() - 1):
 		var left_guide := unique_vertical_guides[index]
 		var right_guide := unique_vertical_guides[index + 1]
-		var partition_rect := _build_guide_partition_rect_between(left_guide, right_guide, epsilon)
+		var partition_rect := _build_guide_partition_rect_between(
+			left_guide,
+			right_guide,
+			horizontal_outer_segments,
+			epsilon
+		)
 		if partition_rect.size.x <= epsilon or partition_rect.size.y <= epsilon:
 			continue
 		if !_should_draw_guide_partition_rect(partition_rect, epsilon):
@@ -1226,7 +1231,7 @@ func _collect_unique_active_vertical_guides(horizontal_outer_segments: Array[Dic
 
 func _build_vertical_partition_guide_candidate(
 	guide_segment: Dictionary,
-	horizontal_outer_segments: Array[Dictionary],
+	_horizontal_outer_segments: Array[Dictionary],
 	epsilon: float
 ) -> Dictionary:
 	if _is_pending_guide_segment(guide_segment):
@@ -1251,21 +1256,12 @@ func _build_vertical_partition_guide_candidate(
 	if bottom_point.y - top_point.y <= epsilon:
 		return {}
 
-	var top_outer_segment := _find_touching_horizontal_outer_segment(top_point, horizontal_outer_segments, epsilon)
-	if !bool(top_outer_segment.get("found", false)):
-		return {}
-	var bottom_outer_segment := _find_touching_horizontal_outer_segment(bottom_point, horizontal_outer_segments, epsilon)
-	if !bool(bottom_outer_segment.get("found", false)):
-		return {}
-
 	var x := (start.x + end.x) * 0.5
 	return {
 		"x": x,
 		"x_key": int(round(x)),
-		"top_y": float(top_outer_segment.get("y", top_point.y)),
-		"bottom_y": float(bottom_outer_segment.get("y", bottom_point.y)),
-		"top_segment_id": int(top_outer_segment.get("id", -1)),
-		"bottom_segment_id": int(bottom_outer_segment.get("id", -1)),
+		"top_y": top_point.y,
+		"bottom_y": bottom_point.y,
 		"height": bottom_point.y - top_point.y
 	}
 
@@ -1305,34 +1301,75 @@ func _is_vertical_partition_guide_candidate_better(candidate: Dictionary, curren
 	return float(candidate.get("top_y", 0.0)) < float(current.get("top_y", 0.0))
 
 
-func _build_guide_partition_rect_between(left_guide: Dictionary, right_guide: Dictionary, epsilon: float) -> Rect2:
-	if int(left_guide.get("top_segment_id", -1)) != int(right_guide.get("top_segment_id", -1)):
-		return Rect2()
-	if int(left_guide.get("bottom_segment_id", -1)) != int(right_guide.get("bottom_segment_id", -1)):
-		return Rect2()
-
+func _build_guide_partition_rect_between(
+	left_guide: Dictionary,
+	right_guide: Dictionary,
+	horizontal_outer_segments: Array[Dictionary],
+	epsilon: float
+) -> Rect2:
 	var left_x := float(left_guide.get("x", 0.0))
 	var right_x := float(right_guide.get("x", left_x))
 	if right_x - left_x <= epsilon:
 		return Rect2()
 
-	var top_y := (float(left_guide.get("top_y", 0.0)) + float(right_guide.get("top_y", 0.0))) * 0.5
-	var bottom_y := (float(left_guide.get("bottom_y", 0.0)) + float(right_guide.get("bottom_y", 0.0))) * 0.5
-	if bottom_y - top_y <= epsilon:
+	var bounds := _resolve_guide_partition_vertical_bounds_for_pair(
+		left_guide,
+		right_guide,
+		left_x,
+		right_x,
+		horizontal_outer_segments,
+		epsilon
+	)
+	if !bool(bounds.get("found", false)):
+		return Rect2()
+	var top_y := float(bounds.get("top_y", 0.0))
+	var bottom_y := float(bounds.get("bottom_y", top_y))
+	if bottom_y <= top_y + epsilon:
 		return Rect2()
 
 	return Rect2(Vector2(left_x, top_y), Vector2(right_x - left_x, bottom_y - top_y))
 
 
 func _should_draw_guide_partition_rect(rect: Rect2, epsilon: float) -> bool:
-	var center := rect.position + rect.size * 0.5
-	if !_is_point_in_valid_guide_region(center, epsilon):
-		return false
 	if _is_rect_fully_inside_polygons(rect, claimed_polygons, claimed_polygon_aabbs, epsilon):
 		return false
-	if _is_rect_fully_in_invalid_guide_region(rect, epsilon):
-		return false
 	return true
+
+
+func _resolve_guide_partition_vertical_bounds_for_pair(
+	left_guide: Dictionary,
+	right_guide: Dictionary,
+	left_x: float,
+	right_x: float,
+	horizontal_outer_segments: Array[Dictionary],
+	epsilon: float
+) -> Dictionary:
+	var mid_x := (left_x + right_x) * 0.5
+	var band_top := maxf(float(left_guide.get("top_y", 0.0)), float(right_guide.get("top_y", 0.0)))
+	var band_bottom := minf(float(left_guide.get("bottom_y", band_top)), float(right_guide.get("bottom_y", band_top)))
+	if band_bottom <= band_top + epsilon:
+		return {"found": false}
+
+	var top_y := INF
+	var bottom_y := -INF
+	for segment in horizontal_outer_segments:
+		var min_x := float(segment.get("min_x", mid_x))
+		var max_x := float(segment.get("max_x", mid_x))
+		if mid_x < min_x - epsilon or mid_x > max_x + epsilon:
+			continue
+		var y := float(segment.get("y", 0.0))
+		if y < band_top - epsilon or y > band_bottom + epsilon:
+			continue
+		top_y = minf(top_y, y)
+		bottom_y = maxf(bottom_y, y)
+
+	if !is_finite(top_y) or !is_finite(bottom_y):
+		return {"found": false}
+	return {
+		"found": true,
+		"top_y": top_y,
+		"bottom_y": bottom_y
+	}
 
 
 func _is_rect_fully_inside_polygons(
