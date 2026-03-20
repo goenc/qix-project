@@ -39,6 +39,7 @@ var stage_cover_polygon: PackedVector2Array = PackedVector2Array()
 var stage_cover_uvs: PackedVector2Array = PackedVector2Array()
 var claimed_polygons: Array[PackedVector2Array] = []
 var claimed_polygon_aabbs: Array[Rect2] = []
+var guide_partition_fill_entries: Array[Dictionary] = []
 var current_outer_loop: PackedVector2Array = PackedVector2Array()
 var current_outer_loop_metrics: Dictionary = {}
 var remaining_polygon: PackedVector2Array = PackedVector2Array()
@@ -264,6 +265,7 @@ func _initialize_outer_loop_from_rect() -> void:
 	remaining_polygon = _create_playfield_cover_polygon()
 	var initial_stage_cover_source := remaining_polygon if remaining_polygon.size() >= 3 else _create_playfield_cover_polygon()
 	_rebuild_stage_cover_polygon_from_polygon(initial_stage_cover_source)
+	guide_partition_fill_entries.clear()
 	queue_redraw()
 	inactive_border_segments.clear()
 	inactive_border_segment_aabbs.clear()
@@ -1026,7 +1028,9 @@ func _finalize_capture_closed(capture_delta: Dictionary, capture_generation: int
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
 	var capture_actions := _collect_guide_capture_actions(capture_delta, capture_generation)
+	var affected_vertical_guide_keys := _collect_affected_vertical_guide_keys_from_capture_actions(capture_actions)
 	_apply_capture_guide_actions(capture_actions)
+	_sync_guide_partition_fill_entries_after_capture(affected_vertical_guide_keys)
 	_sync_boss_marker()
 	queue_redraw()
 	_sync_hud()
@@ -1144,57 +1148,192 @@ func _draw_guide_partition_fills() -> void:
 
 func _collect_guide_partition_rects() -> Array[Rect2]:
 	var rects: Array[Rect2] = []
-	if current_outer_loop.size() < 3:
-		return rects
-	if vertical_guide_indices_by_x.is_empty():
-		return rects
+	for entry in guide_partition_fill_entries:
+		var rect: Rect2 = entry.get("rect", Rect2())
+		if rect.size.x <= 0.0 or rect.size.y <= 0.0:
+			continue
+		rects.append(rect)
+	return rects
 
+
+func _sync_guide_partition_fill_entries_after_capture(affected_vertical_guide_keys: Dictionary) -> void:
 	var epsilon := _get_guide_epsilon()
 	var horizontal_outer_segments := _collect_horizontal_outer_loop_segments(epsilon)
 	if horizontal_outer_segments.is_empty():
-		return rects
+		guide_partition_fill_entries.clear()
+		return
 
 	var existing_vertical_guides := _collect_unique_active_vertical_guides(horizontal_outer_segments, epsilon)
 	if existing_vertical_guides.is_empty():
-		return rects
+		guide_partition_fill_entries.clear()
+		return
+
+	var existing_vertical_guides_by_key: Dictionary = {}
+	for guide in existing_vertical_guides:
+		existing_vertical_guides_by_key[int(guide.get("x_key", 0))] = guide
+
+	_prune_guide_partition_fill_entries(existing_vertical_guides_by_key)
+
+	if affected_vertical_guide_keys.is_empty():
+		return
 
 	var created_vertical_guides := _collect_created_vertical_guides(horizontal_outer_segments, epsilon)
-	if created_vertical_guides.is_empty():
-		return rects
-
-	for created_guide in created_vertical_guides:
-		var left_guide := _find_vertical_partition_guide_on_side(
-			created_guide,
+	var created_vertical_guide_keys: Dictionary = {}
+	for guide in created_vertical_guides:
+		var guide_key := int(guide.get("x_key", 0))
+		created_vertical_guide_keys[guide_key] = true
+		_refresh_guide_partition_fill_entries_for_vertical_guide(
+			guide,
 			existing_vertical_guides,
-			true,
+			horizontal_outer_segments,
 			epsilon
 		)
-		if !left_guide.is_empty():
-			var left_partition_rect := _build_guide_partition_rect_between(
-				left_guide,
-				created_guide,
-				horizontal_outer_segments,
-				epsilon
-			)
-			if left_partition_rect.size.x > epsilon and left_partition_rect.size.y > epsilon and _should_draw_guide_partition_rect(left_partition_rect, epsilon):
-				rects.append(left_partition_rect)
 
-		var right_guide := _find_vertical_partition_guide_on_side(
-			created_guide,
+	for raw_key in affected_vertical_guide_keys.keys():
+		var guide_key := int(raw_key)
+		if created_vertical_guide_keys.has(guide_key):
+			continue
+		if !existing_vertical_guides_by_key.has(guide_key):
+			continue
+		_refresh_guide_partition_fill_entries_for_vertical_guide(
+			existing_vertical_guides_by_key[guide_key],
 			existing_vertical_guides,
-			false,
+			horizontal_outer_segments,
 			epsilon
 		)
-		if !right_guide.is_empty():
-			var right_partition_rect := _build_guide_partition_rect_between(
-				created_guide,
-				right_guide,
-				horizontal_outer_segments,
-				epsilon
-			)
-			if right_partition_rect.size.x > epsilon and right_partition_rect.size.y > epsilon and _should_draw_guide_partition_rect(right_partition_rect, epsilon):
-				rects.append(right_partition_rect)
-	return rects
+
+
+func _collect_affected_vertical_guide_keys_from_capture_actions(capture_actions: Dictionary) -> Dictionary:
+	var affected_vertical_guide_keys: Dictionary = {}
+	var action_names := ["confirm", "remove", "reresolve"]
+	for action_name in action_names:
+		var indices: Array = capture_actions.get(action_name, [])
+		for raw_index in indices:
+			var index := int(raw_index)
+			if index < 0 or index >= guide_segments.size():
+				continue
+			var guide_segment := guide_segments[index]
+			var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
+			if absf(direction.y) <= 0.0:
+				continue
+			affected_vertical_guide_keys[_get_guide_axis_key(guide_segment)] = true
+	return affected_vertical_guide_keys
+
+
+func _refresh_guide_partition_fill_entries_for_vertical_guide(
+	guide: Dictionary,
+	existing_vertical_guides: Array[Dictionary],
+	horizontal_outer_segments: Array[Dictionary],
+	epsilon: float
+) -> void:
+	var guide_key := int(guide.get("x_key", 0))
+	_remove_guide_partition_fill_entries_for_guide_key(guide_key)
+
+	var left_guide := _find_vertical_partition_guide_on_side(
+		guide,
+		existing_vertical_guides,
+		true,
+		epsilon
+	)
+	if !left_guide.is_empty():
+		_append_guide_partition_fill_entry_between(
+			left_guide,
+			guide,
+			horizontal_outer_segments,
+			epsilon
+		)
+
+	var right_guide := _find_vertical_partition_guide_on_side(
+		guide,
+		existing_vertical_guides,
+		false,
+		epsilon
+	)
+	if !right_guide.is_empty():
+		_append_guide_partition_fill_entry_between(
+			guide,
+			right_guide,
+			horizontal_outer_segments,
+			epsilon
+		)
+
+
+func _append_guide_partition_fill_entry_between(
+	left_guide: Dictionary,
+	right_guide: Dictionary,
+	horizontal_outer_segments: Array[Dictionary],
+	epsilon: float
+) -> void:
+	var left_x := float(left_guide.get("x", 0.0))
+	var right_x := float(right_guide.get("x", left_x))
+	if right_x - left_x <= epsilon:
+		return
+
+	var bounds := _resolve_guide_partition_vertical_bounds_for_pair(
+		left_guide,
+		right_guide,
+		left_x,
+		right_x,
+		horizontal_outer_segments,
+		epsilon
+	)
+	if !bool(bounds.get("found", false)):
+		return
+
+	var top_y := float(bounds.get("top_y", 0.0))
+	var bottom_y := float(bounds.get("bottom_y", top_y))
+	if bottom_y <= top_y + epsilon:
+		return
+
+	var rect := Rect2(Vector2(left_x, top_y), Vector2(right_x - left_x, bottom_y - top_y))
+	if !_should_draw_guide_partition_rect(rect, epsilon):
+		return
+
+	var left_guide_key := int(left_guide.get("x_key", int(round(left_x))))
+	var right_guide_key := int(right_guide.get("x_key", int(round(right_x))))
+	_upsert_guide_partition_fill_entry({
+		"left_x": left_x,
+		"right_x": right_x,
+		"top_y": top_y,
+		"bottom_y": bottom_y,
+		"left_guide_key": left_guide_key,
+		"right_guide_key": right_guide_key,
+		"rect": rect
+	})
+
+
+func _upsert_guide_partition_fill_entry(entry: Dictionary) -> void:
+	var left_guide_key := int(entry.get("left_guide_key", 0))
+	var right_guide_key := int(entry.get("right_guide_key", 0))
+	var entry_index := _find_guide_partition_fill_entry_index(left_guide_key, right_guide_key)
+	if entry_index >= 0:
+		guide_partition_fill_entries[entry_index] = entry
+		return
+	guide_partition_fill_entries.append(entry)
+
+
+func _find_guide_partition_fill_entry_index(left_guide_key: int, right_guide_key: int) -> int:
+	for index in range(guide_partition_fill_entries.size()):
+		var entry := guide_partition_fill_entries[index]
+		if int(entry.get("left_guide_key", 0)) == left_guide_key and int(entry.get("right_guide_key", 0)) == right_guide_key:
+			return index
+	return -1
+
+
+func _remove_guide_partition_fill_entries_for_guide_key(guide_key: int) -> void:
+	for index in range(guide_partition_fill_entries.size() - 1, -1, -1):
+		var entry := guide_partition_fill_entries[index]
+		if int(entry.get("left_guide_key", 0)) == guide_key or int(entry.get("right_guide_key", 0)) == guide_key:
+			guide_partition_fill_entries.remove_at(index)
+
+
+func _prune_guide_partition_fill_entries(active_vertical_guides_by_key: Dictionary) -> void:
+	for index in range(guide_partition_fill_entries.size() - 1, -1, -1):
+		var entry := guide_partition_fill_entries[index]
+		var left_guide_key := int(entry.get("left_guide_key", -1))
+		var right_guide_key := int(entry.get("right_guide_key", -1))
+		if !active_vertical_guides_by_key.has(left_guide_key) or !active_vertical_guides_by_key.has(right_guide_key):
+			guide_partition_fill_entries.remove_at(index)
 
 
 func _collect_horizontal_outer_loop_segments(epsilon: float) -> Array[Dictionary]:

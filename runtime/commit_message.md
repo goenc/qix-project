@@ -1,5 +1,5 @@
-最新キャプチャで作成した縦補助線起点の左右探索へ区画判定を変更
+補助線区分の薄紫矩形を保持配列の差分更新へ変更しました。
 
-・scripts/game/base_main.gd の _collect_guide_partition_rects() を隣接ペア方式から左右探索方式へ置き換えた。
-・mid_x から current_outer_loop の水平外形線をたどって上下境界を求める既存方針と、claimed_polygons の内側除外を維持した。
+・scripts/game/base_main.gd で区分矩形を描画時再計算せず保持配列から描くようにした。
+・最新キャプチャで確定した縦補助線だけを起点に左右の既存有効線から矩形を差分追加し、無効化時は参照キーで削除するようにした。
 ・godot.exe --headless --path . --check-only で構文確認を行い成功した。
