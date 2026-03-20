@@ -1,5 +1,5 @@
-BBOS の凹角はまりを抑えるため、境界判定をキャッシュ化し角脱出を追加した
+補助線区分の薄紫塗り描画を追加
 
-・scripts/enemy/bbos.gd で内側ループのキャッシュを導入し、角はまり時に軽い脱出補正とクールダウンを追加した。
-・scripts/game/playfield_boundary.gd で cached inset loop を受け取れるようにし、毎フレームの build_inset_loop を回避した。
-・Godot を headless と non-headless で起動し、構文確認と実プレイ起動確認を行った。
+・有効な縦補助線を x ごとに正規化して外形水平線との接続条件を満たす矩形区画のみを抽出して塗る処理を追加
+・show_vertical_guides が false のときは区分塗りも描画しないようにし描画順を claimed の後かつ guide の前に調整
+・Godot 4.6.1 を headless と通常起動で --quit-after 1 実行しエラーなく起動終了することを確認

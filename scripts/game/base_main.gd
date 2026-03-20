@@ -22,6 +22,7 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 @export var guide_segment_color := Color(1.0, 0.0, 0.0, 1.0)
 @export var guide_vertical_color := Color(0.7, 0.0, 1.0, 1.0)
 @export var guide_segment_width := 2.0
+@export var guide_partition_fill_color := Color(0.75, 0.55, 1.0, 0.5)
 
 @onready var base_player = get_node_or_null("BasePlayer")
 @onready var bbos: Node2D = get_node_or_null("BBOS")
@@ -192,6 +193,7 @@ func _draw() -> void:
 	for polygon in claimed_polygons:
 		if polygon.size() >= 3:
 			draw_colored_polygon(polygon, claimed_fill_color)
+	_draw_guide_partition_fills()
 	_draw_border_segments(inactive_border_segments, inactive_border_color)
 	_draw_guide_segments()
 	_draw_border_loop(current_outer_loop, playfield_border_color)
@@ -1130,6 +1132,254 @@ func _build_stage_cover_uvs(points: PackedVector2Array) -> PackedVector2Array:
 			clampf((point.y - playfield_rect.position.y) / playfield_rect.size.y, 0.0, 1.0)
 	))
 	return uvs
+
+
+func _draw_guide_partition_fills() -> void:
+	if !show_vertical_guides:
+		return
+	var partition_rects := _collect_guide_partition_rects()
+	for rect in partition_rects:
+		draw_rect(rect, guide_partition_fill_color, true)
+
+
+func _collect_guide_partition_rects() -> Array[Rect2]:
+	var rects: Array[Rect2] = []
+	if current_outer_loop.size() < 3:
+		return rects
+	if vertical_guide_indices_by_x.is_empty():
+		return rects
+
+	var epsilon := _get_guide_epsilon()
+	var horizontal_outer_segments := _collect_horizontal_outer_loop_segments(epsilon)
+	if horizontal_outer_segments.is_empty():
+		return rects
+
+	var unique_vertical_guides := _collect_unique_active_vertical_guides(horizontal_outer_segments, epsilon)
+	if unique_vertical_guides.size() < 2:
+		return rects
+
+	for index in range(unique_vertical_guides.size() - 1):
+		var left_guide := unique_vertical_guides[index]
+		var right_guide := unique_vertical_guides[index + 1]
+		var partition_rect := _build_guide_partition_rect_between(left_guide, right_guide, epsilon)
+		if partition_rect.size.x <= epsilon or partition_rect.size.y <= epsilon:
+			continue
+		if !_should_draw_guide_partition_rect(partition_rect, epsilon):
+			continue
+		rects.append(partition_rect)
+	return rects
+
+
+func _collect_horizontal_outer_loop_segments(epsilon: float) -> Array[Dictionary]:
+	var segments: Array[Dictionary] = []
+	for index in range(current_outer_loop.size()):
+		var start: Vector2 = current_outer_loop[index]
+		var end: Vector2 = current_outer_loop[(index + 1) % current_outer_loop.size()]
+		if absf(start.y - end.y) > epsilon:
+			continue
+		var min_x := minf(start.x, end.x)
+		var max_x := maxf(start.x, end.x)
+		if max_x - min_x <= epsilon:
+			continue
+		segments.append({
+			"id": index,
+			"start": start,
+			"end": end,
+			"y": (start.y + end.y) * 0.5,
+			"min_x": min_x,
+			"max_x": max_x
+		})
+	return segments
+
+
+func _collect_unique_active_vertical_guides(horizontal_outer_segments: Array[Dictionary], epsilon: float) -> Array[Dictionary]:
+	var guide_by_x: Dictionary = {}
+	for axis_key in vertical_guide_axis_keys:
+		if !vertical_guide_indices_by_x.has(axis_key):
+			continue
+		var bucket: Array = vertical_guide_indices_by_x[axis_key]
+		for raw_index in bucket:
+			var guide_index := int(raw_index)
+			if guide_index < 0 or guide_index >= guide_segments.size():
+				continue
+			var candidate := _build_vertical_partition_guide_candidate(
+				guide_segments[guide_index],
+				horizontal_outer_segments,
+				epsilon
+			)
+			if candidate.is_empty():
+				continue
+			var x_key := int(candidate.get("x_key", axis_key))
+			if !guide_by_x.has(x_key) or _is_vertical_partition_guide_candidate_better(candidate, guide_by_x[x_key]):
+				guide_by_x[x_key] = candidate
+
+	var sorted_x_keys: Array[int] = []
+	for raw_key in guide_by_x.keys():
+		sorted_x_keys.append(int(raw_key))
+	sorted_x_keys.sort()
+
+	var sorted_guides: Array[Dictionary] = []
+	for x_key in sorted_x_keys:
+		sorted_guides.append(guide_by_x[x_key])
+	return sorted_guides
+
+
+func _build_vertical_partition_guide_candidate(
+	guide_segment: Dictionary,
+	horizontal_outer_segments: Array[Dictionary],
+	epsilon: float
+) -> Dictionary:
+	if _is_pending_guide_segment(guide_segment):
+		return {}
+	if !bool(guide_segment.get("active", false)):
+		return {}
+
+	var direction := _normalize_guide_direction(guide_segment.get("dir", Vector2.ZERO))
+	if absf(direction.y) <= 0.0:
+		return {}
+
+	var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
+	var end: Vector2 = guide_segment.get("end", start)
+	if absf(start.x - end.x) > epsilon:
+		return {}
+
+	var top_point := start
+	var bottom_point := end
+	if top_point.y > bottom_point.y:
+		top_point = end
+		bottom_point = start
+	if bottom_point.y - top_point.y <= epsilon:
+		return {}
+
+	var top_outer_segment := _find_touching_horizontal_outer_segment(top_point, horizontal_outer_segments, epsilon)
+	if !bool(top_outer_segment.get("found", false)):
+		return {}
+	var bottom_outer_segment := _find_touching_horizontal_outer_segment(bottom_point, horizontal_outer_segments, epsilon)
+	if !bool(bottom_outer_segment.get("found", false)):
+		return {}
+
+	var x := (start.x + end.x) * 0.5
+	return {
+		"x": x,
+		"x_key": int(round(x)),
+		"top_y": float(top_outer_segment.get("y", top_point.y)),
+		"bottom_y": float(bottom_outer_segment.get("y", bottom_point.y)),
+		"top_segment_id": int(top_outer_segment.get("id", -1)),
+		"bottom_segment_id": int(bottom_outer_segment.get("id", -1)),
+		"height": bottom_point.y - top_point.y
+	}
+
+
+func _find_touching_horizontal_outer_segment(
+	point: Vector2,
+	horizontal_outer_segments: Array[Dictionary],
+	epsilon: float
+) -> Dictionary:
+	for segment in horizontal_outer_segments:
+		var min_x := float(segment.get("min_x", point.x))
+		var max_x := float(segment.get("max_x", point.x))
+		if point.x < min_x - epsilon or point.x > max_x + epsilon:
+			continue
+		var y := float(segment.get("y", point.y))
+		if absf(point.y - y) > epsilon:
+			continue
+		var start: Vector2 = segment.get("start", point)
+		var end: Vector2 = segment.get("end", point)
+		if !_is_point_on_segment(point, start, end, epsilon):
+			continue
+		return {
+			"found": true,
+			"id": int(segment.get("id", -1)),
+			"y": y
+		}
+	return {"found": false}
+
+
+func _is_vertical_partition_guide_candidate_better(candidate: Dictionary, current: Dictionary) -> bool:
+	var candidate_height := float(candidate.get("height", 0.0))
+	var current_height := float(current.get("height", 0.0))
+	if candidate_height > current_height:
+		return true
+	if candidate_height < current_height:
+		return false
+	return float(candidate.get("top_y", 0.0)) < float(current.get("top_y", 0.0))
+
+
+func _build_guide_partition_rect_between(left_guide: Dictionary, right_guide: Dictionary, epsilon: float) -> Rect2:
+	if int(left_guide.get("top_segment_id", -1)) != int(right_guide.get("top_segment_id", -1)):
+		return Rect2()
+	if int(left_guide.get("bottom_segment_id", -1)) != int(right_guide.get("bottom_segment_id", -1)):
+		return Rect2()
+
+	var left_x := float(left_guide.get("x", 0.0))
+	var right_x := float(right_guide.get("x", left_x))
+	if right_x - left_x <= epsilon:
+		return Rect2()
+
+	var top_y := (float(left_guide.get("top_y", 0.0)) + float(right_guide.get("top_y", 0.0))) * 0.5
+	var bottom_y := (float(left_guide.get("bottom_y", 0.0)) + float(right_guide.get("bottom_y", 0.0))) * 0.5
+	if bottom_y - top_y <= epsilon:
+		return Rect2()
+
+	return Rect2(Vector2(left_x, top_y), Vector2(right_x - left_x, bottom_y - top_y))
+
+
+func _should_draw_guide_partition_rect(rect: Rect2, epsilon: float) -> bool:
+	var center := rect.position + rect.size * 0.5
+	if !_is_point_in_valid_guide_region(center, epsilon):
+		return false
+	if _is_rect_fully_inside_polygons(rect, claimed_polygons, claimed_polygon_aabbs, epsilon):
+		return false
+	if _is_rect_fully_in_invalid_guide_region(rect, epsilon):
+		return false
+	return true
+
+
+func _is_rect_fully_inside_polygons(
+	rect: Rect2,
+	polygons: Array[PackedVector2Array],
+	polygon_aabbs: Array[Rect2],
+	epsilon: float
+) -> bool:
+	var sample_points := _build_rect_interior_sample_points(rect)
+	for index in range(polygons.size()):
+		if index < polygon_aabbs.size() and !_rects_overlap(rect, polygon_aabbs[index], epsilon):
+			continue
+		var polygon := polygons[index]
+		if polygon.size() < 3:
+			continue
+		var contains_all_points := true
+		for sample_point in sample_points:
+			if !Geometry2D.is_point_in_polygon(sample_point, polygon) and !PlayfieldBoundary.is_point_on_loop(polygon, sample_point, epsilon):
+				contains_all_points = false
+				break
+		if contains_all_points:
+			return true
+	return false
+
+
+func _is_rect_fully_in_invalid_guide_region(rect: Rect2, epsilon: float) -> bool:
+	var sample_points := _build_rect_interior_sample_points(rect)
+	for sample_point in sample_points:
+		if _is_point_in_valid_guide_region(sample_point, epsilon):
+			return false
+	return true
+
+
+func _build_rect_interior_sample_points(rect: Rect2) -> Array[Vector2]:
+	var min_x := rect.position.x
+	var max_x := rect.end.x
+	var min_y := rect.position.y
+	var max_y := rect.end.y
+	var center_x := (min_x + max_x) * 0.5
+	var center_y := (min_y + max_y) * 0.5
+	return [
+		Vector2(min_x, min_y),
+		Vector2(max_x, min_y),
+		Vector2(min_x, max_y),
+		Vector2(max_x, max_y),
+		Vector2(center_x, center_y)
+	]
 
 
 func _draw_guide_segments() -> void:
