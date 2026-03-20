@@ -22,6 +22,7 @@ var playfield_rect: Rect2 = Rect2()
 var active_outer_loop: PackedVector2Array = PackedVector2Array()
 var active_inner_loop: PackedVector2Array = PackedVector2Array()
 var active_inner_loop_total_length := 0.0
+var active_inner_loop_cache_ready := false
 var rng := RandomNumberGenerator.new()
 var has_spawned := false
 var velocity := Vector2.ZERO
@@ -29,6 +30,9 @@ var direction_change_timer := 0.0
 var base_scale := Vector2.ONE
 var base_collision_radius := 0.0
 var last_reported_position := Vector2(INF, INF)
+var corner_stuck_score := 0.0
+var corner_escape_cooldown := 0.0
+var last_corner_hit_position := Vector2(INF, INF)
 
 
 func _ready() -> void:
@@ -53,6 +57,10 @@ func _process(delta: float) -> void:
 	if active_outer_loop.size() < 3:
 		return
 
+	if corner_escape_cooldown > 0.0:
+		corner_escape_cooldown = maxf(corner_escape_cooldown - delta, 0.0)
+	corner_stuck_score = maxf(corner_stuck_score - delta * 2.0, 0.0)
+
 	direction_change_timer -= delta
 	if direction_change_timer <= 0.0:
 		_pick_new_velocity()
@@ -74,7 +82,9 @@ func _process(delta: float) -> void:
 				next_position,
 				active_outer_loop,
 				safe_radius,
-				safe_epsilon
+				safe_epsilon,
+				active_inner_loop,
+				active_inner_loop_cache_ready
 			)
 		)
 		if !bool(boundary_hit.get("hit", false)):
@@ -85,6 +95,10 @@ func _process(delta: float) -> void:
 
 		position = boundary_hit["point"]
 		_attempt_player_hit(segment_start, position, safe_radius)
+		if _should_escape_corner(boundary_hit, safe_epsilon):
+			_perform_corner_escape(safe_radius, safe_epsilon)
+			remaining_time = 0.0
+			break
 		velocity = _reflect_velocity(velocity, Vector2(boundary_hit.get("normal", Vector2.ZERO)))
 		position += Vector2(boundary_hit.get("normal", Vector2.ZERO)) * maxf(bounce_epsilon, 0.05)
 		position = _ensure_position_inside_active_boundary(position, safe_radius, safe_epsilon)
@@ -121,6 +135,7 @@ func set_active_outer_loop(loop: PackedVector2Array) -> void:
 
 	active_outer_loop = sanitized_loop
 	_rebuild_active_inner_loop()
+	_reset_corner_stuck_state()
 
 	if !has_spawned and playfield_rect.size.x > 0.0 and playfield_rect.size.y > 0.0:
 		position = _pick_random_point(_get_spawnable_rect(playfield_rect))
@@ -138,6 +153,7 @@ func set_active_outer_loop(loop: PackedVector2Array) -> void:
 func set_collision_radius(radius: float) -> void:
 	collision_radius = maxf(radius, maxf(min_collision_radius, 0.0))
 	_rebuild_active_inner_loop()
+	_reset_corner_stuck_state()
 
 	if !has_spawned:
 		return
@@ -251,19 +267,28 @@ func _get_effective_collision_radius() -> float:
 
 
 func _has_active_inner_loop() -> bool:
-	return active_inner_loop.size() >= 3 and active_inner_loop_total_length > 0.0
+	return active_inner_loop_cache_ready and active_inner_loop.size() >= 3 and active_inner_loop_total_length > 0.0
 
 
 func _ensure_position_inside_active_boundary(point: Vector2, radius: float, epsilon: float) -> Vector2:
 	if _has_active_inner_loop():
 		return PlayfieldBoundary.ensure_point_inside(active_inner_loop, point, epsilon)
-	return PlayfieldBoundary.ensure_circle_center_inside(active_outer_loop, point, radius, epsilon)
+	return PlayfieldBoundary.ensure_circle_center_inside(
+		active_outer_loop,
+		point,
+		radius,
+		epsilon,
+		active_inner_loop,
+		active_inner_loop_cache_ready
+	)
 
 
 func _rebuild_active_inner_loop() -> void:
 	active_inner_loop = PackedVector2Array()
 	active_inner_loop_total_length = 0.0
+	active_inner_loop_cache_ready = false
 	if active_outer_loop.size() < 3:
+		active_inner_loop_cache_ready = true
 		return
 
 	active_inner_loop = PlayfieldBoundary.build_inset_loop(
@@ -271,11 +296,91 @@ func _rebuild_active_inner_loop() -> void:
 		_get_effective_collision_radius(),
 		maxf(bounce_epsilon, 0.001)
 	)
+	active_inner_loop_cache_ready = true
 	if active_inner_loop.size() < 3:
 		return
 
 	var inner_loop_metrics := PlayfieldBoundary.build_loop_metrics(active_inner_loop)
 	active_inner_loop_total_length = float(inner_loop_metrics.get("total_length", 0.0))
+
+
+func _reset_corner_stuck_state() -> void:
+	corner_stuck_score = 0.0
+	corner_escape_cooldown = 0.0
+	last_corner_hit_position = Vector2(INF, INF)
+
+
+func _should_escape_corner(hit: Dictionary, safe_epsilon: float) -> bool:
+	if corner_escape_cooldown > 0.0:
+		return false
+
+	var hit_point := Vector2(hit.get("point", position))
+	var segment_start := Vector2(hit.get("segment_start", hit_point))
+	var segment_end := Vector2(hit.get("segment_end", hit_point))
+	var corner_tolerance := maxf(safe_epsilon * 4.0, 2.0)
+	var hit_near_corner := (
+		hit_point.distance_to(segment_start) <= corner_tolerance
+		or hit_point.distance_to(segment_end) <= corner_tolerance
+	)
+	if !hit_near_corner:
+		corner_stuck_score = 0.0
+		last_corner_hit_position = Vector2(INF, INF)
+		return false
+
+	if last_corner_hit_position.distance_to(hit_point) <= corner_tolerance:
+		corner_stuck_score += 1.0
+	else:
+		corner_stuck_score = 1.0
+	last_corner_hit_position = hit_point
+	return corner_stuck_score >= 2.0
+
+
+func _perform_corner_escape(safe_radius: float, safe_epsilon: float) -> void:
+	var escape_loop := get_active_reflection_loop()
+	var escape_distance := maxf(safe_radius * 0.5, maxf(bounce_epsilon * 4.0, 4.0))
+	var current_speed := maxf(absf(move_speed), velocity.length())
+	var candidate_directions: Array[Vector2] = [
+		-velocity.normalized() if velocity.length_squared() > 0.0001 else Vector2.ZERO,
+		Vector2.LEFT,
+		Vector2.RIGHT,
+		Vector2.UP,
+		Vector2.DOWN,
+		Vector2(-1.0, -1.0).normalized(),
+		Vector2(1.0, -1.0).normalized(),
+		Vector2(-1.0, 1.0).normalized(),
+		Vector2(1.0, 1.0).normalized()
+	]
+
+	var best_point := Vector2(INF, INF)
+	var best_direction := Vector2.ZERO
+	var best_score := -INF
+	for direction in candidate_directions:
+		if direction == Vector2.ZERO:
+			continue
+
+		var candidate_point := position + direction * escape_distance
+		var resolved_point := _ensure_position_inside_active_boundary(candidate_point, safe_radius, safe_epsilon)
+		if resolved_point.distance_to(position) <= safe_epsilon:
+			continue
+
+		var score := 0.0
+		if escape_loop.size() >= 3:
+			score = float(PlayfieldBoundary.project_point_to_loop(escape_loop, resolved_point).get("distance", 0.0))
+		if score > best_score + 0.001:
+			best_score = score
+			best_point = resolved_point
+			best_direction = (resolved_point - position).normalized()
+
+	if best_direction == Vector2.ZERO:
+		best_direction = -velocity.normalized() if velocity.length_squared() > 0.0001 else Vector2.RIGHT
+		best_point = _ensure_position_inside_active_boundary(position + best_direction * escape_distance, safe_radius, safe_epsilon)
+
+	position = best_point
+	velocity = best_direction * maxf(current_speed, 0.001)
+	corner_stuck_score = 0.0
+	corner_escape_cooldown = 0.15
+	last_corner_hit_position = Vector2(INF, INF)
+	_reset_direction_change_timer()
 
 
 func _attempt_player_hit(from_point: Vector2, to_point: Vector2, attack_radius: float) -> void:

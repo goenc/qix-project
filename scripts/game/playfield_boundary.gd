@@ -649,16 +649,29 @@ static func find_first_boundary_hit_for_circle(
 	next_pos: Vector2,
 	loop: PackedVector2Array,
 	radius: float,
-	epsilon: float
+	epsilon: float,
+	cached_inset_loop: PackedVector2Array = PackedVector2Array(),
+	has_cached_inset_loop: bool = false
 ) -> Dictionary:
 	var sanitized_loop := sanitize_loop(loop)
-	var inset_loop := build_inset_loop(sanitized_loop, maxf(radius, 0.0), epsilon)
+	var safe_radius := maxf(radius, 0.0)
+	if has_cached_inset_loop:
+		if cached_inset_loop.size() >= 3:
+			return find_first_boundary_hit(current_pos, next_pos, cached_inset_loop, epsilon)
+		return _find_first_boundary_hit_for_circle_without_inset(
+			current_pos,
+			next_pos,
+			sanitized_loop,
+			safe_radius,
+			epsilon
+		)
+	var inset_loop := build_inset_loop(sanitized_loop, safe_radius, epsilon)
 	if inset_loop.size() < 3:
 		return _find_first_boundary_hit_for_circle_without_inset(
 			current_pos,
 			next_pos,
 			sanitized_loop,
-			maxf(radius, 0.0),
+			safe_radius,
 			epsilon
 		)
 	return find_first_boundary_hit(current_pos, next_pos, inset_loop, epsilon)
@@ -691,15 +704,27 @@ static func ensure_circle_center_inside(
 	loop: PackedVector2Array,
 	point: Vector2,
 	radius: float,
-	epsilon: float
+	epsilon: float,
+	cached_inset_loop: PackedVector2Array = PackedVector2Array(),
+	has_cached_inset_loop: bool = false
 ) -> Vector2:
 	var sanitized_loop := sanitize_loop(loop)
-	var inset_loop := build_inset_loop(sanitized_loop, maxf(radius, 0.0), epsilon)
+	var safe_radius := maxf(radius, 0.0)
+	if has_cached_inset_loop:
+		if cached_inset_loop.size() >= 3:
+			return ensure_point_inside(cached_inset_loop, point, epsilon)
+		return _ensure_circle_center_inside_without_inset(
+			sanitized_loop,
+			point,
+			safe_radius,
+			epsilon
+		)
+	var inset_loop := build_inset_loop(sanitized_loop, safe_radius, epsilon)
 	if inset_loop.size() < 3:
 		return _ensure_circle_center_inside_without_inset(
 			sanitized_loop,
 			point,
-			maxf(radius, 0.0),
+			safe_radius,
 			epsilon
 		)
 	return ensure_point_inside(inset_loop, point, epsilon)

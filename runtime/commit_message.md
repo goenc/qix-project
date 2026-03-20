@@ -1,5 +1,5 @@
-BOSS の反射を fallback 優先化し、押し戻しを縮小して自然さを調整する
+BBOS の凹角はまりを抑えるため、境界判定をキャッシュ化し角脱出を追加した
 
-・scripts/game/playfield_boundary.gd で _resolve_circle_hit_normal の返却順を見直し、fallback_normal を優先して角での軸丸めを弱めた。
-・scripts/enemy/bbos.gd で反射後の押し戻し量を maxf(bounce_epsilon, 0.05) に縮小した。
-・Godot を headless で起動し、プロジェクト読み込みが成功することを確認した。
+・scripts/enemy/bbos.gd で内側ループのキャッシュを導入し、角はまり時に軽い脱出補正とクールダウンを追加した。
+・scripts/game/playfield_boundary.gd で cached inset loop を受け取れるようにし、毎フレームの build_inset_loop を回避した。
+・Godot を headless と non-headless で起動し、構文確認と実プレイ起動確認を行った。

@@ -19,3 +19,13 @@ Validation:
 ・BOSS の反射法線を fallback 優先にして角での軸丸めを抑え、反射後の押し戻し量を縮小した。
 確認:
 ・Godot を headless で起動し、プロジェクト読み込みの成功を確認した。
+
+日時: 2026-03-20 11:25:20 JST
+対象:
+- scripts/enemy/bbos.gd
+- scripts/game/playfield_boundary.gd
+変更:
+・BBOS の境界判定をキャッシュ済みの内側ループ優先に切り替え、毎フレームの inset 再構築を避けるようにした。
+・凹角で同一点付近の連続衝突を角はまりとして扱い、軽い脱出補正とクールダウンを追加した。
+確認:
+・Godot を headless で構文確認し、非ヘッドレスでも windowed 起動を自動終了付きで確認した。
