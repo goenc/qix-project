@@ -1,5 +1,5 @@
-外形移動を線分インデックス主体の点列管理へ変更
+外形角の先行入力予約と線分遷移を安定化
 
-・BasePlayer の BORDER 移動を current_border_segment_index と border_distance_on_segment 主体へ置換
-・PlayfieldBoundary に線分取得と頂点遷移の軽量補助関数を追加
-・Godot headless 起動と一時検証スクリプトで角移動と外形更新後の再同期を確認
+・BasePlayer に角手前の予約入力と頂点到達時の安定した線分選択と BORDER 描画開始の安全確認を追加
+・短辺連続と再同期直後でも border state の point と segment と distance を揃える補助処理を追加
+・player 専用の headless 検証スクリプトを追加し 矩形4角と非矩形 loop の移動確認を実施
