@@ -1232,7 +1232,7 @@ func _sync_guide_partition_fill_entries_after_capture(affected_vertical_guide_ke
 	for guide in existing_vertical_guides:
 		existing_vertical_guides_by_key[int(guide.get("x_key", 0))] = guide
 
-	_prune_guide_partition_fill_entries(existing_vertical_guides_by_key)
+	_prune_guide_partition_fill_entries(existing_vertical_guides_by_key, epsilon)
 
 	if affected_vertical_guide_keys.is_empty():
 		return
@@ -1329,6 +1329,9 @@ func _append_guide_partition_fill_entry_between(
 	horizontal_outer_segments: Array[Dictionary],
 	epsilon: float
 ) -> void:
+	if !_should_fill_guide_partition_between_vertical_guides(left_guide, right_guide, epsilon):
+		return
+
 	var left_x := float(left_guide.get("x", 0.0))
 	var right_x := float(right_guide.get("x", left_x))
 	if right_x - left_x <= epsilon:
@@ -1392,12 +1395,17 @@ func _remove_guide_partition_fill_entries_for_guide_key(guide_key: int) -> void:
 			guide_partition_fill_entries.remove_at(index)
 
 
-func _prune_guide_partition_fill_entries(active_vertical_guides_by_key: Dictionary) -> void:
+func _prune_guide_partition_fill_entries(active_vertical_guides_by_key: Dictionary, epsilon: float) -> void:
 	for index in range(guide_partition_fill_entries.size() - 1, -1, -1):
 		var entry := guide_partition_fill_entries[index]
 		var left_guide_key := int(entry.get("left_guide_key", -1))
 		var right_guide_key := int(entry.get("right_guide_key", -1))
 		if !active_vertical_guides_by_key.has(left_guide_key) or !active_vertical_guides_by_key.has(right_guide_key):
+			guide_partition_fill_entries.remove_at(index)
+			continue
+		var left_guide: Dictionary = active_vertical_guides_by_key[left_guide_key]
+		var right_guide: Dictionary = active_vertical_guides_by_key[right_guide_key]
+		if !_should_fill_guide_partition_between_vertical_guides(left_guide, right_guide, epsilon):
 			guide_partition_fill_entries.remove_at(index)
 
 
@@ -1584,6 +1592,37 @@ func _is_vertical_partition_guide_candidate_better(candidate: Dictionary, curren
 	if candidate_height < current_height:
 		return false
 	return float(candidate.get("top_y", 0.0)) < float(current.get("top_y", 0.0))
+
+
+func _should_fill_guide_partition_between_vertical_guides(
+	left_guide: Dictionary,
+	right_guide: Dictionary,
+	epsilon: float
+) -> bool:
+	var boss_diameter := _get_partition_fill_target_boss_diameter()
+	if boss_diameter <= epsilon:
+		return false
+	var max_vertical_guide_length := boss_diameter * 1.2
+	var left_length := _get_vertical_partition_guide_length(left_guide)
+	var right_length := _get_vertical_partition_guide_length(right_guide)
+	return left_length <= max_vertical_guide_length + epsilon and right_length <= max_vertical_guide_length + epsilon
+
+
+func _get_vertical_partition_guide_length(guide: Dictionary) -> float:
+	var top_y := float(guide.get("top_y", 0.0))
+	var bottom_y := float(guide.get("bottom_y", top_y))
+	return absf(bottom_y - top_y)
+
+
+func _get_partition_fill_target_boss_diameter() -> float:
+	if is_instance_valid(bbos):
+		if bbos.has_method("_get_effective_collision_radius"):
+			return maxf(float(bbos.call("_get_effective_collision_radius")), 0.0) * 2.0
+		if bbos.has_method("get"):
+			return maxf(float(bbos.get("collision_radius")), 0.0) * 2.0
+	if is_instance_valid(boss) and boss.has_method("get"):
+		return maxf(float(boss.get("collision_radius")), 0.0) * 2.0
+	return 0.0
 
 
 func _build_guide_partition_rect_between(
