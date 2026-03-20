@@ -53,6 +53,7 @@ func _verify_initial_state(main, failures: Array[String]) -> void:
 	_assert(_loops_match(main.current_outer_loop, expected_loop), "Initial loop does not match the playfield rectangle.", failures)
 	_assert_player_border_motion(main.base_player, main.current_outer_loop, main.playfield_rect, "initial rectangle", failures)
 	_assert_player_corner_preinput(main.base_player, main.current_outer_loop, "initial rectangle", failures)
+	_assert_player_corner_input_priority(main.base_player, main.current_outer_loop, "initial rectangle", failures)
 	_assert_draw_start_safety(main.base_player, main.current_outer_loop, main.playfield_rect.get_center(), "initial rectangle", failures)
 	_assert_bbos_reflection(main.bbos, main.current_outer_loop, main.playfield_rect, "initial rectangle", false, failures)
 
@@ -62,6 +63,7 @@ func _verify_captured_state(main, rect: Rect2, label: String, require_internal_s
 	_assert(PlayfieldBoundary.polygon_area(main.current_outer_loop) > EPSILON, "%s outer loop area is empty." % label, failures)
 	_assert_player_border_motion(main.base_player, main.current_outer_loop, rect, label, failures)
 	_assert_player_corner_preinput(main.base_player, main.current_outer_loop, label, failures)
+	_assert_player_corner_input_priority(main.base_player, main.current_outer_loop, label, failures)
 	_assert_draw_start_safety(main.base_player, main.current_outer_loop, main.bbos.position, label, failures)
 	_assert_bbos_reflection(main.bbos, main.current_outer_loop, rect, label, require_internal_segment, failures)
 
@@ -107,6 +109,27 @@ func _assert_player_corner_preinput(player, loop: PackedVector2Array, label: Str
 			"%s queued corner input failed at vertex %d in the counterclockwise direction." % [label, vertex_index],
 			failures
 		)
+
+
+func _assert_player_corner_input_priority(player, loop: PackedVector2Array, label: String, failures: Array[String]) -> void:
+	var fallback_checked := false
+	for vertex_index in range(loop.size()):
+		_assert(
+			_latest_input_overrides_queued_corner(player, loop, vertex_index, true),
+			"%s latest input did not override the queued corner turn at vertex %d in the clockwise direction." % [label, vertex_index],
+			failures
+		)
+		_assert(
+			_latest_input_overrides_queued_corner(player, loop, vertex_index, false),
+			"%s latest input did not override the queued corner turn at vertex %d in the counterclockwise direction." % [label, vertex_index],
+			failures
+		)
+		if !fallback_checked:
+			fallback_checked = _queued_corner_fallback_applies(player, loop, vertex_index, true)
+		if !fallback_checked:
+			fallback_checked = _queued_corner_fallback_applies(player, loop, vertex_index, false)
+
+	_assert(fallback_checked, "%s queued fallback did not resolve a valid corner case." % label, failures)
 
 
 func _move_player_into_corner_with_preinput(
@@ -179,6 +202,125 @@ func _move_player_into_corner_with_preinput(
 		and PlayfieldBoundary.is_point_on_loop(loop, player.position, EPSILON)
 		and player.debug_is_border_state_consistent()
 	)
+
+
+func _latest_input_overrides_queued_corner(
+	player,
+	loop: PackedVector2Array,
+	vertex_index: int,
+	clockwise: bool
+) -> bool:
+	var prepared := _prepare_corner_queue_state(player, loop, vertex_index, clockwise)
+	if !bool(prepared.get("ready", false)):
+		return false
+
+	var latest_direction: Vector2 = -Vector2(prepared.get("movement_direction", Vector2.ZERO))
+	var selection: Dictionary = player._select_border_segment_at_vertex(vertex_index, latest_direction)
+	if !bool(selection.get("matched", false)):
+		return false
+	if int(selection.get("segment_index", -1)) != int(prepared.get("approach_segment_index", -1)):
+		return false
+
+	player._apply_selected_border_segment(selection)
+	player.position = player._border_state_to_point()
+	player.border_progress = player._border_state_to_progress()
+	return player.queued_border_vertex_index < 0 and player.debug_is_border_state_consistent()
+
+
+func _queued_corner_fallback_applies(
+	player,
+	loop: PackedVector2Array,
+	vertex_index: int,
+	clockwise: bool
+) -> bool:
+	var prepared := _prepare_corner_queue_state(player, loop, vertex_index, clockwise)
+	if !bool(prepared.get("ready", false)):
+		return false
+
+	var latest_direction: Vector2 = Vector2(prepared.get("movement_direction", Vector2.ZERO))
+	var selection: Dictionary = player._select_border_segment_at_vertex(vertex_index, latest_direction)
+	if !bool(selection.get("matched", false)):
+		return false
+	if int(selection.get("segment_index", -1)) != int(prepared.get("expected_segment_index", -1)):
+		return false
+
+	player._apply_selected_border_segment(selection)
+	player.position = player._border_state_to_point()
+	player.border_progress = player._border_state_to_progress()
+	return player.queued_border_vertex_index < 0 and player.debug_is_border_state_consistent()
+
+
+func _prepare_corner_queue_state(
+	player,
+	loop: PackedVector2Array,
+	vertex_index: int,
+	clockwise: bool
+) -> Dictionary:
+	var connected := PlayfieldBoundary.get_vertex_connected_segment_indices(loop, vertex_index)
+	var approach_segment_index := (
+		int(connected.get("previous", -1))
+		if clockwise
+		else int(connected.get("next", -1))
+	)
+	var expected_segment_index := (
+		int(connected.get("next", -1))
+		if clockwise
+		else int(connected.get("previous", -1))
+	)
+	if approach_segment_index < 0 or expected_segment_index < 0:
+		return {"ready": false}
+
+	var segment_length := PlayfieldBoundary.get_segment_length(loop, approach_segment_index, player.outer_loop_metrics)
+	if segment_length <= EPSILON:
+		return {"ready": false}
+
+	var threshold := float(player._get_border_queue_distance_threshold(segment_length))
+	var approach_distance := clampf(threshold * 0.75, 1.0, segment_length)
+	var segment_direction := PlayfieldBoundary.get_segment_direction(loop, approach_segment_index, EPSILON)
+	var movement_direction := segment_direction if clockwise else -segment_direction
+	var turn_direction := (
+		PlayfieldBoundary.get_segment_direction(loop, expected_segment_index, EPSILON)
+		if clockwise
+		else -PlayfieldBoundary.get_segment_direction(loop, expected_segment_index, EPSILON)
+	)
+	if movement_direction == Vector2.ZERO or turn_direction == Vector2.ZERO:
+		return {"ready": false}
+
+	var distance_on_segment := (
+		maxf(0.0, segment_length - approach_distance)
+		if clockwise
+		else minf(segment_length, approach_distance)
+	)
+	player.state = player.PlayerState.BORDER
+	player.current_border_segment_index = approach_segment_index
+	player.border_distance_on_segment = distance_on_segment
+	player.position = PlayfieldBoundary.point_at_segment_distance(
+		loop,
+		approach_segment_index,
+		distance_on_segment,
+		player.outer_loop_metrics
+	)
+	player.border_progress = player._border_state_to_progress()
+	player.queued_border_segment_index = -1
+	player.queued_border_vertex_index = -1
+	player.queued_border_distance_on_segment = 0.0
+
+	var safe_epsilon := maxf(player.border_epsilon, PlayfieldBoundary.DEFAULT_EPSILON)
+	player._update_queued_border_transition((movement_direction + turn_direction).normalized(), 1.0 if clockwise else -1.0, safe_epsilon)
+	if player.queued_border_vertex_index != vertex_index:
+		return {"ready": false}
+	if player.queued_border_segment_index != expected_segment_index:
+		return {"ready": false}
+
+	player.border_distance_on_segment = segment_length if clockwise else 0.0
+	player.position = loop[vertex_index]
+	player.border_progress = player._border_state_to_progress()
+	return {
+		"ready": true,
+		"approach_segment_index": approach_segment_index,
+		"expected_segment_index": expected_segment_index,
+		"movement_direction": movement_direction
+	}
 
 
 func _assert_draw_start_safety(

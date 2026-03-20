@@ -151,6 +151,7 @@ func _assign_active_outer_loop(loop: PackedVector2Array) -> void:
 	outer_loop_lengths = outer_loop_metrics.get("segment_lengths", PackedFloat32Array())
 	outer_loop_starts = outer_loop_metrics.get("segment_starts", PackedFloat32Array())
 	outer_loop_total_length = float(outer_loop_metrics.get("total_length", 0.0))
+	_clear_queued_border_transition()
 
 
 func _process(delta: float) -> void:
@@ -1036,13 +1037,23 @@ func _update_queued_border_transition(direction: Vector2, move_sign: float, safe
 		_clear_queued_border_transition()
 		return
 
-	queued_border_vertex_index = vertex_index
-	queued_border_segment_index = int(queued_segment.get("segment_index", -1))
-	queued_border_distance_on_segment = float(queued_segment.get("distance_on_segment", 0.0))
+	_store_queued_border_transition(vertex_index, queued_segment)
 
 
 func _select_border_segment_at_vertex(vertex_index: int, direction: Vector2) -> Dictionary:
-	if queued_border_vertex_index == vertex_index and queued_border_segment_index >= 0:
+	var latest_segment := PlayfieldBoundary.choose_segment_at_vertex(
+		active_outer_loop,
+		vertex_index,
+		direction,
+		current_border_segment_index,
+		border_epsilon,
+		outer_loop_metrics
+	)
+	if bool(latest_segment.get("matched", false)):
+		_clear_queued_border_transition()
+		return latest_segment
+
+	if _has_valid_queued_border_transition(vertex_index):
 		var queued_segment := {
 			"matched": true,
 			"segment_index": queued_border_segment_index,
@@ -1053,20 +1064,52 @@ func _select_border_segment_at_vertex(vertex_index: int, direction: Vector2) -> 
 		return queued_segment
 
 	_clear_queued_border_transition()
-	return PlayfieldBoundary.choose_segment_at_vertex(
-		active_outer_loop,
-		vertex_index,
-		direction,
-		current_border_segment_index,
-		border_epsilon,
-		outer_loop_metrics
-	)
+	return latest_segment
 
 
 func _apply_selected_border_segment(selection: Dictionary) -> void:
 	current_border_segment_index = int(selection.get("segment_index", current_border_segment_index))
 	border_distance_on_segment = float(selection.get("distance_on_segment", border_distance_on_segment))
 	_clamp_border_state()
+
+
+func _store_queued_border_transition(vertex_index: int, selection: Dictionary) -> void:
+	queued_border_vertex_index = vertex_index
+	queued_border_segment_index = int(selection.get("segment_index", -1))
+	queued_border_distance_on_segment = float(selection.get("distance_on_segment", 0.0))
+	if !_has_valid_queued_border_transition(vertex_index):
+		_clear_queued_border_transition()
+
+
+func _has_valid_queued_border_transition(vertex_index: int) -> bool:
+	if active_outer_loop.size() < 2:
+		return false
+	if vertex_index < 0 or vertex_index >= active_outer_loop.size():
+		return false
+	if queued_border_vertex_index != vertex_index:
+		return false
+	if queued_border_segment_index < 0 or queued_border_segment_index >= active_outer_loop.size():
+		return false
+	if current_border_segment_index < 0 or current_border_segment_index >= active_outer_loop.size():
+		return false
+
+	var connected_segments := PlayfieldBoundary.get_vertex_connected_segment_indices(active_outer_loop, vertex_index)
+	var previous_segment_index := int(connected_segments.get("previous", -1))
+	var next_segment_index := int(connected_segments.get("next", -1))
+	if current_border_segment_index != previous_segment_index and current_border_segment_index != next_segment_index:
+		return false
+
+	var safe_epsilon := maxf(border_epsilon, PlayfieldBoundary.DEFAULT_EPSILON)
+	if queued_border_segment_index == previous_segment_index:
+		var expected_distance := PlayfieldBoundary.get_segment_length(
+			active_outer_loop,
+			previous_segment_index,
+			outer_loop_metrics
+		)
+		return absf(expected_distance - queued_border_distance_on_segment) <= safe_epsilon
+	if queued_border_segment_index == next_segment_index:
+		return absf(queued_border_distance_on_segment) <= safe_epsilon
+	return false
 
 
 func _consume_current_border_segment(move_sign: float, remaining_distance: float, safe_epsilon: float) -> Dictionary:

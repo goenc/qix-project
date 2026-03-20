@@ -1,11 +1,12 @@
-日時: 2026-03-20 09:17:27 JST
+日時: 2026-03-20 09:29:48 JST
 対象:
 - scripts/player/base_player.gd
 - tools/verify_outer_loop.gd
 - tools/verify_player_border_corner.gd
 変更:
-・外形角の手前で入力を予約する線分キューと頂点到達時の安定した線分選択を追加し BORDER 中の描画開始条件も境界整合付きで厳格化した。
-・短辺や外形更新直後でも border state の整合を保てる補助処理と player 専用のヘッドレス確認スクリプトを追加した。
+・外形角の queued を事前候補に限定し頂点到達時は最新入力の再判定を最優先するよう修正
+・queued の整合性検証と active outer loop 更新時のクリアを追加し誤適用を防止
+・矩形と非矩形の角入力検証に最新入力優先ケースと queued fallback ケースを追加
 確認:
-・Godot 4.6.1 headless で tools/verify_player_border_corner.gd を実行し initial rectangle と first L capture と second jagged capture を確認した。
-・Godot 4.6.1 で tools/verify_player_border_corner.gd の check-only と非ヘッドレス短時間起動を実行した。
+・headless と非 headless の verify_player_border_corner.gd で initial rectangle と first L capture と second jagged capture が通過することを確認
+・headless と非 headless の verify_outer_loop.gd で BBOS 反射確認が既存失敗のまま再現することを確認
