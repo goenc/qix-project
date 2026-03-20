@@ -427,7 +427,8 @@ static func get_vertex_tangent_directions(
 static func split_outer_loop_by_trail(
 	loop: PackedVector2Array,
 	trail_points: PackedVector2Array,
-	epsilon: float
+	epsilon: float,
+	metrics: Dictionary = {}
 ) -> Array[Dictionary]:
 	var sanitized_loop := sanitize_loop(loop)
 	var sanitized_trail := sanitize_polyline(trail_points)
@@ -435,9 +436,13 @@ static func split_outer_loop_by_trail(
 	if sanitized_loop.size() < 3 or sanitized_trail.size() < 2:
 		return candidates
 
-	var metrics := build_loop_metrics(sanitized_loop)
-	var start_projection := project_point_to_loop(sanitized_loop, sanitized_trail[0], metrics)
-	var end_projection := project_point_to_loop(sanitized_loop, sanitized_trail[sanitized_trail.size() - 1], metrics)
+	var resolved_metrics: Dictionary = metrics
+	var segment_lengths: PackedFloat32Array = resolved_metrics.get("segment_lengths", PackedFloat32Array())
+	if resolved_metrics.is_empty() or segment_lengths.size() != sanitized_loop.size():
+		resolved_metrics = build_loop_metrics(sanitized_loop)
+
+	var start_projection := project_point_to_loop(sanitized_loop, sanitized_trail[0], resolved_metrics)
+	var end_projection := project_point_to_loop(sanitized_loop, sanitized_trail[sanitized_trail.size() - 1], resolved_metrics)
 	var start_point: Vector2 = start_projection.get("point", sanitized_trail[0])
 	var end_point: Vector2 = end_projection.get("point", sanitized_trail[sanitized_trail.size() - 1])
 	if start_point.distance_to(end_point) <= epsilon:
@@ -449,7 +454,7 @@ static func split_outer_loop_by_trail(
 	for clockwise in [true, false]:
 		var boundary_path := build_loop_path_points(
 			sanitized_loop,
-			metrics,
+			resolved_metrics,
 			end_point,
 			start_point,
 			clockwise

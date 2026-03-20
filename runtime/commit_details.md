@@ -1,13 +1,12 @@
-日時: 2026-03-20 09:45:41
-対象:
-- scripts/enemy/bbos.gd
-- tools/verify_outer_loop.gd
-- tools/verify_player_border_corner.gd
-- tools/verify_shared.gd
-変更:
-・verify_outer_loop の BBOS 反射失敗は initial rectangle と first L capture と second jagged capture の全段階で共通に発生しており raw outer loop を叩く検証前提が BBOS の実効反射ループとずれていたため BBOS に反射ループ取得口を追加し検証をその基準へ統一した。
-・player 外形角移動検証の重複補助関数を tools/verify_shared.gd に集約し 2 本の verify から共通利用する形へ最小限で整理した。
-確認:
-・Godot headless で tools/verify_outer_loop.gd が成功した。
-・Godot headless で tools/verify_player_border_corner.gd が成功した。
-・Godot 非 headless で base_main を 120 フレーム起動して正常終了した。
+base_main.gd:
+- add current_outer_loop_metrics and refresh it when the outer loop changes
+- pass cached metrics into split_outer_loop_by_trail
+- compute added_claimed_area and per-capture AABBs in _append_claimed_capture_results
+- update claimed_area by delta and append AABB deltas during finalize
+
+playfield_boundary.gd:
+- add an optional metrics argument to split_outer_loop_by_trail
+- reuse provided metrics when they match the current loop size
+
+Validation:
+- godot --headless --path . --check-only

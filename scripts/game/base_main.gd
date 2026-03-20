@@ -39,6 +39,7 @@ var stage_cover_uvs: PackedVector2Array = PackedVector2Array()
 var claimed_polygons: Array[PackedVector2Array] = []
 var claimed_polygon_aabbs: Array[Rect2] = []
 var current_outer_loop: PackedVector2Array = PackedVector2Array()
+var current_outer_loop_metrics: Dictionary = {}
 var remaining_polygon: PackedVector2Array = PackedVector2Array()
 var inactive_border_segments: Array[PackedVector2Array] = []
 var inactive_border_segment_aabbs: Array[Rect2] = []
@@ -257,11 +258,13 @@ func _connect_bbos_signal() -> void:
 
 func _initialize_outer_loop_from_rect() -> void:
 	current_outer_loop = PlayfieldBoundary.create_rect_loop(playfield_rect)
+	_refresh_current_outer_loop_metrics()
 	remaining_polygon = _create_playfield_cover_polygon()
 	var initial_stage_cover_source := remaining_polygon if remaining_polygon.size() >= 3 else _create_playfield_cover_polygon()
 	_rebuild_stage_cover_polygon_from_polygon(initial_stage_cover_source)
 	queue_redraw()
 	inactive_border_segments.clear()
+	inactive_border_segment_aabbs.clear()
 	capture_preview_active = false
 	if claimed_polygons.is_empty():
 		claimed_area = 0.0
@@ -356,7 +359,12 @@ func _resolve_capture_epsilon() -> float:
 
 
 func _build_capture_candidate_loops(trail_points: PackedVector2Array, epsilon: float) -> Array[Dictionary]:
-	return PlayfieldBoundary.split_outer_loop_by_trail(current_outer_loop, trail_points, epsilon)
+	return PlayfieldBoundary.split_outer_loop_by_trail(
+		current_outer_loop,
+		trail_points,
+		epsilon,
+		current_outer_loop_metrics
+	)
 
 
 func _select_boss_side_loop(candidate_loops: Array[Dictionary], epsilon: float) -> int:
@@ -367,17 +375,22 @@ func _select_boss_side_loop(candidate_loops: Array[Dictionary], epsilon: float) 
 
 func _apply_retained_capture_loop(retained_candidate: Dictionary) -> void:
 	current_outer_loop = retained_candidate.get("loop", PackedVector2Array())
+	_refresh_current_outer_loop_metrics()
 	var retained_polygon: PackedVector2Array = retained_candidate.get("polygon", PackedVector2Array())
 	if retained_polygon.size() >= 3:
 		remaining_polygon = retained_polygon
 	var stage_cover_source := retained_polygon if retained_polygon.size() >= 3 else remaining_polygon
 	_rebuild_stage_cover_polygon_from_polygon(stage_cover_source)
 	inactive_border_segments.clear()
+	inactive_border_segment_aabbs.clear()
 
 
 func _append_claimed_capture_results(candidate_loops: Array[Dictionary], retained_index: int) -> Dictionary:
 	var captured_polygons_delta: Array[PackedVector2Array] = []
+	var captured_polygon_aabbs: Array[Rect2] = []
 	var inactive_segments_delta: Array[PackedVector2Array] = []
+	var inactive_segment_aabbs: Array[Rect2] = []
+	var added_claimed_area := 0.0
 	for index in range(candidate_loops.size()):
 		if index == retained_index:
 			continue
@@ -385,16 +398,23 @@ func _append_claimed_capture_results(candidate_loops: Array[Dictionary], retaine
 		if captured_polygon.size() >= 3:
 			claimed_polygons.append(captured_polygon)
 			captured_polygons_delta.append(captured_polygon)
+			captured_polygon_aabbs.append(_build_points_aabb(captured_polygon))
+			added_claimed_area += PlayfieldBoundary.polygon_area(captured_polygon)
 		var removed_path: PackedVector2Array = candidate_loops[index].get("boundary_path", PackedVector2Array())
 		var removed_segments := _polyline_to_segments(removed_path)
 		if removed_segments.is_empty():
 			continue
 		inactive_border_segments.append_array(removed_segments)
 		inactive_segments_delta.append_array(removed_segments)
+		for segment in removed_segments:
+			inactive_segment_aabbs.append(_build_points_aabb(segment))
 
 	return {
 		"captured_polygons": captured_polygons_delta,
-		"inactive_segments": inactive_segments_delta
+		"captured_polygon_aabbs": captured_polygon_aabbs,
+		"inactive_segments": inactive_segments_delta,
+		"inactive_segment_aabbs": inactive_segment_aabbs,
+		"added_claimed_area": added_claimed_area
 	}
 
 
@@ -672,6 +692,20 @@ func _build_segment_aabb_from_points(segment_start: Vector2, segment_end: Vector
 	segment.append(segment_start)
 	segment.append(segment_end)
 	return _build_points_aabb(segment)
+
+
+func _append_capture_delta_aabbs(capture_delta: Dictionary) -> void:
+	var captured_polygon_aabbs: Array[Rect2] = []
+	if capture_delta.has("captured_polygon_aabbs"):
+		captured_polygon_aabbs = capture_delta["captured_polygon_aabbs"]
+	if !captured_polygon_aabbs.is_empty():
+		claimed_polygon_aabbs.append_array(captured_polygon_aabbs)
+
+	var inactive_segment_aabbs: Array[Rect2] = []
+	if capture_delta.has("inactive_segment_aabbs"):
+		inactive_segment_aabbs = capture_delta["inactive_segment_aabbs"]
+	if !inactive_segment_aabbs.is_empty():
+		inactive_border_segment_aabbs.append_array(inactive_segment_aabbs)
 
 
 func _point_overlaps_rect(point: Vector2, rect: Rect2, epsilon: float) -> bool:
@@ -983,8 +1017,10 @@ func _apply_capture_guide_actions(capture_actions: Dictionary) -> void:
 
 
 func _finalize_capture_closed(capture_delta: Dictionary, capture_generation: int) -> void:
-	_recalculate_claimed_area()
-	_rebuild_spatial_caches()
+	claimed_area += float(capture_delta.get("added_claimed_area", 0.0))
+	var playfield_area := maxf(0.0, playfield_rect.size.x * playfield_rect.size.y)
+	claimed_area = minf(claimed_area, playfield_area)
+	_append_capture_delta_aabbs(capture_delta)
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
 	var capture_actions := _collect_guide_capture_actions(capture_delta, capture_generation)
@@ -1001,6 +1037,14 @@ func _recalculate_claimed_area() -> void:
 
 	var playfield_area := maxf(0.0, playfield_rect.size.x * playfield_rect.size.y)
 	claimed_area = minf(total_area, playfield_area) if playfield_area > 0.0 else total_area
+
+
+func _refresh_current_outer_loop_metrics() -> void:
+	if current_outer_loop.size() < 3:
+		current_outer_loop_metrics = {}
+		return
+
+	current_outer_loop_metrics = PlayfieldBoundary.build_loop_metrics(current_outer_loop)
 
 
 func _sync_boss_marker() -> void:
