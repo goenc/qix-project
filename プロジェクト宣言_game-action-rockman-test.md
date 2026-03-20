@@ -1,4 +1,4 @@
 ヴォイド・ディバイダー
 qix-project
 C:\Users\gonec\GameProjects\Godot\qix-project
-C:\Users\gonec\GameProjects\Godot\qix-project\tools\run.ps1
+C:\Users\gonec\GameProjects\Godot\qix-project\QIX.bat

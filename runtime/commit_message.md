@@ -1,6 +1,6 @@
-横切り後の縦補助線分断に対応した区画塗り差分更新を区間単位へ修正
+横切り後の区画塗り保持を定義層と描画結果層に分離して String エラーを除去
 
-・縦補助線候補をx統合せず区間キーで保持し同一x上の複数区間を独立処理
-・左右探索にy重なり条件を追加し重なり帯でtop_y/bottom_yを解決
-・capture時は影響x/y帯のみ既存エントリを削除し周辺区画だけ再生成
-・godot --headless --path . --quit で構文確認済み
+・base_main.gd で String(...) を全廃し _stringify_value に統一
+・補助線区分エントリを区画定義専用にし 描画結果は guide_partition_fill_polygons_by_key へ分離
+・capture 後更新を prune と定義再生成と claimed 差し引き後 fill 再生成に分割
+・headless 構文確認と outer_loop/player_border 検証スクリプトが成功

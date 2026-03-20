@@ -40,6 +40,7 @@ var stage_cover_uvs: PackedVector2Array = PackedVector2Array()
 var claimed_polygons: Array[PackedVector2Array] = []
 var claimed_polygon_aabbs: Array[Rect2] = []
 var guide_partition_fill_entries: Array[Dictionary] = []
+var guide_partition_fill_polygons_by_key: Dictionary = {}
 var current_outer_loop: PackedVector2Array = PackedVector2Array()
 var current_outer_loop_metrics: Dictionary = {}
 var remaining_polygon: PackedVector2Array = PackedVector2Array()
@@ -247,7 +248,7 @@ func _connect_player_signal() -> void:
 	if base_player.has_signal("capture_preview_changed") and !base_player.capture_preview_changed.is_connected(_on_player_capture_preview_changed):
 		base_player.capture_preview_changed.connect(_on_player_capture_preview_changed)
 	if base_player.has_method("get_state_text"):
-		var mode_text := String(base_player.call("get_state_text"))
+		var mode_text := _stringify_value(base_player.call("get_state_text"), "")
 		capture_preview_active = mode_text == "DRAWING" or mode_text == "REWINDING"
 
 
@@ -266,6 +267,7 @@ func _initialize_outer_loop_from_rect() -> void:
 	var initial_stage_cover_source := remaining_polygon if remaining_polygon.size() >= 3 else _create_playfield_cover_polygon()
 	_rebuild_stage_cover_polygon_from_polygon(initial_stage_cover_source)
 	guide_partition_fill_entries.clear()
+	guide_partition_fill_polygons_by_key.clear()
 	queue_redraw()
 	inactive_border_segments.clear()
 	inactive_border_segment_aabbs.clear()
@@ -1023,7 +1025,7 @@ func _try_parse_capture_action_index(raw_index: Variant) -> Dictionary:
 		}
 
 	if typeof(raw_index) == TYPE_STRING:
-		var raw_text := String(raw_index).strip_edges()
+		var raw_text := _stringify_value(raw_index, "").strip_edges()
 		if raw_text.is_empty() or !raw_text.is_valid_int():
 			return {"valid": false}
 		return {
@@ -1210,7 +1212,10 @@ func _collect_guide_partition_rects() -> Array[PackedVector2Array]:
 	var polygons: Array[PackedVector2Array] = []
 	var epsilon := _get_guide_epsilon()
 	for entry in guide_partition_fill_entries:
-		var fill_polygons: Array = entry.get("fill_polygons", [])
+		var pair_key := _extract_guide_partition_entry_pair_key(entry)
+		if pair_key.is_empty() or !guide_partition_fill_polygons_by_key.has(pair_key):
+			continue
+		var fill_polygons: Array = guide_partition_fill_polygons_by_key[pair_key]
 		for raw_polygon in fill_polygons:
 			if typeof(raw_polygon) != TYPE_PACKED_VECTOR2_ARRAY:
 				continue
@@ -1229,40 +1234,52 @@ func _sync_guide_partition_fill_entries_after_capture(
 	var horizontal_outer_segments := _collect_horizontal_outer_loop_segments(epsilon)
 	if horizontal_outer_segments.is_empty():
 		guide_partition_fill_entries.clear()
+		guide_partition_fill_polygons_by_key.clear()
 		return
 
 	var existing_vertical_guides := _collect_unique_active_vertical_guides(horizontal_outer_segments, epsilon)
 	if existing_vertical_guides.is_empty():
 		guide_partition_fill_entries.clear()
+		guide_partition_fill_polygons_by_key.clear()
 		return
 
 	var existing_vertical_guides_by_interval_key: Dictionary = {}
 	for guide in existing_vertical_guides:
-		existing_vertical_guides_by_interval_key[String(guide.get("interval_key", ""))] = guide
+		var interval_key := _stringify_value(guide.get("interval_key", ""), "")
+		if interval_key.is_empty():
+			continue
+		existing_vertical_guides_by_interval_key[interval_key] = guide
 
 	var update_region := _build_guide_partition_update_region(affected_vertical_guide_keys, capture_delta, epsilon)
-	_prune_guide_partition_fill_entries(existing_vertical_guides_by_interval_key, update_region, epsilon)
-
-	if !bool(update_region.get("has_update", false)):
-		return
+	var removed_partition_keys := _prune_guide_partition_fill_entries(
+		existing_vertical_guides_by_interval_key,
+		update_region,
+		epsilon
+	)
 
 	var guides_to_refresh := _collect_vertical_guides_for_partition_refresh(existing_vertical_guides, update_region, epsilon)
-	if guides_to_refresh.is_empty():
+	if !bool(update_region.get("has_update", false)):
+		_erase_guide_partition_fill_results(removed_partition_keys)
 		return
 
 	var refreshed_interval_keys: Dictionary = {}
 	for guide in guides_to_refresh:
-		var interval_key := String(guide.get("interval_key", ""))
+		var interval_key := _stringify_value(guide.get("interval_key", ""), "")
 		if interval_key.is_empty() or refreshed_interval_keys.has(interval_key):
 			continue
 		refreshed_interval_keys[interval_key] = true
-		_refresh_guide_partition_fill_entries_for_vertical_guide(
+		var refresh_removed_keys := _refresh_guide_partition_fill_entries_for_vertical_guide(
 			guide,
 			existing_vertical_guides,
 			horizontal_outer_segments,
 			update_region,
 			epsilon
 		)
+		for pair_key in refresh_removed_keys:
+			removed_partition_keys.append(pair_key)
+
+	_erase_guide_partition_fill_results(removed_partition_keys)
+	_refresh_guide_partition_fill_results_for_update_region(update_region, epsilon)
 
 
 func _build_guide_partition_update_region(
@@ -1398,8 +1415,8 @@ func _refresh_guide_partition_fill_entries_for_vertical_guide(
 	horizontal_outer_segments: Array[Dictionary],
 	update_region: Dictionary,
 	epsilon: float
-) -> void:
-	_remove_guide_partition_fill_entries_for_guide_interval(guide, update_region, epsilon)
+) -> Array[String]:
+	var removed_partition_keys := _remove_guide_partition_fill_entries_for_guide_interval(guide, update_region, epsilon)
 
 	var left_guide := _find_vertical_partition_guide_on_side(
 		guide,
@@ -1428,6 +1445,7 @@ func _refresh_guide_partition_fill_entries_for_vertical_guide(
 			horizontal_outer_segments,
 			epsilon
 		)
+	return removed_partition_keys
 
 
 func _append_guide_partition_fill_entry_between(
@@ -1471,45 +1489,55 @@ func _append_guide_partition_fill_entry_between(
 		return
 
 	var rect := Rect2(Vector2(left_x, top_y), Vector2(right_x - left_x, bottom_y - top_y))
-	var fill_polygons := _build_guide_partition_fill_polygons(rect, epsilon)
-	if !_should_draw_guide_partition_rect(rect, fill_polygons, epsilon):
+	if !_guide_partition_entry_has_valid_base_rect({
+		"rect": rect,
+		"left_x": left_x,
+		"right_x": right_x,
+		"top_y": top_y,
+		"bottom_y": bottom_y
+	}, epsilon):
 		return
 
 	var left_guide_key := int(left_guide.get("x_key", int(round(left_x))))
 	var right_guide_key := int(right_guide.get("x_key", int(round(right_x))))
-	var left_interval_key := String(left_guide.get("interval_key", ""))
-	var right_interval_key := String(right_guide.get("interval_key", ""))
+	var left_interval_key := _stringify_value(left_guide.get("interval_key", ""), "")
+	var right_interval_key := _stringify_value(right_guide.get("interval_key", ""), "")
 	_upsert_guide_partition_fill_entry({
 		"left_x": left_x,
 		"right_x": right_x,
 		"top_y": top_y,
 		"bottom_y": bottom_y,
+		"left_x_key": left_guide_key,
+		"left_top_y": float(left_guide.get("top_y", 0.0)),
+		"left_bottom_y": float(left_guide.get("bottom_y", left_guide.get("top_y", 0.0))),
+		"left_height": _get_vertical_partition_guide_length(left_guide),
+		"right_x_key": right_guide_key,
+		"right_top_y": float(right_guide.get("top_y", 0.0)),
+		"right_bottom_y": float(right_guide.get("bottom_y", right_guide.get("top_y", 0.0))),
+		"right_height": _get_vertical_partition_guide_length(right_guide),
 		"left_interval_key": left_interval_key,
 		"right_interval_key": right_interval_key,
 		"pair_key": _build_guide_partition_pair_key(left_interval_key, right_interval_key),
 		"left_guide_key": left_guide_key,
 		"right_guide_key": right_guide_key,
-		"rect": rect,
-		"fill_polygons": fill_polygons
+		"rect": rect
 	})
 
 
 func _upsert_guide_partition_fill_entry(entry: Dictionary) -> void:
-	var pair_key := String(entry.get("pair_key", ""))
+	var pair_key := _extract_guide_partition_entry_pair_key(entry)
 	if pair_key.is_empty():
-		pair_key = _build_guide_partition_pair_key(
-			String(entry.get("left_interval_key", "")),
-			String(entry.get("right_interval_key", ""))
-		)
-		entry["pair_key"] = pair_key
-	var entry_index := _find_guide_partition_fill_entry_index(pair_key)
+		return
+	entry["pair_key"] = pair_key
+	var entry_index := _find_guide_partition_fill_entry_index(entry)
 	if entry_index >= 0:
 		guide_partition_fill_entries[entry_index] = entry
 		return
 	guide_partition_fill_entries.append(entry)
 
 
-func _find_guide_partition_fill_entry_index(pair_key: String) -> int:
+func _find_guide_partition_fill_entry_index(entry_to_match: Dictionary) -> int:
+	var pair_key := _extract_guide_partition_entry_pair_key(entry_to_match)
 	for index in range(guide_partition_fill_entries.size()):
 		var entry := guide_partition_fill_entries[index]
 		var entry_pair_key := _extract_guide_partition_entry_pair_key(entry)
@@ -1523,16 +1551,16 @@ func _build_guide_partition_pair_key(left_interval_key: String, right_interval_k
 
 
 func _extract_guide_partition_entry_pair_key(entry: Dictionary) -> String:
-	var pair_key := String(entry.get("pair_key", ""))
+	var pair_key := _stringify_value(entry.get("pair_key", ""), "")
 	if !pair_key.is_empty():
 		return pair_key
-	var left_interval_key := String(entry.get("left_interval_key", ""))
-	var right_interval_key := String(entry.get("right_interval_key", ""))
+	var left_interval_key := _stringify_value(entry.get("left_interval_key", ""), "")
+	var right_interval_key := _stringify_value(entry.get("right_interval_key", ""), "")
 	if !left_interval_key.is_empty() and !right_interval_key.is_empty():
 		return _build_guide_partition_pair_key(left_interval_key, right_interval_key)
 	return _build_guide_partition_pair_key(
-		String(entry.get("left_guide_key", "")),
-		String(entry.get("right_guide_key", ""))
+		_stringify_value(entry.get("left_guide_key", ""), ""),
+		_stringify_value(entry.get("right_guide_key", ""), "")
 	)
 
 
@@ -1540,21 +1568,25 @@ func _remove_guide_partition_fill_entries_for_guide_interval(
 	guide: Dictionary,
 	update_region: Dictionary,
 	epsilon: float
-) -> void:
-	var interval_key := String(guide.get("interval_key", ""))
+) -> Array[String]:
+	var removed_partition_keys: Array[String] = []
+	var interval_key := _stringify_value(guide.get("interval_key", ""), "")
 	if interval_key.is_empty():
-		return
+		return removed_partition_keys
 	for index in range(guide_partition_fill_entries.size() - 1, -1, -1):
 		var entry := guide_partition_fill_entries[index]
-		var left_interval_key := String(entry.get("left_interval_key", ""))
-		var right_interval_key := String(entry.get("right_interval_key", ""))
+		var left_interval_key := _stringify_value(entry.get("left_interval_key", ""), "")
+		var right_interval_key := _stringify_value(entry.get("right_interval_key", ""), "")
 		if left_interval_key == interval_key or right_interval_key == interval_key:
+			removed_partition_keys.append(_extract_guide_partition_entry_pair_key(entry))
 			guide_partition_fill_entries.remove_at(index)
 			continue
 		if !_guide_partition_entry_intersects_update_region(entry, update_region, epsilon):
 			continue
 		if _guide_partition_entry_touches_guide_x(entry, guide, epsilon):
+			removed_partition_keys.append(_extract_guide_partition_entry_pair_key(entry))
 			guide_partition_fill_entries.remove_at(index)
+	return removed_partition_keys
 
 
 func _guide_partition_entry_touches_guide_x(entry: Dictionary, guide: Dictionary, epsilon: float) -> bool:
@@ -1590,20 +1622,24 @@ func _guide_partition_entry_intersects_update_region(
 
 func _prune_guide_partition_fill_entries(
 	active_vertical_guides_by_interval_key: Dictionary,
-	update_region: Dictionary,
+	_update_region: Dictionary,
 	epsilon: float
-) -> void:
+) -> Array[String]:
+	var removed_partition_keys: Array[String] = []
 	for index in range(guide_partition_fill_entries.size() - 1, -1, -1):
 		var entry := guide_partition_fill_entries[index]
-		var left_interval_key := String(entry.get("left_interval_key", String(entry.get("left_guide_key", ""))))
-		var right_interval_key := String(entry.get("right_interval_key", String(entry.get("right_guide_key", ""))))
-		var intersects_update_region := _guide_partition_entry_intersects_update_region(entry, update_region, epsilon)
-		if !active_vertical_guides_by_interval_key.has(left_interval_key) or !active_vertical_guides_by_interval_key.has(right_interval_key):
-			if intersects_update_region:
-				guide_partition_fill_entries.remove_at(index)
-			continue
-		if intersects_update_region:
+		if !_guide_partition_entry_has_active_vertical_guides(entry, active_vertical_guides_by_interval_key):
+			removed_partition_keys.append(_extract_guide_partition_entry_pair_key(entry))
 			guide_partition_fill_entries.remove_at(index)
+			continue
+		if !_guide_partition_entry_lengths_within_threshold(entry, epsilon):
+			removed_partition_keys.append(_extract_guide_partition_entry_pair_key(entry))
+			guide_partition_fill_entries.remove_at(index)
+			continue
+		if !_guide_partition_entry_has_valid_base_rect(entry, epsilon):
+			removed_partition_keys.append(_extract_guide_partition_entry_pair_key(entry))
+			guide_partition_fill_entries.remove_at(index)
+	return removed_partition_keys
 
 
 func _collect_horizontal_outer_loop_segments(epsilon: float) -> Array[Dictionary]:
@@ -1645,7 +1681,7 @@ func _collect_unique_active_vertical_guides(horizontal_outer_segments: Array[Dic
 			)
 			if candidate.is_empty():
 				continue
-			var interval_key := String(candidate.get("interval_key", ""))
+			var interval_key := _stringify_value(candidate.get("interval_key", ""), "")
 			if interval_key.is_empty():
 				continue
 			guides_by_interval_key[interval_key] = candidate
@@ -1752,12 +1788,12 @@ func _find_vertical_partition_guide_on_side(
 	epsilon: float
 ) -> Dictionary:
 	var reference_x := float(reference_guide.get("x", 0.0))
-	var reference_interval_key := String(reference_guide.get("interval_key", ""))
+	var reference_interval_key := _stringify_value(reference_guide.get("interval_key", ""), "")
 	var best_candidate: Dictionary = {}
 	var best_distance := INF
 	var best_overlap_height := -INF
 	for candidate in candidate_guides:
-		if String(candidate.get("interval_key", "")) == reference_interval_key:
+		if _stringify_value(candidate.get("interval_key", ""), "") == reference_interval_key:
 			continue
 		var overlap := _resolve_vertical_guide_overlap_range(reference_guide, candidate, epsilon)
 		if !bool(overlap.get("found", false)):
@@ -2061,6 +2097,97 @@ func _is_guide_partition_fill_polygon_drawable(polygon: PackedVector2Array, epsi
 	if aabb.size.x <= epsilon or aabb.size.y <= epsilon:
 		return false
 	return absf(PlayfieldBoundary.polygon_area(polygon)) > epsilon * epsilon
+
+
+func _stringify_value(value: Variant, default_text: String = "") -> String:
+	if typeof(value) == TYPE_NIL:
+		return default_text
+	return str(value)
+
+
+func _erase_guide_partition_fill_results(pair_keys: Array[String]) -> void:
+	for pair_key in pair_keys:
+		if pair_key.is_empty():
+			continue
+		guide_partition_fill_polygons_by_key.erase(pair_key)
+
+
+func _refresh_guide_partition_fill_results_for_update_region(update_region: Dictionary, epsilon: float) -> void:
+	for entry in guide_partition_fill_entries:
+		if !_guide_partition_entry_intersects_update_region(entry, update_region, epsilon):
+			continue
+		_refresh_guide_partition_fill_result_for_entry(entry, epsilon)
+
+
+func _refresh_guide_partition_fill_result_for_entry(entry: Dictionary, epsilon: float) -> void:
+	var pair_key := _extract_guide_partition_entry_pair_key(entry)
+	if pair_key.is_empty():
+		return
+	var rect = entry.get("rect", Rect2())
+	if typeof(rect) != TYPE_RECT2:
+		guide_partition_fill_polygons_by_key.erase(pair_key)
+		return
+	var entry_rect: Rect2 = rect
+	if !_guide_partition_entry_has_valid_base_rect(entry, epsilon):
+		guide_partition_fill_polygons_by_key.erase(pair_key)
+		return
+	var fill_polygons := _build_guide_partition_fill_polygons(entry_rect, epsilon)
+	if !_should_draw_guide_partition_rect(entry_rect, fill_polygons, epsilon):
+		guide_partition_fill_polygons_by_key.erase(pair_key)
+		return
+	guide_partition_fill_polygons_by_key[pair_key] = fill_polygons
+
+
+func _guide_partition_entry_has_active_vertical_guides(
+	entry: Dictionary,
+	active_vertical_guides_by_interval_key: Dictionary
+) -> bool:
+	var left_interval_key := _stringify_value(
+		entry.get("left_interval_key", entry.get("left_guide_key", "")),
+		""
+	)
+	var right_interval_key := _stringify_value(
+		entry.get("right_interval_key", entry.get("right_guide_key", "")),
+		""
+	)
+	if left_interval_key.is_empty() or right_interval_key.is_empty():
+		return false
+	return (
+		active_vertical_guides_by_interval_key.has(left_interval_key)
+		and active_vertical_guides_by_interval_key.has(right_interval_key)
+	)
+
+
+func _guide_partition_entry_lengths_within_threshold(entry: Dictionary, epsilon: float) -> bool:
+	var boss_diameter := _get_partition_fill_target_boss_diameter()
+	if boss_diameter <= epsilon:
+		return false
+	var max_vertical_guide_length := boss_diameter * 1.2
+	var left_length := float(entry.get(
+		"left_height",
+		absf(float(entry.get("left_bottom_y", 0.0)) - float(entry.get("left_top_y", 0.0)))
+	))
+	var right_length := float(entry.get(
+		"right_height",
+		absf(float(entry.get("right_bottom_y", 0.0)) - float(entry.get("right_top_y", 0.0)))
+	))
+	return left_length <= max_vertical_guide_length + epsilon and right_length <= max_vertical_guide_length + epsilon
+
+
+func _guide_partition_entry_has_valid_base_rect(entry: Dictionary, epsilon: float) -> bool:
+	var left_x := float(entry.get("left_x", 0.0))
+	var right_x := float(entry.get("right_x", left_x))
+	var top_y := float(entry.get("top_y", 0.0))
+	var bottom_y := float(entry.get("bottom_y", top_y))
+	if right_x - left_x <= epsilon:
+		return false
+	if bottom_y - top_y <= epsilon:
+		return false
+	var rect = entry.get("rect", Rect2())
+	if typeof(rect) != TYPE_RECT2:
+		return false
+	var entry_rect: Rect2 = rect
+	return entry_rect.size.x > epsilon and entry_rect.size.y > epsilon
 
 
 func _is_rect_fully_in_invalid_guide_region(rect: Rect2, epsilon: float) -> bool:
