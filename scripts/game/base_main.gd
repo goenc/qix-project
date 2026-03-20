@@ -1154,24 +1154,46 @@ func _collect_guide_partition_rects() -> Array[Rect2]:
 	if horizontal_outer_segments.is_empty():
 		return rects
 
-	var unique_vertical_guides := _collect_unique_active_vertical_guides(horizontal_outer_segments, epsilon)
-	if unique_vertical_guides.size() < 2:
+	var existing_vertical_guides := _collect_unique_active_vertical_guides(horizontal_outer_segments, epsilon)
+	if existing_vertical_guides.is_empty():
 		return rects
 
-	for index in range(unique_vertical_guides.size() - 1):
-		var left_guide := unique_vertical_guides[index]
-		var right_guide := unique_vertical_guides[index + 1]
-		var partition_rect := _build_guide_partition_rect_between(
-			left_guide,
-			right_guide,
-			horizontal_outer_segments,
+	var created_vertical_guides := _collect_created_vertical_guides(horizontal_outer_segments, epsilon)
+	if created_vertical_guides.is_empty():
+		return rects
+
+	for created_guide in created_vertical_guides:
+		var left_guide := _find_vertical_partition_guide_on_side(
+			created_guide,
+			existing_vertical_guides,
+			true,
 			epsilon
 		)
-		if partition_rect.size.x <= epsilon or partition_rect.size.y <= epsilon:
-			continue
-		if !_should_draw_guide_partition_rect(partition_rect, epsilon):
-			continue
-		rects.append(partition_rect)
+		if !left_guide.is_empty():
+			var left_partition_rect := _build_guide_partition_rect_between(
+				left_guide,
+				created_guide,
+				horizontal_outer_segments,
+				epsilon
+			)
+			if left_partition_rect.size.x > epsilon and left_partition_rect.size.y > epsilon and _should_draw_guide_partition_rect(left_partition_rect, epsilon):
+				rects.append(left_partition_rect)
+
+		var right_guide := _find_vertical_partition_guide_on_side(
+			created_guide,
+			existing_vertical_guides,
+			false,
+			epsilon
+		)
+		if !right_guide.is_empty():
+			var right_partition_rect := _build_guide_partition_rect_between(
+				created_guide,
+				right_guide,
+				horizontal_outer_segments,
+				epsilon
+			)
+			if right_partition_rect.size.x > epsilon and right_partition_rect.size.y > epsilon and _should_draw_guide_partition_rect(right_partition_rect, epsilon):
+				rects.append(right_partition_rect)
 	return rects
 
 
@@ -1229,6 +1251,33 @@ func _collect_unique_active_vertical_guides(horizontal_outer_segments: Array[Dic
 	return sorted_guides
 
 
+func _collect_created_vertical_guides(horizontal_outer_segments: Array[Dictionary], epsilon: float) -> Array[Dictionary]:
+	var created_guides: Array[Dictionary] = []
+	var latest_capture_generation := current_capture_generation - 1
+	if latest_capture_generation < 0:
+		return created_guides
+
+	for index in range(guide_segments.size()):
+		var guide_segment := guide_segments[index]
+		if _is_pending_guide_segment(guide_segment):
+			continue
+		if !bool(guide_segment.get("active", false)):
+			continue
+		if int(guide_segment.get("capture_generation", -1)) != latest_capture_generation:
+			continue
+
+		var candidate := _build_vertical_partition_guide_candidate(
+			guide_segment,
+			horizontal_outer_segments,
+			epsilon
+		)
+		if candidate.is_empty():
+			continue
+		candidate["index"] = index
+		created_guides.append(candidate)
+	return created_guides
+
+
 func _build_vertical_partition_guide_candidate(
 	guide_segment: Dictionary,
 	_horizontal_outer_segments: Array[Dictionary],
@@ -1264,6 +1313,38 @@ func _build_vertical_partition_guide_candidate(
 		"bottom_y": bottom_point.y,
 		"height": bottom_point.y - top_point.y
 	}
+
+
+func _find_vertical_partition_guide_on_side(
+	reference_guide: Dictionary,
+	candidate_guides: Array[Dictionary],
+	search_left: bool,
+	epsilon: float
+) -> Dictionary:
+	var reference_x := float(reference_guide.get("x", 0.0))
+	var best_candidate: Dictionary = {}
+	var best_distance := INF
+	for candidate in candidate_guides:
+		var candidate_x := float(candidate.get("x", 0.0))
+		var distance := 0.0
+		if search_left:
+			if candidate_x >= reference_x - epsilon:
+				continue
+			distance = reference_x - candidate_x
+		else:
+			if candidate_x <= reference_x + epsilon:
+				continue
+			distance = candidate_x - reference_x
+		if distance <= epsilon:
+			continue
+		if (
+			best_candidate.is_empty()
+			or distance < best_distance - epsilon
+			or (absf(distance - best_distance) <= epsilon and _is_vertical_partition_guide_candidate_better(candidate, best_candidate))
+		):
+			best_candidate = candidate
+			best_distance = distance
+	return best_candidate
 
 
 func _find_touching_horizontal_outer_segment(
@@ -1345,11 +1426,6 @@ func _resolve_guide_partition_vertical_bounds_for_pair(
 	epsilon: float
 ) -> Dictionary:
 	var mid_x := (left_x + right_x) * 0.5
-	var band_top := maxf(float(left_guide.get("top_y", 0.0)), float(right_guide.get("top_y", 0.0)))
-	var band_bottom := minf(float(left_guide.get("bottom_y", band_top)), float(right_guide.get("bottom_y", band_top)))
-	if band_bottom <= band_top + epsilon:
-		return {"found": false}
-
 	var top_y := INF
 	var bottom_y := -INF
 	for segment in horizontal_outer_segments:
@@ -1358,8 +1434,6 @@ func _resolve_guide_partition_vertical_bounds_for_pair(
 		if mid_x < min_x - epsilon or mid_x > max_x + epsilon:
 			continue
 		var y := float(segment.get("y", 0.0))
-		if y < band_top - epsilon or y > band_bottom + epsilon:
-			continue
 		top_y = minf(top_y, y)
 		bottom_y = maxf(bottom_y, y)
 

@@ -1,5 +1,5 @@
-ガイド分割矩形の縦境界解決を修正して既存変更を反映
+最新キャプチャで作成した縦補助線起点の左右探索へ区画判定を変更
 
-・左右ガイド間の分割矩形で外周水平セグメントから上下境界を算出する処理に変更
-・guide 候補の上端下端セグメント一致前提を廃止して矩形抽出の安定性を向上
-・git diff で対象差分を確認
+・scripts/game/base_main.gd の _collect_guide_partition_rects() を隣接ペア方式から左右探索方式へ置き換えた。
+・mid_x から current_outer_loop の水平外形線をたどって上下境界を求める既存方針と、claimed_polygons の内側除外を維持した。
+・godot.exe --headless --path . --check-only で構文確認を行い成功した。

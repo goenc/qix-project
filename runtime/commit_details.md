@@ -1,9 +1,9 @@
-日時: 2026-03-20 14:57:23 JST
+日時: 2026/03/20 15:09:07
 対象:
 - scripts/game/base_main.gd
 - runtime/commit_details.md
 - runtime/commit_message.md
 変更:
-・ガイド分割矩形の縦境界を左右ガイドの中間帯で外周水平セグメントから解決する処理に変更しました。
+・最新キャプチャで作成した縦補助線を起点に左右の既存有効縦補助線を探索して矩形候補を作るように変更した。
 確認:
-・git diff で対象差分を確認しました。
+・godot.exe --headless --path . --check-only で構文確認が成功した。
