@@ -1,5 +1,6 @@
-補助線区分の薄紫矩形を保持配列の差分更新へ変更しました。
+capture_actions の index 抽出を型安全化して縦補助線差分更新時の実行時エラーを修正
 
-・scripts/game/base_main.gd で区分矩形を描画時再計算せず保持配列から描くようにした。
-・最新キャプチャで確定した縦補助線だけを起点に左右の既存有効線から矩形を差分追加し、無効化時は参照キーで削除するようにした。
-・godot.exe --headless --path . --check-only で構文確認を行い成功した。
+・confirm remove reresolve の action ごとに index 取り出しを分岐し int float string 以外を無視する処理を追加
+・_collect_affected_vertical_guide_keys_from_capture_actions と _apply_capture_guide_actions で範囲外と不正型を安全にスキップするよう修正
+・C:\Godot\godot.exe --headless --path . --check-only を実行して成功を確認
+・C:\Godot\godot.exe --headless --path . --script tools/verify_outer_loop.gd を実行して成功を確認

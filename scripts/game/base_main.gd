@@ -985,27 +985,87 @@ func _collect_guide_capture_actions(
 func _sort_unique_descending_indices(indices: Array) -> Array[int]:
 	var unique_indices: Dictionary = {}
 	for raw_index in indices:
-		unique_indices[int(raw_index)] = true
+		var parsed_index := _try_parse_capture_action_index(raw_index)
+		if !bool(parsed_index.get("valid", false)):
+			continue
+		var index = parsed_index.get("index", -1)
+		if typeof(index) != TYPE_INT:
+			continue
+		unique_indices[index] = true
 
 	var sorted_indices: Array[int] = []
 	for index in unique_indices.keys():
-		sorted_indices.append(int(index))
+		if typeof(index) != TYPE_INT:
+			continue
+		sorted_indices.append(index)
 	sorted_indices.sort()
 	sorted_indices.reverse()
 	return sorted_indices
 
 
+func _try_parse_capture_action_index(raw_index: Variant) -> Dictionary:
+	if typeof(raw_index) == TYPE_INT:
+		return {
+			"valid": true,
+			"index": raw_index
+		}
+
+	if typeof(raw_index) == TYPE_FLOAT:
+		var raw_float := float(raw_index)
+		if !is_finite(raw_float):
+			return {"valid": false}
+		var rounded_index := int(round(raw_float))
+		if !is_equal_approx(raw_float, float(rounded_index)):
+			return {"valid": false}
+		return {
+			"valid": true,
+			"index": rounded_index
+		}
+
+	if typeof(raw_index) == TYPE_STRING:
+		var raw_text := String(raw_index).strip_edges()
+		if raw_text.is_empty() or !raw_text.is_valid_int():
+			return {"valid": false}
+		return {
+			"valid": true,
+			"index": raw_text.to_int()
+		}
+
+	return {"valid": false}
+
+
+func _extract_capture_action_index(action_name: String, action_data: Variant) -> Dictionary:
+	if action_name == "confirm":
+		if typeof(action_data) != TYPE_DICTIONARY:
+			return {"valid": false}
+		var confirm_action: Dictionary = action_data
+		return _try_parse_capture_action_index(confirm_action.get("index", null))
+	return _try_parse_capture_action_index(action_data)
+
+
 func _apply_capture_guide_actions(capture_actions: Dictionary) -> void:
 	var confirm_updates: Array = capture_actions.get("confirm", [])
 	for update in confirm_updates:
-		var index := int(update.get("index", -1))
+		var parsed_index := _extract_capture_action_index("confirm", update)
+		if !bool(parsed_index.get("valid", false)):
+			continue
+		var index = parsed_index.get("index", -1)
+		if typeof(index) != TYPE_INT:
+			continue
 		if index < 0 or index >= guide_segments.size():
+			continue
+		if typeof(update) != TYPE_DICTIONARY:
 			continue
 		guide_segments[index] = update.get("segment", guide_segments[index])
 
 	var reresolve_indices: Array = capture_actions.get("reresolve", [])
 	for raw_index in reresolve_indices:
-		var index := int(raw_index)
+		var parsed_index := _extract_capture_action_index("reresolve", raw_index)
+		if !bool(parsed_index.get("valid", false)):
+			continue
+		var index = parsed_index.get("index", -1)
+		if typeof(index) != TYPE_INT:
+			continue
 		if index < 0 or index >= guide_segments.size():
 			continue
 		var reset_segment := _reset_guide_segment_for_reresolve(guide_segments[index])
@@ -1207,9 +1267,14 @@ func _collect_affected_vertical_guide_keys_from_capture_actions(capture_actions:
 	var affected_vertical_guide_keys: Dictionary = {}
 	var action_names := ["confirm", "remove", "reresolve"]
 	for action_name in action_names:
-		var indices: Array = capture_actions.get(action_name, [])
-		for raw_index in indices:
-			var index := int(raw_index)
+		var action_entries: Array = capture_actions.get(action_name, [])
+		for action_entry in action_entries:
+			var parsed_index := _extract_capture_action_index(action_name, action_entry)
+			if !bool(parsed_index.get("valid", false)):
+				continue
+			var index = parsed_index.get("index", -1)
+			if typeof(index) != TYPE_INT:
+				continue
 			if index < 0 or index >= guide_segments.size():
 				continue
 			var guide_segment := guide_segments[index]
