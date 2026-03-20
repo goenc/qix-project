@@ -1,7 +1,6 @@
-外形角の先行入力予約で最新入力を優先するよう修正
+BBOS反射検証を実効ループ基準に修正
 
-・頂点到達時に最新入力で辺選択を再判定し queued を fallback のみに変更
-・queued の整合性検証と active outer loop 更新時のクリアを追加
-・矩形と非矩形の角入力検証に最新入力優先ケースと queued fallback ケースを追加
-・headless と非 headless の verify_player_border_corner.gd が initial rectangle と first L capture と second jagged capture を通過
-・verify_outer_loop.gd の BBOS 反射確認は既存失敗を再確認
+・verify_outer_loop の BBOS 反射ケースを raw outer loop ではなく BBOS の実効反射ループ基準へ揃えた
+・initial rectangle と first L capture と second jagged capture の失敗原因が同一の検証前提ずれであることを反映した
+・player 角移動検証の重複 helper を verify_shared に最小限で共通化した
+・headless 2 本と非 headless 短時間起動で確認した

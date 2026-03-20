@@ -2,6 +2,7 @@ extends SceneTree
 
 const MAIN_SCENE = preload("res://scenes/base_main.tscn")
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
+const VerifyShared = preload("res://tools/verify_shared.gd")
 const EPSILON := 2.0
 
 
@@ -98,38 +99,11 @@ func _move_player_from_vertex(player, loop: PackedVector2Array, vertex: Vector2,
 
 
 func _assert_player_corner_preinput(player, loop: PackedVector2Array, label: String, failures: Array[String]) -> void:
-	for vertex_index in range(loop.size()):
-		_assert(
-			_move_player_into_corner_with_preinput(player, loop, vertex_index, true),
-			"%s queued corner input failed at vertex %d in the clockwise direction." % [label, vertex_index],
-			failures
-		)
-		_assert(
-			_move_player_into_corner_with_preinput(player, loop, vertex_index, false),
-			"%s queued corner input failed at vertex %d in the counterclockwise direction." % [label, vertex_index],
-			failures
-		)
+	VerifyShared.assert_player_corner_preinput(player, loop, label, failures)
 
 
 func _assert_player_corner_input_priority(player, loop: PackedVector2Array, label: String, failures: Array[String]) -> void:
-	var fallback_checked := false
-	for vertex_index in range(loop.size()):
-		_assert(
-			_latest_input_overrides_queued_corner(player, loop, vertex_index, true),
-			"%s latest input did not override the queued corner turn at vertex %d in the clockwise direction." % [label, vertex_index],
-			failures
-		)
-		_assert(
-			_latest_input_overrides_queued_corner(player, loop, vertex_index, false),
-			"%s latest input did not override the queued corner turn at vertex %d in the counterclockwise direction." % [label, vertex_index],
-			failures
-		)
-		if !fallback_checked:
-			fallback_checked = _queued_corner_fallback_applies(player, loop, vertex_index, true)
-		if !fallback_checked:
-			fallback_checked = _queued_corner_fallback_applies(player, loop, vertex_index, false)
-
-	_assert(fallback_checked, "%s queued fallback did not resolve a valid corner case." % label, failures)
+	VerifyShared.assert_player_corner_input_priority(player, loop, label, failures)
 
 
 func _move_player_into_corner_with_preinput(
@@ -138,70 +112,7 @@ func _move_player_into_corner_with_preinput(
 	vertex_index: int,
 	clockwise: bool
 ) -> bool:
-	var connected := PlayfieldBoundary.get_vertex_connected_segment_indices(loop, vertex_index)
-	var approach_segment_index := (
-		int(connected.get("previous", -1))
-		if clockwise
-		else int(connected.get("next", -1))
-	)
-	var expected_segment_index := (
-		int(connected.get("next", -1))
-		if clockwise
-		else int(connected.get("previous", -1))
-	)
-	if approach_segment_index < 0 or expected_segment_index < 0:
-		return false
-
-	var segment_length := PlayfieldBoundary.get_segment_length(loop, approach_segment_index, player.outer_loop_metrics)
-	if segment_length <= EPSILON:
-		return false
-
-	var threshold := float(player._get_border_queue_distance_threshold(segment_length))
-	var approach_distance := clampf(threshold * 0.75, 1.0, segment_length)
-	var segment_direction := PlayfieldBoundary.get_segment_direction(loop, approach_segment_index, EPSILON)
-	var movement_direction := segment_direction if clockwise else -segment_direction
-	var turn_direction := (
-		PlayfieldBoundary.get_segment_direction(loop, expected_segment_index, EPSILON)
-		if clockwise
-		else -PlayfieldBoundary.get_segment_direction(loop, expected_segment_index, EPSILON)
-	)
-	if movement_direction == Vector2.ZERO or turn_direction == Vector2.ZERO:
-		return false
-
-	var input_direction := (movement_direction + turn_direction).normalized()
-	var input_alignment := maxf(0.1, input_direction.dot(movement_direction))
-	var distance_on_segment := (
-		maxf(0.0, segment_length - approach_distance)
-		if clockwise
-		else minf(segment_length, approach_distance)
-	)
-	var distance_to_vertex := (
-		maxf(0.0, segment_length - distance_on_segment)
-		if clockwise
-		else maxf(0.0, distance_on_segment)
-	)
-	player.state = player.PlayerState.BORDER
-	player.current_border_segment_index = approach_segment_index
-	player.border_distance_on_segment = distance_on_segment
-	player.position = PlayfieldBoundary.point_at_segment_distance(
-		loop,
-		approach_segment_index,
-		distance_on_segment,
-		player.outer_loop_metrics
-	)
-	player.border_progress = player._border_state_to_progress()
-	player.queued_border_segment_index = -1
-	player.queued_border_vertex_index = -1
-	player.queued_border_distance_on_segment = 0.0
-
-	var delta := (distance_to_vertex + maxf(EPSILON, 1.0)) / maxf(player.move_speed * input_alignment, 1.0)
-	player._move_along_border(input_direction, delta)
-
-	return (
-		player.current_border_segment_index == expected_segment_index
-		and PlayfieldBoundary.is_point_on_loop(loop, player.position, EPSILON)
-		and player.debug_is_border_state_consistent()
-	)
+	return VerifyShared.move_player_into_corner_with_preinput(player, loop, vertex_index, clockwise)
 
 
 func _latest_input_overrides_queued_corner(
@@ -210,21 +121,7 @@ func _latest_input_overrides_queued_corner(
 	vertex_index: int,
 	clockwise: bool
 ) -> bool:
-	var prepared := _prepare_corner_queue_state(player, loop, vertex_index, clockwise)
-	if !bool(prepared.get("ready", false)):
-		return false
-
-	var latest_direction: Vector2 = -Vector2(prepared.get("movement_direction", Vector2.ZERO))
-	var selection: Dictionary = player._select_border_segment_at_vertex(vertex_index, latest_direction)
-	if !bool(selection.get("matched", false)):
-		return false
-	if int(selection.get("segment_index", -1)) != int(prepared.get("approach_segment_index", -1)):
-		return false
-
-	player._apply_selected_border_segment(selection)
-	player.position = player._border_state_to_point()
-	player.border_progress = player._border_state_to_progress()
-	return player.queued_border_vertex_index < 0 and player.debug_is_border_state_consistent()
+	return VerifyShared.latest_input_overrides_queued_corner(player, loop, vertex_index, clockwise)
 
 
 func _queued_corner_fallback_applies(
@@ -233,21 +130,7 @@ func _queued_corner_fallback_applies(
 	vertex_index: int,
 	clockwise: bool
 ) -> bool:
-	var prepared := _prepare_corner_queue_state(player, loop, vertex_index, clockwise)
-	if !bool(prepared.get("ready", false)):
-		return false
-
-	var latest_direction: Vector2 = Vector2(prepared.get("movement_direction", Vector2.ZERO))
-	var selection: Dictionary = player._select_border_segment_at_vertex(vertex_index, latest_direction)
-	if !bool(selection.get("matched", false)):
-		return false
-	if int(selection.get("segment_index", -1)) != int(prepared.get("expected_segment_index", -1)):
-		return false
-
-	player._apply_selected_border_segment(selection)
-	player.position = player._border_state_to_point()
-	player.border_progress = player._border_state_to_progress()
-	return player.queued_border_vertex_index < 0 and player.debug_is_border_state_consistent()
+	return VerifyShared.queued_corner_fallback_applies(player, loop, vertex_index, clockwise)
 
 
 func _prepare_corner_queue_state(
@@ -256,71 +139,7 @@ func _prepare_corner_queue_state(
 	vertex_index: int,
 	clockwise: bool
 ) -> Dictionary:
-	var connected := PlayfieldBoundary.get_vertex_connected_segment_indices(loop, vertex_index)
-	var approach_segment_index := (
-		int(connected.get("previous", -1))
-		if clockwise
-		else int(connected.get("next", -1))
-	)
-	var expected_segment_index := (
-		int(connected.get("next", -1))
-		if clockwise
-		else int(connected.get("previous", -1))
-	)
-	if approach_segment_index < 0 or expected_segment_index < 0:
-		return {"ready": false}
-
-	var segment_length := PlayfieldBoundary.get_segment_length(loop, approach_segment_index, player.outer_loop_metrics)
-	if segment_length <= EPSILON:
-		return {"ready": false}
-
-	var threshold := float(player._get_border_queue_distance_threshold(segment_length))
-	var approach_distance := clampf(threshold * 0.75, 1.0, segment_length)
-	var segment_direction := PlayfieldBoundary.get_segment_direction(loop, approach_segment_index, EPSILON)
-	var movement_direction := segment_direction if clockwise else -segment_direction
-	var turn_direction := (
-		PlayfieldBoundary.get_segment_direction(loop, expected_segment_index, EPSILON)
-		if clockwise
-		else -PlayfieldBoundary.get_segment_direction(loop, expected_segment_index, EPSILON)
-	)
-	if movement_direction == Vector2.ZERO or turn_direction == Vector2.ZERO:
-		return {"ready": false}
-
-	var distance_on_segment := (
-		maxf(0.0, segment_length - approach_distance)
-		if clockwise
-		else minf(segment_length, approach_distance)
-	)
-	player.state = player.PlayerState.BORDER
-	player.current_border_segment_index = approach_segment_index
-	player.border_distance_on_segment = distance_on_segment
-	player.position = PlayfieldBoundary.point_at_segment_distance(
-		loop,
-		approach_segment_index,
-		distance_on_segment,
-		player.outer_loop_metrics
-	)
-	player.border_progress = player._border_state_to_progress()
-	player.queued_border_segment_index = -1
-	player.queued_border_vertex_index = -1
-	player.queued_border_distance_on_segment = 0.0
-
-	var safe_epsilon := maxf(player.border_epsilon, PlayfieldBoundary.DEFAULT_EPSILON)
-	player._update_queued_border_transition((movement_direction + turn_direction).normalized(), 1.0 if clockwise else -1.0, safe_epsilon)
-	if player.queued_border_vertex_index != vertex_index:
-		return {"ready": false}
-	if player.queued_border_segment_index != expected_segment_index:
-		return {"ready": false}
-
-	player.border_distance_on_segment = segment_length if clockwise else 0.0
-	player.position = loop[vertex_index]
-	player.border_progress = player._border_state_to_progress()
-	return {
-		"ready": true,
-		"approach_segment_index": approach_segment_index,
-		"expected_segment_index": expected_segment_index,
-		"movement_direction": movement_direction
-	}
+	return VerifyShared.prepare_corner_queue_state(player, loop, vertex_index, clockwise)
 
 
 func _assert_draw_start_safety(
@@ -330,17 +149,7 @@ func _assert_draw_start_safety(
 	label: String,
 	failures: Array[String]
 ) -> void:
-	var safe_interior_point := PlayfieldBoundary.ensure_point_inside(loop, interior_point, EPSILON)
-	if PlayfieldBoundary.is_point_on_loop(loop, safe_interior_point, EPSILON):
-		return
-
-	player.state = player.PlayerState.BORDER
-	player.position = safe_interior_point
-	_assert(
-		!player.debug_can_start_drawing_from_border(),
-		"%s draw start accepted a non-border point while in BORDER state." % label,
-		failures
-	)
+	VerifyShared.assert_draw_start_safety(player, loop, interior_point, label, failures)
 
 
 func _assert_bbos_reflection(
@@ -351,12 +160,13 @@ func _assert_bbos_reflection(
 	require_internal_segment: bool,
 	failures: Array[String]
 ) -> void:
-	var segment := _find_test_segment(loop, rect, require_internal_segment)
+	var reflection_loop := VerifyShared.get_bbos_reflection_loop(bbos, loop)
+	var segment := _find_test_segment(reflection_loop, loop, rect, require_internal_segment)
 	_assert(!segment.is_empty(), "%s did not expose a usable boundary segment for reflection testing." % label, failures)
 	if segment.is_empty():
 		return
 
-	var collision_case := _build_collision_case(loop, segment, bbos.move_speed, bbos.bounce_epsilon)
+	var collision_case := _build_collision_case(reflection_loop, segment, bbos.move_speed, bbos.bounce_epsilon)
 	_assert(!collision_case.is_empty(), "%s could not build a deterministic BBOS collision case." % label, failures)
 	if collision_case.is_empty():
 		return
@@ -370,7 +180,7 @@ func _assert_bbos_reflection(
 	var direct_hit := PlayfieldBoundary.find_first_boundary_hit(
 		bbos.position,
 		bbos.position + bbos.velocity * 0.35,
-		bbos.active_outer_loop,
+		reflection_loop,
 		maxf(bbos.bounce_epsilon, 0.001)
 	)
 	bbos._process(0.35)
@@ -391,70 +201,17 @@ func _assert_bbos_reflection(
 	)
 
 
-func _find_test_segment(loop: PackedVector2Array, rect: Rect2, require_internal_segment: bool) -> Dictionary:
-	for index in range(loop.size()):
-		var segment_start: Vector2 = loop[index]
-		var segment_end: Vector2 = loop[(index + 1) % loop.size()]
-		if segment_start.distance_to(segment_end) <= 8.0:
-			continue
-
-		var midpoint := segment_start.lerp(segment_end, 0.5)
-		var is_internal := (
-			absf(midpoint.x - rect.position.x) > EPSILON
-			and absf(midpoint.x - rect.end.x) > EPSILON
-			and absf(midpoint.y - rect.position.y) > EPSILON
-			and absf(midpoint.y - rect.end.y) > EPSILON
-		)
-		if require_internal_segment and !is_internal:
-			continue
-
-		var tangent := (segment_end - segment_start).normalized()
-		var normal_a := Vector2(-tangent.y, tangent.x)
-		var inward_normal := normal_a
-		var sample_a := midpoint + normal_a * 18.0
-		var sample_b := midpoint - normal_a * 18.0
-		var sample_a_inside := Geometry2D.is_point_in_polygon(sample_a, loop) or PlayfieldBoundary.is_point_on_loop(loop, sample_a, EPSILON)
-		var sample_b_inside := Geometry2D.is_point_in_polygon(sample_b, loop) or PlayfieldBoundary.is_point_on_loop(loop, sample_b, EPSILON)
-		if !sample_a_inside and sample_b_inside:
-			inward_normal = -normal_a
-
-		return {
-			"midpoint": midpoint,
-			"inward_normal": inward_normal,
-			"tangent": tangent
-		}
-	return {}
+func _find_test_segment(
+	loop: PackedVector2Array,
+	reference_loop: PackedVector2Array,
+	rect: Rect2,
+	require_internal_segment: bool
+) -> Dictionary:
+	return VerifyShared.find_test_segment(loop, reference_loop, rect, require_internal_segment)
 
 
 func _build_collision_case(loop: PackedVector2Array, segment: Dictionary, speed: float, epsilon: float) -> Dictionary:
-	var midpoint: Vector2 = segment["midpoint"]
-	var tangent: Vector2 = segment["tangent"]
-	var base_normal := Vector2(-tangent.y, tangent.x)
-
-	for direction_sign in [1.0, -1.0]:
-		var inward_candidate: Vector2 = base_normal * direction_sign
-		var start: Vector2 = midpoint + inward_candidate * 12.0
-		if !Geometry2D.is_point_in_polygon(start, loop) and !PlayfieldBoundary.is_point_on_loop(loop, start, EPSILON):
-			continue
-
-		for tangent_scale in [0.0, 0.25, -0.25]:
-			var velocity: Vector2 = (-inward_candidate + tangent * tangent_scale).normalized() * speed
-			var hit := PlayfieldBoundary.find_first_boundary_hit(
-				start,
-				start + velocity * 0.35,
-				loop,
-				maxf(epsilon, 0.001)
-			)
-			if !bool(hit.get("hit", false)):
-				continue
-
-			return {
-				"start": start,
-				"velocity": velocity,
-				"hit_normal": hit["normal"]
-			}
-
-	return {}
+	return VerifyShared.build_collision_case(loop, segment, speed, epsilon)
 
 
 func _find_internal_vertex_index(loop: PackedVector2Array, rect: Rect2) -> int:
@@ -477,5 +234,4 @@ func _loops_match(a: PackedVector2Array, b: PackedVector2Array) -> bool:
 
 
 func _assert(condition: bool, message: String, failures: Array[String]) -> void:
-	if !condition:
-		failures.append(message)
+	VerifyShared.assert_condition(condition, message, failures)

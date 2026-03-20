@@ -153,6 +153,12 @@ func set_collision_radius(radius: float) -> void:
 	_emit_position_changed_if_needed()
 
 
+func get_active_reflection_loop() -> PackedVector2Array:
+	if _has_active_inner_loop():
+		return active_inner_loop
+	return active_outer_loop
+
+
 func _on_viewport_size_changed() -> void:
 	_sync_size_to_viewport()
 
