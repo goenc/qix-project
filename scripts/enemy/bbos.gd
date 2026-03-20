@@ -86,7 +86,7 @@ func _process(delta: float) -> void:
 		position = boundary_hit["point"]
 		_attempt_player_hit(segment_start, position, safe_radius)
 		velocity = _reflect_velocity(velocity, Vector2(boundary_hit.get("normal", Vector2.ZERO)))
-		position += Vector2(boundary_hit.get("normal", Vector2.ZERO)) * maxf(bounce_epsilon * 2.0, 1.0)
+		position += Vector2(boundary_hit.get("normal", Vector2.ZERO)) * maxf(bounce_epsilon, 0.05)
 		position = _ensure_position_inside_active_boundary(position, safe_radius, safe_epsilon)
 		var travel_ratio := clampf(float(boundary_hit.get("travel_ratio", 1.0)), 0.0, 1.0)
 		remaining_time *= maxf(0.0, 1.0 - travel_ratio)

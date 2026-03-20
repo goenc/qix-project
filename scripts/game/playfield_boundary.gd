@@ -945,6 +945,8 @@ static func _resolve_circle_hit_normal(
 	fallback_normal: Vector2
 ) -> Vector2:
 	var resolved_normal := fallback_normal
+	if resolved_normal.length_squared() > DEFAULT_EPSILON * DEFAULT_EPSILON:
+		return resolved_normal.normalized()
 	if loop.size() < 2:
 		return resolved_normal
 

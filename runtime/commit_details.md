@@ -10,3 +10,12 @@ playfield_boundary.gd:
 
 Validation:
 - godot --headless --path . --check-only
+
+日時: 2026-03-20 11:03:56 JST
+対象:
+- scripts/game/playfield_boundary.gd
+- scripts/enemy/bbos.gd
+変更:
+・BOSS の反射法線を fallback 優先にして角での軸丸めを抑え、反射後の押し戻し量を縮小した。
+確認:
+・Godot を headless で起動し、プロジェクト読み込みの成功を確認した。
