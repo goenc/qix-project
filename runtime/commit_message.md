@@ -1,6 +1,6 @@
-補助線区分塗りを claimed 領域差し引き方式へ変更
+横切り後の縦補助線分断に対応した区画塗り差分更新を区間単位へ修正
 
-・scripts/game/base_main.gd の補助線区分保持を描画ポリゴン配列対応に変更した
-・ベース矩形から claimed_polygons を Geometry2D.clip_polygons で差し引き、残存領域のみ描画するようにした
-・既存エントリ再評価時にも差し引き結果を再計算するよう更新した
-・godot --headless --path . --check-only の成功を確認した
+・縦補助線候補をx統合せず区間キーで保持し同一x上の複数区間を独立処理
+・左右探索にy重なり条件を追加し重なり帯でtop_y/bottom_yを解決
+・capture時は影響x/y帯のみ既存エントリを削除し周辺区画だけ再生成
+・godot --headless --path . --quit で構文確認済み
