@@ -1201,19 +1201,24 @@ func _build_stage_cover_uvs(points: PackedVector2Array) -> PackedVector2Array:
 func _draw_guide_partition_fills() -> void:
 	if !show_vertical_guides:
 		return
-	var partition_rects := _collect_guide_partition_rects()
-	for rect in partition_rects:
-		draw_rect(rect, guide_partition_fill_color, true)
+	var partition_polygons := _collect_guide_partition_rects()
+	for polygon in partition_polygons:
+		draw_colored_polygon(polygon, guide_partition_fill_color)
 
 
-func _collect_guide_partition_rects() -> Array[Rect2]:
-	var rects: Array[Rect2] = []
+func _collect_guide_partition_rects() -> Array[PackedVector2Array]:
+	var polygons: Array[PackedVector2Array] = []
+	var epsilon := _get_guide_epsilon()
 	for entry in guide_partition_fill_entries:
-		var rect: Rect2 = entry.get("rect", Rect2())
-		if rect.size.x <= 0.0 or rect.size.y <= 0.0:
-			continue
-		rects.append(rect)
-	return rects
+		var fill_polygons: Array = entry.get("fill_polygons", [])
+		for raw_polygon in fill_polygons:
+			if typeof(raw_polygon) != TYPE_PACKED_VECTOR2_ARRAY:
+				continue
+			var polygon: PackedVector2Array = raw_polygon
+			if !_is_guide_partition_fill_polygon_drawable(polygon, epsilon):
+				continue
+			polygons.append(polygon)
+	return polygons
 
 
 func _sync_guide_partition_fill_entries_after_capture(affected_vertical_guide_keys: Dictionary) -> void:
@@ -1354,7 +1359,8 @@ func _append_guide_partition_fill_entry_between(
 		return
 
 	var rect := Rect2(Vector2(left_x, top_y), Vector2(right_x - left_x, bottom_y - top_y))
-	if !_should_draw_guide_partition_rect(rect, epsilon):
+	var fill_polygons := _build_guide_partition_fill_polygons(rect, epsilon)
+	if !_should_draw_guide_partition_rect(rect, fill_polygons, epsilon):
 		return
 
 	var left_guide_key := int(left_guide.get("x_key", int(round(left_x))))
@@ -1366,7 +1372,8 @@ func _append_guide_partition_fill_entry_between(
 		"bottom_y": bottom_y,
 		"left_guide_key": left_guide_key,
 		"right_guide_key": right_guide_key,
-		"rect": rect
+		"rect": rect,
+		"fill_polygons": fill_polygons
 	})
 
 
@@ -1407,6 +1414,22 @@ func _prune_guide_partition_fill_entries(active_vertical_guides_by_key: Dictiona
 		var right_guide: Dictionary = active_vertical_guides_by_key[right_guide_key]
 		if !_should_fill_guide_partition_between_vertical_guides(left_guide, right_guide, epsilon):
 			guide_partition_fill_entries.remove_at(index)
+			continue
+		var left_x := float(entry.get("left_x", 0.0))
+		var right_x := float(entry.get("right_x", left_x))
+		var top_y := float(entry.get("top_y", 0.0))
+		var bottom_y := float(entry.get("bottom_y", top_y))
+		var rect := Rect2(Vector2(left_x, top_y), Vector2(right_x - left_x, bottom_y - top_y))
+		if rect.size.x <= epsilon or rect.size.y <= epsilon:
+			guide_partition_fill_entries.remove_at(index)
+			continue
+		var fill_polygons := _build_guide_partition_fill_polygons(rect, epsilon)
+		if !_should_draw_guide_partition_rect(rect, fill_polygons, epsilon):
+			guide_partition_fill_entries.remove_at(index)
+			continue
+		entry["rect"] = rect
+		entry["fill_polygons"] = fill_polygons
+		guide_partition_fill_entries[index] = entry
 
 
 func _collect_horizontal_outer_loop_segments(epsilon: float) -> Array[Dictionary]:
@@ -1654,7 +1677,13 @@ func _build_guide_partition_rect_between(
 	return Rect2(Vector2(left_x, top_y), Vector2(right_x - left_x, bottom_y - top_y))
 
 
-func _should_draw_guide_partition_rect(rect: Rect2, epsilon: float) -> bool:
+func _should_draw_guide_partition_rect(
+	rect: Rect2,
+	fill_polygons: Array[PackedVector2Array],
+	epsilon: float
+) -> bool:
+	if fill_polygons.is_empty():
+		return false
 	if _is_rect_fully_inside_polygons(rect, claimed_polygons, claimed_polygon_aabbs, epsilon):
 		return false
 	return true
@@ -1695,21 +1724,94 @@ func _is_rect_fully_inside_polygons(
 	polygon_aabbs: Array[Rect2],
 	epsilon: float
 ) -> bool:
-	var sample_points := _build_rect_interior_sample_points(rect)
+	var remaining_fill_polygons := _build_guide_partition_fill_polygons_from_polygons(
+		rect,
+		polygons,
+		polygon_aabbs,
+		epsilon
+	)
+	return remaining_fill_polygons.is_empty()
+
+
+func _build_guide_partition_fill_polygons(rect: Rect2, epsilon: float) -> Array[PackedVector2Array]:
+	return _build_guide_partition_fill_polygons_from_polygons(
+		rect,
+		claimed_polygons,
+		claimed_polygon_aabbs,
+		epsilon
+	)
+
+
+func _build_guide_partition_fill_polygons_from_polygons(
+	rect: Rect2,
+	polygons: Array[PackedVector2Array],
+	polygon_aabbs: Array[Rect2],
+	epsilon: float
+) -> Array[PackedVector2Array]:
+	var fill_polygons: Array[PackedVector2Array] = []
+	if rect.size.x <= epsilon or rect.size.y <= epsilon:
+		return fill_polygons
+
+	fill_polygons.append(_build_rect_polygon(rect))
 	for index in range(polygons.size()):
 		if index < polygon_aabbs.size() and !_rects_overlap(rect, polygon_aabbs[index], epsilon):
 			continue
 		var polygon := polygons[index]
 		if polygon.size() < 3:
 			continue
-		var contains_all_points := true
-		for sample_point in sample_points:
-			if !Geometry2D.is_point_in_polygon(sample_point, polygon) and !PlayfieldBoundary.is_point_on_loop(polygon, sample_point, epsilon):
-				contains_all_points = false
-				break
-		if contains_all_points:
-			return true
-	return false
+		fill_polygons = _subtract_polygon_from_partition_fill_polygons(fill_polygons, polygon, epsilon)
+		if fill_polygons.is_empty():
+			break
+	return fill_polygons
+
+
+func _subtract_polygon_from_partition_fill_polygons(
+	base_fill_polygons: Array[PackedVector2Array],
+	polygon_to_subtract: PackedVector2Array,
+	epsilon: float
+) -> Array[PackedVector2Array]:
+	var subtracted: Array[PackedVector2Array] = []
+	if base_fill_polygons.is_empty():
+		return subtracted
+	if polygon_to_subtract.size() < 3:
+		return base_fill_polygons
+	var subtract_aabb := _build_points_aabb(polygon_to_subtract)
+	for base_polygon in base_fill_polygons:
+		if base_polygon.size() < 3:
+			continue
+		var base_aabb := _build_points_aabb(base_polygon)
+		if !_rects_overlap(base_aabb, subtract_aabb, epsilon):
+			subtracted.append(base_polygon)
+			continue
+		var clipped: Array = Geometry2D.clip_polygons(base_polygon, polygon_to_subtract)
+		if clipped.is_empty():
+			continue
+		for raw_polygon in clipped:
+			if typeof(raw_polygon) != TYPE_PACKED_VECTOR2_ARRAY:
+				continue
+			var clipped_polygon: PackedVector2Array = raw_polygon
+			if !_is_guide_partition_fill_polygon_drawable(clipped_polygon, epsilon):
+				continue
+			subtracted.append(clipped_polygon)
+	return subtracted
+
+
+func _build_rect_polygon(rect: Rect2) -> PackedVector2Array:
+	var polygon := PackedVector2Array()
+	polygon.append(rect.position)
+	polygon.append(Vector2(rect.end.x, rect.position.y))
+	polygon.append(rect.end)
+	polygon.append(Vector2(rect.position.x, rect.end.y))
+	return polygon
+
+
+func _is_guide_partition_fill_polygon_drawable(polygon: PackedVector2Array, epsilon: float) -> bool:
+	if polygon.size() < 3:
+		return false
+	var aabb := _build_points_aabb(polygon)
+	if aabb.size.x <= epsilon or aabb.size.y <= epsilon:
+		return false
+	return absf(PlayfieldBoundary.polygon_area(polygon)) > epsilon * epsilon
 
 
 func _is_rect_fully_in_invalid_guide_region(rect: Rect2, epsilon: float) -> bool:

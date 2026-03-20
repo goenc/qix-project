@@ -1,5 +1,6 @@
-補助線区分の薄紫表示をボス直径連動の縦補助線長条件で制限
+補助線区分塗りを claimed 領域差し引き方式へ変更
 
-・scripts/game/base_main.gdで薄紫矩形の追加時に左右縦補助線長とボス直径1.2倍の比較条件を追加
-・保持済みguide_partition_fill_entriesの剪定時にも同条件を適用して再評価時の不整合を防止
-・C:\Godot\godot.exe --headless --path . --check-only で構文確認済み
+・scripts/game/base_main.gd の補助線区分保持を描画ポリゴン配列対応に変更した
+・ベース矩形から claimed_polygons を Geometry2D.clip_polygons で差し引き、残存領域のみ描画するようにした
+・既存エントリ再評価時にも差し引き結果を再計算するよう更新した
+・godot --headless --path . --check-only の成功を確認した
