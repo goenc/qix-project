@@ -2361,7 +2361,12 @@ func _apply_capture_guide_segment_correction(guide_segment: Dictionary, epsilon:
 		corrected_segment["active"] = false
 		return corrected_segment
 
-	var corrected_end: Vector2 = correction_result.get("point", start)
+	var corrected_end := end
+	if bool(correction_result.get("exited", false)):
+		var boundary_search_start: Vector2 = correction_result.get("first_valid_point", start)
+		var boundary_hit := _find_first_guide_boundary_hit_on_segment(boundary_search_start, end, epsilon)
+		if bool(boundary_hit.get("hit", false)):
+			corrected_end = boundary_hit.get("point", end)
 	if start.distance_to(corrected_end) <= epsilon:
 		corrected_segment["end"] = start
 		corrected_segment["active"] = false
@@ -2387,6 +2392,7 @@ func _find_first_valid_guide_region_end_on_segment(
 	var scan_step := int(scan_bounds.get("step", 0))
 	var max_iterations := int(ceil(start.distance_to(end))) + 2
 	var found_valid_region := false
+	var first_valid_point := start
 	var last_valid_point := start
 	for iteration in range(max_iterations):
 		var axis_value := scan_from + scan_step * iteration
@@ -2398,12 +2404,16 @@ func _find_first_valid_guide_region_end_on_segment(
 		var sample_point := _build_guide_scan_point(scan_bounds, axis_value)
 		var is_valid_point := _is_point_in_valid_guide_region(sample_point, epsilon)
 		if is_valid_point:
+			if !found_valid_region:
+				first_valid_point = sample_point
 			found_valid_region = true
 			last_valid_point = sample_point
 		elif found_valid_region:
 			return {
 				"found": true,
-				"point": last_valid_point
+				"first_valid_point": first_valid_point,
+				"last_valid_point": last_valid_point,
+				"exited": true
 			}
 
 		if axis_value == scan_to:
@@ -2412,7 +2422,9 @@ func _find_first_valid_guide_region_end_on_segment(
 	if found_valid_region:
 		return {
 			"found": true,
-			"point": end
+			"first_valid_point": first_valid_point,
+			"last_valid_point": last_valid_point,
+			"exited": false
 		}
 	return {"found": false}
 
@@ -2468,6 +2480,12 @@ func _build_guide_scan_point(scan_bounds: Dictionary, axis_value: int) -> Vector
 
 func _find_first_guide_boundary_hit(start: Vector2, direction: Vector2, epsilon: float) -> Dictionary:
 	var ray_end := _build_guide_ray_end(start, direction, epsilon)
+	return _find_first_guide_boundary_hit_on_segment(start, ray_end, epsilon)
+
+
+func _find_first_guide_boundary_hit_on_segment(start: Vector2, ray_end: Vector2, epsilon: float) -> Dictionary:
+	if start.distance_to(ray_end) <= epsilon:
+		return {"hit": false}
 	var ray_rect := _build_segment_aabb_from_points(start, ray_end)
 	var best_hit := {"hit": false}
 	best_hit = _pick_nearest_guide_hit(best_hit, _find_guide_loop_hit(start, ray_end, _get_guide_boundary_loop(), epsilon), epsilon)
