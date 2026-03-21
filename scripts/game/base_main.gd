@@ -21,6 +21,7 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 @export var playfield_outer_frame_padding := 12.0
 @export var guide_segment_color := Color(1.0, 0.0, 0.0, 1.0)
 @export var guide_vertical_color := Color(0.7, 0.0, 1.0, 1.0)
+@export var guide_short_segment_color := Color(0.0, 1.0, 0.0, 1.0)
 @export var guide_segment_width := 2.0
 @export var guide_debug_point_radius := 4.0
 @export var guide_vertical_start_point_color := Color(0.2, 0.95, 1.0, 1.0)
@@ -2166,6 +2167,19 @@ func _guide_partition_entry_lengths_within_threshold(entry: Dictionary, epsilon:
 	return left_length <= max_vertical_guide_length + epsilon and right_length <= max_vertical_guide_length + epsilon
 
 
+func _get_guide_segment_axis_length(start: Vector2, end: Vector2, is_vertical: bool) -> float:
+	if is_vertical:
+		return absf(end.y - start.y)
+	return absf(end.x - start.x)
+
+
+func _is_guide_segment_within_short_threshold(guide_length: float, epsilon: float) -> bool:
+	var boss_diameter := _get_partition_fill_target_boss_diameter()
+	if boss_diameter <= epsilon:
+		return false
+	return guide_length <= boss_diameter * 1.2 + epsilon
+
+
 func _guide_partition_entry_has_valid_base_rect(entry: Dictionary, epsilon: float) -> bool:
 	var left_x := float(entry.get("left_x", 0.0))
 	var right_x := float(entry.get("right_x", left_x))
@@ -2224,7 +2238,10 @@ func _draw_guide_segments() -> void:
 			continue
 		if absf(direction.x) > 0.0 and !show_horizontal_guides:
 			continue
-		var guide_color := guide_vertical_color if absf(direction.y) > 0.0 else guide_segment_color
+		var guide_length := _get_guide_segment_axis_length(start, end, is_vertical)
+		var guide_color := guide_vertical_color if is_vertical else guide_segment_color
+		if _is_guide_segment_within_short_threshold(guide_length, epsilon):
+			guide_color = guide_short_segment_color
 		draw_line(start, end, guide_color, guide_segment_width)
 		var start_point_color := guide_vertical_start_point_color if is_vertical else guide_horizontal_start_point_color
 		var end_point_color := guide_vertical_end_point_color if is_vertical else guide_horizontal_end_point_color
