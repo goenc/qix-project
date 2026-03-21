@@ -1,6 +1,5 @@
-ボス領域の閉ループ再構築描画を追加
+base_main.gd の構文エラー修正
 
-・切り取り確定時に外周と短い緑ガイドだけからボス領域を再構築する処理を追加
-・右方向レイ開始と時計回り探索で閉ループを求める専用グラフ処理を base_main に追加
-・ボス領域を緑色半透明で描画する専用ポリゴン管理を追加
-・godot_console --headless --path . --quit-after 1 でロード確認
+・ボス領域再構築ブロック内の不要な閉じ波括弧を削除
+・scripts/game/base_main.gd の構文崩れのみを修正しロジックは変更しない構成を維持
+・godot_console --headless --path . --quit-after 1 と godot --path . --quit-after 1 でロード確認

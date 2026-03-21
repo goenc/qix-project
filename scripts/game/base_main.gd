@@ -1223,7 +1223,6 @@ func _find_boss_region_start_hit(selection_point: Vector2, boundary_segments: Ar
 			var best_type := _stringify_value(best_hit.get("segment_type", ""), "")
 			if candidate_type == "green" and best_type != "green":
 				best_hit = candidate_hit
-	}
 	return best_hit
 
 
@@ -1338,7 +1337,6 @@ func _build_boss_region_graph(boundary_segments: Array[Dictionary], start_hit: D
 			edge_keys[edge_key] = true
 			_append_boss_region_node_edge(nodes, from_node_id, edge_index)
 			_append_boss_region_node_edge(nodes, to_node_id, edge_index)
-	}
 
 	return {
 		"nodes": nodes,
@@ -1569,7 +1567,6 @@ func _choose_next_boss_region_step(
 			var best_distance := float(best_step.get("distance", INF))
 			if candidate_distance < best_distance - epsilon:
 				best_step = candidate
-	}
 	return best_step
 
 
