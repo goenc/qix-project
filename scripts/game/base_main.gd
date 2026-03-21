@@ -2362,13 +2362,23 @@ func _apply_capture_guide_segment_correction(guide_segment: Dictionary, epsilon:
 		return corrected_segment
 
 	var boundary_search_start: Vector2 = correction_result.get("first_valid_point", start)
-	var boundary_hit := _find_first_guide_boundary_hit_on_segment(boundary_search_start, end, epsilon)
-	if !bool(boundary_hit.get("hit", false)):
+	var boundary_line := _find_first_orthogonal_guide_boundary_segment_on_segment(
+		start,
+		boundary_search_start,
+		end,
+		direction,
+		epsilon
+	)
+	if !bool(boundary_line.get("found", false)):
 		corrected_segment["end"] = start
 		corrected_segment["active"] = false
 		return corrected_segment
 
-	var corrected_end: Vector2 = boundary_hit.get("point", start)
+	var corrected_end := start
+	if absf(direction.y) > 0.0:
+		corrected_end = Vector2(start.x, float(boundary_line.get("coordinate", start.y)))
+	elif absf(direction.x) > 0.0:
+		corrected_end = Vector2(float(boundary_line.get("coordinate", start.x)), start.y)
 	if start.distance_to(corrected_end) <= epsilon:
 		corrected_segment["end"] = start
 		corrected_segment["active"] = false
@@ -2429,6 +2439,148 @@ func _find_first_valid_guide_region_end_on_segment(
 			"exited": false
 		}
 	return {"found": false}
+
+
+func _find_first_orthogonal_guide_boundary_segment_on_segment(
+	start: Vector2,
+	search_start: Vector2,
+	end: Vector2,
+	direction: Vector2,
+	epsilon: float
+) -> Dictionary:
+	if direction == Vector2.ZERO:
+		return {"found": false}
+
+	var search_rect := _build_segment_aabb_from_points(search_start, end)
+	var best_line := _find_first_orthogonal_guide_boundary_segment_on_loop(
+		start,
+		search_start,
+		end,
+		direction,
+		_get_guide_boundary_loop(),
+		epsilon
+	)
+	for index in range(claimed_polygons.size()):
+		if index < claimed_polygon_aabbs.size() and !_rects_overlap(search_rect, claimed_polygon_aabbs[index], epsilon):
+			continue
+		best_line = _pick_nearest_orthogonal_guide_boundary_segment(
+			best_line,
+			_find_first_orthogonal_guide_boundary_segment_on_loop(
+				start,
+				search_start,
+				end,
+				direction,
+				claimed_polygons[index],
+				epsilon
+			),
+			epsilon
+		)
+	return best_line
+
+
+func _find_first_orthogonal_guide_boundary_segment_on_loop(
+	start: Vector2,
+	search_start: Vector2,
+	end: Vector2,
+	direction: Vector2,
+	loop: PackedVector2Array,
+	epsilon: float
+) -> Dictionary:
+	if loop.size() < 2:
+		return {"found": false}
+
+	var best_line := {"found": false}
+	for index in range(loop.size()):
+		var segment_start: Vector2 = loop[index]
+		var segment_end: Vector2 = loop[(index + 1) % loop.size()]
+		best_line = _pick_nearest_orthogonal_guide_boundary_segment(
+			best_line,
+			_build_orthogonal_guide_boundary_segment_candidate(
+				start,
+				search_start,
+				end,
+				direction,
+				segment_start,
+				segment_end,
+				index,
+				epsilon
+			),
+			epsilon
+		)
+	return best_line
+
+
+func _build_orthogonal_guide_boundary_segment_candidate(
+	start: Vector2,
+	search_start: Vector2,
+	end: Vector2,
+	direction: Vector2,
+	segment_start: Vector2,
+	segment_end: Vector2,
+	segment_index: int,
+	epsilon: float
+) -> Dictionary:
+	if absf(direction.y) > 0.0:
+		if absf(segment_start.y - segment_end.y) > epsilon:
+			return {"found": false}
+
+		var candidate_y := segment_start.y
+		if !_is_inclusive_guide_range(start.x, segment_start.x, segment_end.x, epsilon):
+			return {"found": false}
+		if !_is_inclusive_guide_range(candidate_y, search_start.y, end.y, epsilon):
+			return {"found": false}
+
+		var distance := (candidate_y - start.y) * signf(direction.y)
+		if distance <= epsilon:
+			return {"found": false}
+
+		return {
+			"found": true,
+			"coordinate": candidate_y,
+			"distance": distance,
+			"segment_index": segment_index,
+			"segment_start": segment_start,
+			"segment_end": segment_end
+		}
+
+	if absf(direction.x) > 0.0:
+		if absf(segment_start.x - segment_end.x) > epsilon:
+			return {"found": false}
+
+		var candidate_x := segment_start.x
+		if !_is_inclusive_guide_range(start.y, segment_start.y, segment_end.y, epsilon):
+			return {"found": false}
+		if !_is_inclusive_guide_range(candidate_x, search_start.x, end.x, epsilon):
+			return {"found": false}
+
+		var distance := (candidate_x - start.x) * signf(direction.x)
+		if distance <= epsilon:
+			return {"found": false}
+
+		return {
+			"found": true,
+			"coordinate": candidate_x,
+			"distance": distance,
+			"segment_index": segment_index,
+			"segment_start": segment_start,
+			"segment_end": segment_end
+		}
+
+	return {"found": false}
+
+
+func _pick_nearest_orthogonal_guide_boundary_segment(current_best: Dictionary, candidate: Dictionary, epsilon: float) -> Dictionary:
+	if !bool(candidate.get("found", false)):
+		return current_best
+	if !bool(current_best.get("found", false)):
+		return candidate
+	if float(candidate.get("distance", INF)) < float(current_best.get("distance", INF)) - epsilon:
+		return candidate
+	return current_best
+
+
+func _is_inclusive_guide_range(value: float, range_start: float, range_end: float, epsilon: float) -> bool:
+	return value >= minf(range_start, range_end) - epsilon and value <= maxf(range_start, range_end) + epsilon
 
 
 func _get_guide_scan_bounds(start: Vector2, end: Vector2, direction: Vector2) -> Dictionary:
