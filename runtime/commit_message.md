@@ -1,5 +1,5 @@
-capture後補正の補助線終端を直交境界線分ベースに変更
+補助線の始点終点デバッグ点を追加
 
-・capture後補正で有効領域検出後にremaining境界とclaimed境界から直交境界線分を探索するよう変更
-・補正後ENDを採用した境界線分の座標とstart座標から確定し元のendへのフォールバックを削除
-・ヘッドレス確認を実施
+・縦横補助線の start end 用色と点半径の export 設定を追加
+・_draw_guide_segments で既存の表示条件に連動する start end 点描画を追加
+・godot_console --headless --path . --editor --quit でヘッドレス確認を実施
