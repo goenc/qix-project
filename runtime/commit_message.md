@@ -1,6 +1,6 @@
-横切り後の紫区画更新で touched pair_key を反映して再生成漏れを防止
+紫塗り生成をremaining polygon交差方式へ置換して欠けを修正
 
-・capture 後に触れた区画定義の pair_key を prune 削除、guide 刷新削除、upsert 追加・上書きから収集するようにした。
-・描画結果削除は削除対象 pair_key のみに限定し、再生成は update_region 交差または touched 所属または結果欠落の entry を対象にした。
-・headless で verify_outer_loop、verify_player_border_corner、通常起動 quit を実行し成功を確認した。
-
+・guide partition の塗り結果生成を claimed 差分方式から entry矩形と remaining polygon の交差方式へ変更
+・交差結果の有効ポリゴンのみ保存し remaining polygon 不正時や交差なし時は pair キーを削除する挙動へ統一
+・capture 後の塗り結果更新を touched pair 局所更新から全 pair 再計算へ変更して古いキャッシュ残りを防止
+・godot_console headless 起動でデバッグ実行確認を実施し終了コード0を確認

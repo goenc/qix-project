@@ -1262,6 +1262,7 @@ func _sync_guide_partition_fill_entries_after_capture(
 	var guides_to_refresh := _collect_vertical_guides_for_partition_refresh(existing_vertical_guides, update_region, epsilon)
 	if !bool(update_region.get("has_update", false)):
 		_erase_guide_partition_fill_results(removed_partition_keys)
+		_rebuild_all_guide_partition_fill_results(epsilon)
 		return
 
 	var refreshed_interval_keys: Dictionary = {}
@@ -1283,7 +1284,7 @@ func _sync_guide_partition_fill_entries_after_capture(
 		_touch_guide_partition_pair_keys(touched_pair_keys, refresh_removed_keys)
 
 	_erase_guide_partition_fill_results(removed_partition_keys)
-	_refresh_guide_partition_fill_results_for_update_region(update_region, epsilon, touched_pair_keys)
+	_rebuild_all_guide_partition_fill_results(epsilon)
 
 
 func _build_guide_partition_update_region(
@@ -1974,18 +1975,6 @@ func _build_guide_partition_rect_between(
 	return Rect2(Vector2(left_x, top_y), Vector2(right_x - left_x, bottom_y - top_y))
 
 
-func _should_draw_guide_partition_rect(
-	rect: Rect2,
-	fill_polygons: Array[PackedVector2Array],
-	epsilon: float
-) -> bool:
-	if fill_polygons.is_empty():
-		return false
-	if _is_rect_fully_inside_polygons(rect, claimed_polygons, claimed_polygon_aabbs, epsilon):
-		return false
-	return true
-
-
 func _resolve_guide_partition_vertical_bounds_for_pair(
 	left_guide: Dictionary,
 	right_guide: Dictionary,
@@ -2022,85 +2011,6 @@ func _resolve_guide_partition_vertical_bounds_for_pair(
 		"bottom_y": bottom_y
 	}
 
-
-func _is_rect_fully_inside_polygons(
-	rect: Rect2,
-	polygons: Array[PackedVector2Array],
-	polygon_aabbs: Array[Rect2],
-	epsilon: float
-) -> bool:
-	var remaining_fill_polygons := _build_guide_partition_fill_polygons_from_polygons(
-		rect,
-		polygons,
-		polygon_aabbs,
-		epsilon
-	)
-	return remaining_fill_polygons.is_empty()
-
-
-func _build_guide_partition_fill_polygons(rect: Rect2, epsilon: float) -> Array[PackedVector2Array]:
-	return _build_guide_partition_fill_polygons_from_polygons(
-		rect,
-		claimed_polygons,
-		claimed_polygon_aabbs,
-		epsilon
-	)
-
-
-func _build_guide_partition_fill_polygons_from_polygons(
-	rect: Rect2,
-	polygons: Array[PackedVector2Array],
-	polygon_aabbs: Array[Rect2],
-	epsilon: float
-) -> Array[PackedVector2Array]:
-	var fill_polygons: Array[PackedVector2Array] = []
-	if rect.size.x <= epsilon or rect.size.y <= epsilon:
-		return fill_polygons
-
-	fill_polygons.append(_build_rect_polygon(rect))
-	for index in range(polygons.size()):
-		if index < polygon_aabbs.size() and !_rects_overlap(rect, polygon_aabbs[index], epsilon):
-			continue
-		var polygon := polygons[index]
-		if polygon.size() < 3:
-			continue
-		fill_polygons = _subtract_polygon_from_partition_fill_polygons(fill_polygons, polygon, epsilon)
-		if fill_polygons.is_empty():
-			break
-	return fill_polygons
-
-
-func _subtract_polygon_from_partition_fill_polygons(
-	base_fill_polygons: Array[PackedVector2Array],
-	polygon_to_subtract: PackedVector2Array,
-	epsilon: float
-) -> Array[PackedVector2Array]:
-	var subtracted: Array[PackedVector2Array] = []
-	if base_fill_polygons.is_empty():
-		return subtracted
-	if polygon_to_subtract.size() < 3:
-		return base_fill_polygons
-	var subtract_aabb := _build_points_aabb(polygon_to_subtract)
-	for base_polygon in base_fill_polygons:
-		if base_polygon.size() < 3:
-			continue
-		var base_aabb := _build_points_aabb(base_polygon)
-		if !_rects_overlap(base_aabb, subtract_aabb, epsilon):
-			subtracted.append(base_polygon)
-			continue
-		var clipped: Array = Geometry2D.clip_polygons(base_polygon, polygon_to_subtract)
-		if clipped.is_empty():
-			continue
-		for raw_polygon in clipped:
-			if typeof(raw_polygon) != TYPE_PACKED_VECTOR2_ARRAY:
-				continue
-			var clipped_polygon: PackedVector2Array = raw_polygon
-			if !_is_guide_partition_fill_polygon_drawable(clipped_polygon, epsilon):
-				continue
-			subtracted.append(clipped_polygon)
-	return subtracted
-
-
 func _build_rect_polygon(rect: Rect2) -> PackedVector2Array:
 	var polygon := PackedVector2Array()
 	polygon.append(rect.position)
@@ -2132,19 +2042,9 @@ func _erase_guide_partition_fill_results(pair_keys: Array[String]) -> void:
 		guide_partition_fill_polygons_by_key.erase(pair_key)
 
 
-func _refresh_guide_partition_fill_results_for_update_region(
-	update_region: Dictionary,
-	epsilon: float,
-	touched_pair_keys: Dictionary
-) -> void:
+func _rebuild_all_guide_partition_fill_results(epsilon: float) -> void:
+	guide_partition_fill_polygons_by_key.clear()
 	for entry in guide_partition_fill_entries:
-		var pair_key := _extract_guide_partition_entry_pair_key(entry)
-		if pair_key.is_empty():
-			continue
-		var is_touched := touched_pair_keys.has(pair_key)
-		var has_result := guide_partition_fill_polygons_by_key.has(pair_key)
-		if !is_touched and has_result and !_guide_partition_entry_intersects_update_region(entry, update_region, epsilon):
-			continue
 		_refresh_guide_partition_fill_result_for_entry(entry, epsilon)
 
 
@@ -2160,8 +2060,26 @@ func _refresh_guide_partition_fill_result_for_entry(entry: Dictionary, epsilon: 
 	if !_guide_partition_entry_has_valid_base_rect(entry, epsilon):
 		guide_partition_fill_polygons_by_key.erase(pair_key)
 		return
-	var fill_polygons := _build_guide_partition_fill_polygons(entry_rect, epsilon)
-	if !_should_draw_guide_partition_rect(entry_rect, fill_polygons, epsilon):
+
+	if remaining_polygon.size() < 3:
+		guide_partition_fill_polygons_by_key.erase(pair_key)
+		return
+
+	var rect_polygon := _build_rect_polygon(entry_rect)
+	var intersected: Array = Geometry2D.intersect_polygons(rect_polygon, remaining_polygon)
+	if intersected.is_empty():
+		guide_partition_fill_polygons_by_key.erase(pair_key)
+		return
+
+	var fill_polygons: Array[PackedVector2Array] = []
+	for raw_polygon in intersected:
+		if typeof(raw_polygon) != TYPE_PACKED_VECTOR2_ARRAY:
+			continue
+		var fill_polygon: PackedVector2Array = raw_polygon
+		if !_is_guide_partition_fill_polygon_drawable(fill_polygon, epsilon):
+			continue
+		fill_polygons.append(fill_polygon)
+	if fill_polygons.is_empty():
 		guide_partition_fill_polygons_by_key.erase(pair_key)
 		return
 	guide_partition_fill_polygons_by_key[pair_key] = fill_polygons
