@@ -17,4 +17,11 @@
 ・C:\Godot\godot.exe --headless --path . --script scripts/game/base_main.gd --check-only が成功
 ・C:\Godot\godot.exe --headless --path . --quit-after 1 が成功
 ・C:\Godot\godot.exe --headless --path . --script tools/verify_outer_loop.gd が成功し initial、L、jagged capture の検証が通過
-・C:\Godot\godot.exe --headless --path . --script tools/verify_player_border_corner.gd が成功
+・C:\Godot\godot.exe --headless --path . --script tools/verify_player_border_corner.gd が成功日時: 2026-03-21 09:45:30 JST
+対象:
+- scripts/game/base_main.gd
+変更:
+・横切り後の区画更新で touched pair_key を収集し、削除対象のみ消去しつつ touched または結果欠落の区画を再生成するように更新対象管理を修正した。
+確認:
+・godot --headless --path . --script res://tools/verify_outer_loop.gd、godot --headless --path . --script res://tools/verify_player_border_corner.gd、godot --headless --path . --quit が成功した。
+

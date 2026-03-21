@@ -1251,11 +1251,13 @@ func _sync_guide_partition_fill_entries_after_capture(
 		existing_vertical_guides_by_interval_key[interval_key] = guide
 
 	var update_region := _build_guide_partition_update_region(affected_vertical_guide_keys, capture_delta, epsilon)
+	var touched_pair_keys: Dictionary = {}
 	var removed_partition_keys := _prune_guide_partition_fill_entries(
 		existing_vertical_guides_by_interval_key,
 		update_region,
 		epsilon
 	)
+	_touch_guide_partition_pair_keys(touched_pair_keys, removed_partition_keys)
 
 	var guides_to_refresh := _collect_vertical_guides_for_partition_refresh(existing_vertical_guides, update_region, epsilon)
 	if !bool(update_region.get("has_update", false)):
@@ -1273,13 +1275,15 @@ func _sync_guide_partition_fill_entries_after_capture(
 			existing_vertical_guides,
 			horizontal_outer_segments,
 			update_region,
-			epsilon
+			epsilon,
+			touched_pair_keys
 		)
 		for pair_key in refresh_removed_keys:
 			removed_partition_keys.append(pair_key)
+		_touch_guide_partition_pair_keys(touched_pair_keys, refresh_removed_keys)
 
 	_erase_guide_partition_fill_results(removed_partition_keys)
-	_refresh_guide_partition_fill_results_for_update_region(update_region, epsilon)
+	_refresh_guide_partition_fill_results_for_update_region(update_region, epsilon, touched_pair_keys)
 
 
 func _build_guide_partition_update_region(
@@ -1414,7 +1418,8 @@ func _refresh_guide_partition_fill_entries_for_vertical_guide(
 	existing_vertical_guides: Array[Dictionary],
 	horizontal_outer_segments: Array[Dictionary],
 	update_region: Dictionary,
-	epsilon: float
+	epsilon: float,
+	touched_pair_keys: Dictionary
 ) -> Array[String]:
 	var removed_partition_keys := _remove_guide_partition_fill_entries_for_guide_interval(guide, update_region, epsilon)
 
@@ -1429,7 +1434,8 @@ func _refresh_guide_partition_fill_entries_for_vertical_guide(
 			left_guide,
 			guide,
 			horizontal_outer_segments,
-			epsilon
+			epsilon,
+			touched_pair_keys
 		)
 
 	var right_guide := _find_vertical_partition_guide_on_side(
@@ -1443,7 +1449,8 @@ func _refresh_guide_partition_fill_entries_for_vertical_guide(
 			guide,
 			right_guide,
 			horizontal_outer_segments,
-			epsilon
+			epsilon,
+			touched_pair_keys
 		)
 	return removed_partition_keys
 
@@ -1452,7 +1459,8 @@ func _append_guide_partition_fill_entry_between(
 	left_guide: Dictionary,
 	right_guide: Dictionary,
 	horizontal_outer_segments: Array[Dictionary],
-	epsilon: float
+	epsilon: float,
+	touched_pair_keys: Dictionary
 ) -> void:
 	if !_should_fill_guide_partition_between_vertical_guides(left_guide, right_guide, epsilon):
 		return
@@ -1521,14 +1529,15 @@ func _append_guide_partition_fill_entry_between(
 		"left_guide_key": left_guide_key,
 		"right_guide_key": right_guide_key,
 		"rect": rect
-	})
+	}, touched_pair_keys)
 
 
-func _upsert_guide_partition_fill_entry(entry: Dictionary) -> void:
+func _upsert_guide_partition_fill_entry(entry: Dictionary, touched_pair_keys: Dictionary) -> void:
 	var pair_key := _extract_guide_partition_entry_pair_key(entry)
 	if pair_key.is_empty():
 		return
 	entry["pair_key"] = pair_key
+	_touch_guide_partition_pair_key(touched_pair_keys, pair_key)
 	var entry_index := _find_guide_partition_fill_entry_index(entry)
 	if entry_index >= 0:
 		guide_partition_fill_entries[entry_index] = entry
@@ -1562,6 +1571,17 @@ func _extract_guide_partition_entry_pair_key(entry: Dictionary) -> String:
 		_stringify_value(entry.get("left_guide_key", ""), ""),
 		_stringify_value(entry.get("right_guide_key", ""), "")
 	)
+
+
+func _touch_guide_partition_pair_key(touched_pair_keys: Dictionary, pair_key: String) -> void:
+	if pair_key.is_empty():
+		return
+	touched_pair_keys[pair_key] = true
+
+
+func _touch_guide_partition_pair_keys(touched_pair_keys: Dictionary, pair_keys: Array[String]) -> void:
+	for pair_key in pair_keys:
+		_touch_guide_partition_pair_key(touched_pair_keys, pair_key)
 
 
 func _remove_guide_partition_fill_entries_for_guide_interval(
@@ -2112,9 +2132,18 @@ func _erase_guide_partition_fill_results(pair_keys: Array[String]) -> void:
 		guide_partition_fill_polygons_by_key.erase(pair_key)
 
 
-func _refresh_guide_partition_fill_results_for_update_region(update_region: Dictionary, epsilon: float) -> void:
+func _refresh_guide_partition_fill_results_for_update_region(
+	update_region: Dictionary,
+	epsilon: float,
+	touched_pair_keys: Dictionary
+) -> void:
 	for entry in guide_partition_fill_entries:
-		if !_guide_partition_entry_intersects_update_region(entry, update_region, epsilon):
+		var pair_key := _extract_guide_partition_entry_pair_key(entry)
+		if pair_key.is_empty():
+			continue
+		var is_touched := touched_pair_keys.has(pair_key)
+		var has_result := guide_partition_fill_polygons_by_key.has(pair_key)
+		if !is_touched and has_result and !_guide_partition_entry_intersects_update_region(entry, update_region, epsilon):
 			continue
 		_refresh_guide_partition_fill_result_for_entry(entry, epsilon)
 
