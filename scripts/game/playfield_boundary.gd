@@ -204,11 +204,51 @@ static func get_vertex_connected_segment_indices(loop: PackedVector2Array, verte
 	}
 
 
+static func get_connected_directions_at_point(
+	loop: PackedVector2Array,
+	point: Vector2,
+	epsilon: float = DEFAULT_EPSILON
+) -> Array[Dictionary]:
+	var connections: Array[Dictionary] = []
+	if loop.size() < 2:
+		return connections
+
+	var safe_epsilon := maxf(DEFAULT_EPSILON, minf(epsilon, 0.25))
+	for segment_index in range(loop.size()):
+		var segment_start := get_segment_start(loop, segment_index)
+		var segment_end := get_segment_end(loop, segment_index)
+		var projected_point := Geometry2D.get_closest_point_to_segment(point, segment_start, segment_end)
+		if projected_point.distance_to(point) > safe_epsilon:
+			continue
+
+		var distance_to_start := point.distance_to(segment_start)
+		if distance_to_start > safe_epsilon:
+			_store_connected_direction_candidate(
+				connections,
+				_axis_direction_from_vector(segment_start - point, safe_epsilon),
+				segment_index,
+				segment_start,
+				distance_to_start
+			)
+
+		var distance_to_end := point.distance_to(segment_end)
+		if distance_to_end > safe_epsilon:
+			_store_connected_direction_candidate(
+				connections,
+				_axis_direction_from_vector(segment_end - point, safe_epsilon),
+				segment_index,
+				segment_end,
+				distance_to_end
+			)
+
+	return connections
+
+
 static func choose_segment_at_vertex(
 	loop: PackedVector2Array,
 	vertex_index: int,
 	input_direction: Vector2,
-	current_segment_index: int = -1,
+	_current_segment_index: int = -1,
 	epsilon: float = DEFAULT_EPSILON,
 	metrics: Dictionary = {}
 ) -> Dictionary:
@@ -218,64 +258,76 @@ static func choose_segment_at_vertex(
 	if vertex_index < 0 or vertex_index >= loop.size():
 		return {"matched": false}
 
-	var safe_input_direction := input_direction.normalized() if input_direction.length_squared() > 1.0 else input_direction
-	var connected_segments: Dictionary = get_vertex_connected_segment_indices(loop, vertex_index)
-	var previous_segment_index := int(connected_segments.get("previous", -1))
-	var next_segment_index := int(connected_segments.get("next", -1))
-	var candidates: Array[Dictionary] = [
-		{
-			"segment_index": previous_segment_index,
-			"distance_on_segment": get_segment_length(loop, previous_segment_index, metrics),
-			"direction": -get_segment_direction(loop, previous_segment_index, epsilon)
-		},
-		{
-			"segment_index": next_segment_index,
-			"distance_on_segment": 0.0,
-			"direction": get_segment_direction(loop, next_segment_index, epsilon)
-		}
-	]
-
-	var best_candidate: Dictionary = {"matched": false}
-	var best_score := -INF
-	var score_margin := 0.001
-	for candidate in candidates:
-		var candidate_direction: Vector2 = candidate.get("direction", Vector2.ZERO)
-		if candidate_direction == Vector2.ZERO:
-			continue
-
-		var score := safe_input_direction.dot(candidate_direction)
-		if score <= score_margin:
-			continue
-
-		if !bool(best_candidate.get("matched", false)) or score > best_score + score_margin:
-			best_candidate = {
-				"matched": true,
-				"segment_index": int(candidate.get("segment_index", -1)),
-				"distance_on_segment": float(candidate.get("distance_on_segment", 0.0)),
-				"direction": candidate_direction
-			}
-			best_score = score
-			continue
-
-		if absf(score - best_score) > score_margin:
-			continue
-
-		var best_is_reverse := int(best_candidate.get("segment_index", -1)) == current_segment_index
-		var candidate_is_reverse := int(candidate.get("segment_index", -1)) == current_segment_index
-		if best_is_reverse and !candidate_is_reverse:
-			best_candidate = {
-				"matched": true,
-				"segment_index": int(candidate.get("segment_index", -1)),
-				"distance_on_segment": float(candidate.get("distance_on_segment", 0.0)),
-				"direction": candidate_direction
-			}
-			best_score = score
-
-	if !bool(best_candidate.get("matched", false)):
+	var safe_epsilon := maxf(epsilon, DEFAULT_EPSILON)
+	var target_direction := _axis_direction_from_vector(input_direction)
+	if target_direction == Vector2.ZERO:
 		return {"matched": false}
 
-	best_candidate["point"] = loop[vertex_index]
-	return best_candidate
+	for connection in get_connected_directions_at_point(loop, loop[vertex_index], safe_epsilon):
+		var connection_direction: Vector2 = connection.get("direction", Vector2.ZERO)
+		if !connection_direction.is_equal_approx(target_direction):
+			continue
+
+		var segment_index := int(connection.get("segment_index", -1))
+		if segment_index < 0 or segment_index >= segment_count:
+			return {"matched": false}
+
+		var distance_on_segment := 0.0
+		var vertex_point: Vector2 = loop[vertex_index]
+		if vertex_point.distance_to(get_segment_end(loop, segment_index)) <= safe_epsilon:
+			distance_on_segment = get_segment_length(loop, segment_index, metrics)
+
+		return {
+			"matched": true,
+			"segment_index": segment_index,
+			"distance_on_segment": distance_on_segment,
+			"direction": connection_direction,
+			"point": vertex_point
+		}
+
+	return {"matched": false}
+
+
+static func _store_connected_direction_candidate(
+	connections: Array[Dictionary],
+	direction: Vector2,
+	segment_index: int,
+	target_point: Vector2,
+	distance: float
+) -> void:
+	if direction == Vector2.ZERO or segment_index < 0 or distance <= DEFAULT_EPSILON:
+		return
+
+	for index in range(connections.size()):
+		var existing_direction: Vector2 = connections[index].get("direction", Vector2.ZERO)
+		if !existing_direction.is_equal_approx(direction):
+			continue
+		if distance + DEFAULT_EPSILON < float(connections[index].get("distance", INF)):
+			connections[index] = {
+				"direction": direction,
+				"segment_index": segment_index,
+				"target_point": target_point,
+				"distance": distance
+			}
+		return
+
+	connections.append({
+		"direction": direction,
+		"segment_index": segment_index,
+		"target_point": target_point,
+		"distance": distance
+	})
+
+
+static func _axis_direction_from_vector(vector: Vector2, epsilon: float = DEFAULT_EPSILON) -> Vector2:
+	var safe_epsilon := maxf(epsilon, DEFAULT_EPSILON)
+	if absf(vector.x) >= absf(vector.y):
+		if absf(vector.x) <= safe_epsilon:
+			return Vector2.ZERO
+		return Vector2(signf(vector.x), 0.0)
+	if absf(vector.y) <= safe_epsilon:
+		return Vector2.ZERO
+	return Vector2(0.0, signf(vector.y))
 
 
 static func point_at_progress(loop: PackedVector2Array, metrics: Dictionary, progress: float) -> Vector2:
