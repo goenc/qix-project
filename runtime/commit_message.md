@@ -1,6 +1,6 @@
-紫塗り生成をremaining polygon交差方式へ置換して欠けを修正
+紫区画の永続保持と塗りキャッシュ衝突の解消
 
-・guide partition の塗り結果生成を claimed 差分方式から entry矩形と remaining polygon の交差方式へ変更
-・交差結果の有効ポリゴンのみ保存し remaining polygon 不正時や交差なし時は pair キーを削除する挙動へ統一
-・capture 後の塗り結果更新を touched pair 局所更新から全 pair 再計算へ変更して古いキャッシュ残りを防止
-・godot_console headless 起動でデバッグ実行確認を実施し終了コード0を確認
+・guide partition entryに永続区画フラグと区画単位キーを追加して旧紫区画を保持するよう変更
+・pruneとガイド区間更新時の削除対象を未確定区画のみに限定
+・紫描画結果キャッシュを区画単位キー管理へ変更してpair_key再利用時の上書き消滅を防止
+・ヘッドレス実行でスクリプト読み込み成功を確認
