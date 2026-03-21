@@ -1,5 +1,5 @@
-capture後補正の補助線終端を境界再取得に修正
+capture後補正の補助線終端を境界再取得へ統一
 
-・有効領域への進入点と離脱有無を返すよう補正用走査結果を見直し 補正後ENDの最終決定を capture 補正側へ集約
-・有効領域から抜けた場合は 最初の有効点以降の区間で既存基準の境界ヒットを再取得し 内部点で終わらないよう修正
-・godot_console --headless --path . --editor --quit で headless 起動確認を実施
+・_apply_capture_guide_segment_correctionで found 時は常に first_valid_point から元の end までを境界再取得するよう変更
+・境界再取得に失敗した場合と補正後終端が開始点と同等の場合は補助線を無効化し corrected_end = end の逃げ道を削除
+・godot_console --headless --path . --editor --quit と verify_outer_loop.gd と verify_player_border_corner.gd の headless 確認を実施

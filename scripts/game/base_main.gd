@@ -2361,12 +2361,14 @@ func _apply_capture_guide_segment_correction(guide_segment: Dictionary, epsilon:
 		corrected_segment["active"] = false
 		return corrected_segment
 
-	var corrected_end := end
-	if bool(correction_result.get("exited", false)):
-		var boundary_search_start: Vector2 = correction_result.get("first_valid_point", start)
-		var boundary_hit := _find_first_guide_boundary_hit_on_segment(boundary_search_start, end, epsilon)
-		if bool(boundary_hit.get("hit", false)):
-			corrected_end = boundary_hit.get("point", end)
+	var boundary_search_start: Vector2 = correction_result.get("first_valid_point", start)
+	var boundary_hit := _find_first_guide_boundary_hit_on_segment(boundary_search_start, end, epsilon)
+	if !bool(boundary_hit.get("hit", false)):
+		corrected_segment["end"] = start
+		corrected_segment["active"] = false
+		return corrected_segment
+
+	var corrected_end: Vector2 = boundary_hit.get("point", start)
 	if start.distance_to(corrected_end) <= epsilon:
 		corrected_segment["end"] = start
 		corrected_segment["active"] = false
