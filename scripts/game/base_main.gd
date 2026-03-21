@@ -29,6 +29,7 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 @export var guide_horizontal_start_point_color := Color(0.2, 1.0, 0.45, 1.0)
 @export var guide_horizontal_end_point_color := Color(1.0, 0.45, 0.2, 1.0)
 @export var guide_partition_fill_color := Color(0.75, 0.55, 1.0, 0.5)
+@export var boss_region_fill_color := Color(0.0, 1.0, 0.0, 0.5)
 
 @onready var base_player = get_node_or_null("BasePlayer")
 @onready var bbos: Node2D = get_node_or_null("BBOS")
@@ -48,6 +49,7 @@ var claimed_polygon_aabbs: Array[Rect2] = []
 var guide_partition_fill_entries: Array[Dictionary] = []
 var guide_partition_fill_polygons_by_key: Dictionary = {}
 var guide_partition_fill_entry_key_sequence := 0
+var boss_region_polygon: PackedVector2Array = PackedVector2Array()
 var current_outer_loop: PackedVector2Array = PackedVector2Array()
 var current_outer_loop_metrics: Dictionary = {}
 var remaining_polygon: PackedVector2Array = PackedVector2Array()
@@ -202,6 +204,8 @@ func _draw() -> void:
 	for polygon in claimed_polygons:
 		if polygon.size() >= 3:
 			draw_colored_polygon(polygon, claimed_fill_color)
+	if boss_region_polygon.size() >= 3:
+		draw_colored_polygon(boss_region_polygon, boss_region_fill_color)
 	_draw_guide_partition_fills()
 	_draw_border_segments(inactive_border_segments, inactive_border_color)
 	_draw_guide_segments()
@@ -276,6 +280,7 @@ func _initialize_outer_loop_from_rect() -> void:
 	guide_partition_fill_entries.clear()
 	guide_partition_fill_polygons_by_key.clear()
 	guide_partition_fill_entry_key_sequence = 0
+	boss_region_polygon = PackedVector2Array()
 	queue_redraw()
 	inactive_border_segments.clear()
 	inactive_border_segment_aabbs.clear()
@@ -1102,8 +1107,470 @@ func _finalize_capture_closed(capture_delta: Dictionary, capture_generation: int
 	_apply_capture_guide_actions(capture_actions)
 	_sync_guide_partition_fill_entries_after_capture(affected_vertical_guide_keys, capture_delta)
 	_sync_boss_marker()
+	_recalculate_boss_region_polygon_after_capture()
 	queue_redraw()
 	_sync_hud()
+
+
+func _recalculate_boss_region_polygon_after_capture() -> void:
+	var epsilon := _get_guide_epsilon()
+	var selection_point := _get_boss_selection_point()
+	var boundary_segments := _build_boss_region_boundary_segments(epsilon)
+	if boundary_segments.is_empty():
+		return
+
+	var start_hit := _find_boss_region_start_hit(selection_point, boundary_segments, epsilon)
+	if !bool(start_hit.get("hit", false)):
+		return
+
+	var graph := _build_boss_region_graph(boundary_segments, start_hit, epsilon)
+	var traced_loop := _trace_boss_region_loop_clockwise(graph, epsilon)
+	if traced_loop.size() < 3:
+		return
+	if !Geometry2D.is_point_in_polygon(selection_point, traced_loop) and !PlayfieldBoundary.is_point_on_loop(traced_loop, selection_point, epsilon):
+		return
+
+	boss_region_polygon = traced_loop
+
+
+func _build_boss_region_boundary_segments(epsilon: float) -> Array[Dictionary]:
+	var boundary_segments: Array[Dictionary] = []
+	if current_outer_loop.size() >= 2:
+		for index in range(current_outer_loop.size()):
+			_append_boss_region_boundary_segment(
+				boundary_segments,
+				"outer_%d" % index,
+				"outer",
+				current_outer_loop[index],
+				current_outer_loop[(index + 1) % current_outer_loop.size()],
+				epsilon
+			)
+
+	for index in range(guide_segments.size()):
+		var guide_segment := guide_segments[index]
+		if _is_pending_guide_segment(guide_segment):
+			continue
+		if !bool(guide_segment.get("active", false)):
+			continue
+
+		var start: Vector2 = guide_segment.get("start", Vector2.ZERO)
+		var end: Vector2 = guide_segment.get("end", start)
+		if start.distance_to(end) <= epsilon:
+			continue
+
+		var is_vertical := absf(start.x - end.x) <= epsilon
+		var guide_length := _get_guide_segment_axis_length(start, end, is_vertical)
+		if !_is_guide_segment_within_short_threshold(guide_length, epsilon):
+			continue
+
+		_append_boss_region_boundary_segment(
+			boundary_segments,
+			"green_%d" % index,
+			"green",
+			start,
+			end,
+			epsilon
+		)
+
+	return boundary_segments
+
+
+func _append_boss_region_boundary_segment(
+	boundary_segments: Array[Dictionary],
+	segment_id: String,
+	segment_type: String,
+	start: Vector2,
+	end: Vector2,
+	epsilon: float
+) -> void:
+	if start.distance_to(end) <= epsilon:
+		return
+
+	var normalized_start := start
+	var normalized_end := end
+	if absf(start.y - end.y) <= epsilon and start.x > end.x:
+		normalized_start = end
+		normalized_end = start
+	elif absf(start.x - end.x) <= epsilon and start.y > end.y:
+		normalized_start = end
+		normalized_end = start
+
+	boundary_segments.append({
+		"id": segment_id,
+		"type": segment_type,
+		"start": normalized_start,
+		"end": normalized_end
+	})
+
+
+func _find_boss_region_start_hit(selection_point: Vector2, boundary_segments: Array[Dictionary], epsilon: float) -> Dictionary:
+	var best_hit := {"hit": false}
+	for segment in boundary_segments:
+		var candidate_hit := _build_boss_region_start_hit_candidate(selection_point, segment, epsilon)
+		if !bool(candidate_hit.get("hit", false)):
+			continue
+		if !bool(best_hit.get("hit", false)):
+			best_hit = candidate_hit
+			continue
+
+		var candidate_distance := float(candidate_hit.get("distance", INF))
+		var best_distance := float(best_hit.get("distance", INF))
+		if candidate_distance < best_distance - epsilon:
+			best_hit = candidate_hit
+			continue
+		if is_equal_approx(candidate_distance, best_distance):
+			var candidate_type := _stringify_value(candidate_hit.get("segment_type", ""), "")
+			var best_type := _stringify_value(best_hit.get("segment_type", ""), "")
+			if candidate_type == "green" and best_type != "green":
+				best_hit = candidate_hit
+	}
+	return best_hit
+
+
+func _build_boss_region_start_hit_candidate(selection_point: Vector2, segment: Dictionary, epsilon: float) -> Dictionary:
+	var segment_start: Vector2 = segment.get("start", Vector2.ZERO)
+	var segment_end: Vector2 = segment.get("end", segment_start)
+	var segment_type := _stringify_value(segment.get("type", ""), "")
+
+	if absf(segment_start.x - segment_end.x) <= epsilon:
+		var candidate_x := segment_start.x
+		if candidate_x <= selection_point.x + epsilon:
+			return {"hit": false}
+		var min_y := minf(segment_start.y, segment_end.y) - epsilon
+		var max_y := maxf(segment_start.y, segment_end.y) + epsilon
+		if selection_point.y < min_y or selection_point.y > max_y:
+			return {"hit": false}
+		var hit_point := Vector2(candidate_x, selection_point.y)
+		return {
+			"hit": true,
+			"point": hit_point,
+			"distance": selection_point.distance_to(hit_point),
+			"segment_id": _stringify_value(segment.get("id", ""), ""),
+			"segment_type": segment_type
+		}
+
+	if absf(segment_start.y - segment_end.y) > epsilon:
+		return {"hit": false}
+	if absf(segment_start.y - selection_point.y) > epsilon:
+		return {"hit": false}
+
+	var min_x := minf(segment_start.x, segment_end.x)
+	var max_x := maxf(segment_start.x, segment_end.x)
+	if max_x <= selection_point.x + epsilon:
+		return {"hit": false}
+
+	var candidate_x := min_x
+	if candidate_x <= selection_point.x + epsilon:
+		return {"hit": false}
+
+	var hit_point := Vector2(candidate_x, segment_start.y)
+	return {
+		"hit": true,
+		"point": hit_point,
+		"distance": selection_point.distance_to(hit_point),
+		"segment_id": _stringify_value(segment.get("id", ""), ""),
+		"segment_type": segment_type
+	}
+
+
+func _build_boss_region_graph(boundary_segments: Array[Dictionary], start_hit: Dictionary, epsilon: float) -> Dictionary:
+	var split_points_by_segment: Dictionary = {}
+	var start_segment_id := _stringify_value(start_hit.get("segment_id", ""), "")
+	var start_point: Vector2 = start_hit.get("point", Vector2.ZERO)
+	for segment in boundary_segments:
+		var segment_id := _stringify_value(segment.get("id", ""), "")
+		var split_points: Array[Vector2] = []
+		_append_unique_boss_region_point(split_points, segment.get("start", Vector2.ZERO), epsilon)
+		_append_unique_boss_region_point(split_points, segment.get("end", Vector2.ZERO), epsilon)
+		if segment_id == start_segment_id:
+			_append_unique_boss_region_point(split_points, start_point, epsilon)
+		split_points_by_segment[segment_id] = split_points
+
+	for segment_index in range(boundary_segments.size()):
+		for other_index in range(segment_index + 1, boundary_segments.size()):
+			var intersections := _collect_boss_region_segment_intersections(
+				boundary_segments[segment_index],
+				boundary_segments[other_index],
+				epsilon
+			)
+			if intersections.is_empty():
+				continue
+
+			var segment_id := _stringify_value(boundary_segments[segment_index].get("id", ""), "")
+			var other_id := _stringify_value(boundary_segments[other_index].get("id", ""), "")
+			var segment_points: Array[Vector2] = split_points_by_segment.get(segment_id, [])
+			var other_points: Array[Vector2] = split_points_by_segment.get(other_id, [])
+			for intersection_point in intersections:
+				_append_unique_boss_region_point(segment_points, intersection_point, epsilon)
+				_append_unique_boss_region_point(other_points, intersection_point, epsilon)
+			split_points_by_segment[segment_id] = segment_points
+			split_points_by_segment[other_id] = other_points
+
+	var nodes: Array[Dictionary] = []
+	var edges: Array[Dictionary] = []
+	var edge_keys: Dictionary = {}
+	for segment in boundary_segments:
+		var segment_id := _stringify_value(segment.get("id", ""), "")
+		var segment_type := _stringify_value(segment.get("type", ""), "")
+		var split_points: Array[Vector2] = split_points_by_segment.get(segment_id, [])
+		var ordered_points := _sort_boss_region_points_on_segment(split_points, segment, epsilon)
+		for point_index in range(ordered_points.size() - 1):
+			var from_point: Vector2 = ordered_points[point_index]
+			var to_point: Vector2 = ordered_points[point_index + 1]
+			if from_point.distance_to(to_point) <= epsilon:
+				continue
+
+			var from_node_id := _find_or_append_boss_region_node(nodes, from_point, epsilon)
+			var to_node_id := _find_or_append_boss_region_node(nodes, to_point, epsilon)
+			if from_node_id == to_node_id:
+				continue
+
+			var edge_key := _build_boss_region_edge_key(segment_type, from_node_id, to_node_id)
+			if edge_keys.has(edge_key):
+				continue
+
+			var edge_index := edges.size()
+			edges.append({
+				"a": from_node_id,
+				"b": to_node_id,
+				"type": segment_type
+			})
+			edge_keys[edge_key] = true
+			_append_boss_region_node_edge(nodes, from_node_id, edge_index)
+			_append_boss_region_node_edge(nodes, to_node_id, edge_index)
+	}
+
+	return {
+		"nodes": nodes,
+		"edges": edges,
+		"start_node_id": _find_boss_region_node_id(nodes, start_point, epsilon)
+	}
+
+
+func _collect_boss_region_segment_intersections(segment_a: Dictionary, segment_b: Dictionary, epsilon: float) -> Array[Vector2]:
+	var intersections: Array[Vector2] = []
+	var a_start: Vector2 = segment_a.get("start", Vector2.ZERO)
+	var a_end: Vector2 = segment_a.get("end", a_start)
+	var b_start: Vector2 = segment_b.get("start", Vector2.ZERO)
+	var b_end: Vector2 = segment_b.get("end", b_start)
+	var a_horizontal := absf(a_start.y - a_end.y) <= epsilon
+	var b_horizontal := absf(b_start.y - b_end.y) <= epsilon
+
+	if a_horizontal != b_horizontal:
+		var horizontal_start := a_start if a_horizontal else b_start
+		var horizontal_end := a_end if a_horizontal else b_end
+		var vertical_start := b_start if a_horizontal else a_start
+		var vertical_end := b_end if a_horizontal else a_end
+		var candidate_point := Vector2(vertical_start.x, horizontal_start.y)
+		if (
+			candidate_point.x >= minf(horizontal_start.x, horizontal_end.x) - epsilon
+			and candidate_point.x <= maxf(horizontal_start.x, horizontal_end.x) + epsilon
+			and candidate_point.y >= minf(vertical_start.y, vertical_end.y) - epsilon
+			and candidate_point.y <= maxf(vertical_start.y, vertical_end.y) + epsilon
+		):
+			_append_unique_boss_region_point(intersections, candidate_point, epsilon)
+		return intersections
+
+	if a_horizontal and absf(a_start.y - b_start.y) <= epsilon:
+		for candidate_point in [a_start, a_end, b_start, b_end]:
+			if _is_point_on_segment(candidate_point, a_start, a_end, epsilon) and _is_point_on_segment(candidate_point, b_start, b_end, epsilon):
+				_append_unique_boss_region_point(intersections, candidate_point, epsilon)
+		return intersections
+
+	if !a_horizontal and absf(a_start.x - b_start.x) <= epsilon:
+		for candidate_point in [a_start, a_end, b_start, b_end]:
+			if _is_point_on_segment(candidate_point, a_start, a_end, epsilon) and _is_point_on_segment(candidate_point, b_start, b_end, epsilon):
+				_append_unique_boss_region_point(intersections, candidate_point, epsilon)
+		return intersections
+
+	return intersections
+
+
+func _append_unique_boss_region_point(points: Array[Vector2], point: Vector2, epsilon: float) -> void:
+	for existing_point in points:
+		if existing_point.distance_to(point) <= epsilon:
+			return
+	points.append(point)
+
+
+func _sort_boss_region_points_on_segment(points: Array[Vector2], segment: Dictionary, epsilon: float) -> Array[Vector2]:
+	var ordered_points: Array[Vector2] = []
+	for point in points:
+		_append_unique_boss_region_point(ordered_points, point, epsilon)
+
+	var segment_start: Vector2 = segment.get("start", Vector2.ZERO)
+	var segment_end: Vector2 = segment.get("end", segment_start)
+	var horizontal := absf(segment_start.y - segment_end.y) <= epsilon
+	ordered_points.sort_custom(func(a: Vector2, b: Vector2) -> bool:
+		if horizontal:
+			if absf(a.x - b.x) > epsilon:
+				return a.x < b.x
+			return a.y < b.y
+		if absf(a.y - b.y) > epsilon:
+			return a.y < b.y
+		return a.x < b.x
+	)
+	return ordered_points
+
+
+func _find_or_append_boss_region_node(nodes: Array[Dictionary], point: Vector2, epsilon: float) -> int:
+	var node_id := _find_boss_region_node_id(nodes, point, epsilon)
+	if node_id >= 0:
+		return node_id
+
+	nodes.append({
+		"point": point,
+		"edges": []
+	})
+	return nodes.size() - 1
+
+
+func _find_boss_region_node_id(nodes: Array[Dictionary], point: Vector2, epsilon: float) -> int:
+	for node_index in range(nodes.size()):
+		var node_point: Vector2 = nodes[node_index].get("point", Vector2.ZERO)
+		if node_point.distance_to(point) <= epsilon:
+			return node_index
+	return -1
+
+
+func _append_boss_region_node_edge(nodes: Array[Dictionary], node_id: int, edge_index: int) -> void:
+	if node_id < 0 or node_id >= nodes.size():
+		return
+	var edges_for_node: Array = nodes[node_id].get("edges", [])
+	edges_for_node.append(edge_index)
+	nodes[node_id]["edges"] = edges_for_node
+
+
+func _build_boss_region_edge_key(segment_type: String, node_a: int, node_b: int) -> String:
+	var min_node := mini(node_a, node_b)
+	var max_node := maxi(node_a, node_b)
+	return "%s:%d:%d" % [segment_type, min_node, max_node]
+
+
+func _trace_boss_region_loop_clockwise(graph: Dictionary, epsilon: float) -> PackedVector2Array:
+	var nodes: Array[Dictionary] = graph.get("nodes", [])
+	var edges: Array[Dictionary] = graph.get("edges", [])
+	var start_node_id := int(graph.get("start_node_id", -1))
+	if start_node_id < 0 or start_node_id >= nodes.size():
+		return PackedVector2Array()
+
+	var current_node_id := start_node_id
+	var previous_node_id := -1
+	var incoming_direction := Vector2.RIGHT
+	var visited_directed_edges: Dictionary = {}
+	var loop_points := PackedVector2Array()
+	loop_points.append(nodes[start_node_id].get("point", Vector2.ZERO))
+	var max_steps := maxi(edges.size() * 2 + 4, 8)
+	for step in range(max_steps):
+		var next_step := _choose_next_boss_region_step(
+			nodes,
+			edges,
+			current_node_id,
+			previous_node_id,
+			incoming_direction,
+			step == 0,
+			epsilon
+		)
+		if !bool(next_step.get("found", false)):
+			return PackedVector2Array()
+
+		var next_node_id := int(next_step.get("node_id", -1))
+		var edge_index := int(next_step.get("edge_index", -1))
+		if next_node_id < 0 or edge_index < 0:
+			return PackedVector2Array()
+
+		var directed_edge_key := "%d>%d:%d" % [current_node_id, next_node_id, edge_index]
+		if visited_directed_edges.has(directed_edge_key):
+			return PackedVector2Array()
+		visited_directed_edges[directed_edge_key] = true
+
+		loop_points.append(nodes[next_node_id].get("point", Vector2.ZERO))
+		if next_node_id == start_node_id:
+			if loop_points.size() < 4:
+				return PackedVector2Array()
+			return PlayfieldBoundary.sanitize_loop(loop_points)
+
+		previous_node_id = current_node_id
+		current_node_id = next_node_id
+		incoming_direction = next_step.get("direction", Vector2.ZERO)
+
+	return PackedVector2Array()
+
+
+func _choose_next_boss_region_step(
+	nodes: Array[Dictionary],
+	edges: Array[Dictionary],
+	current_node_id: int,
+	previous_node_id: int,
+	incoming_direction: Vector2,
+	is_start_step: bool,
+	epsilon: float
+) -> Dictionary:
+	if current_node_id < 0 or current_node_id >= nodes.size():
+		return {"found": false}
+
+	var current_node: Dictionary = nodes[current_node_id]
+	var current_point: Vector2 = current_node.get("point", Vector2.ZERO)
+	var candidate_steps: Array[Dictionary] = []
+	var raw_edges: Array = current_node.get("edges", [])
+	for raw_edge_index in raw_edges:
+		var edge_index := int(raw_edge_index)
+		if edge_index < 0 or edge_index >= edges.size():
+			continue
+
+		var edge: Dictionary = edges[edge_index]
+		var node_a := int(edge.get("a", -1))
+		var node_b := int(edge.get("b", -1))
+		var next_node_id := node_b if node_a == current_node_id else node_a
+		if next_node_id < 0 or next_node_id >= nodes.size():
+			continue
+		if next_node_id == previous_node_id:
+			continue
+
+		var next_point: Vector2 = nodes[next_node_id].get("point", Vector2.ZERO)
+		var step_direction := next_point - current_point
+		if step_direction.length_squared() <= epsilon * epsilon:
+			continue
+		step_direction = step_direction.normalized()
+		if is_start_step and step_direction.dot(Vector2.RIGHT) > 1.0 - 0.001:
+			continue
+
+		candidate_steps.append({
+			"found": true,
+			"edge_index": edge_index,
+			"node_id": next_node_id,
+			"direction": step_direction,
+			"type": _stringify_value(edge.get("type", ""), ""),
+			"turn_angle": fposmod(incoming_direction.angle_to(step_direction), TAU),
+			"distance": current_point.distance_to(next_point)
+		})
+
+	var prioritized_steps := candidate_steps
+	for candidate in candidate_steps:
+		if _stringify_value(candidate.get("type", ""), "") == "green":
+			prioritized_steps = []
+			for green_candidate in candidate_steps:
+				if _stringify_value(green_candidate.get("type", ""), "") == "green":
+					prioritized_steps.append(green_candidate)
+			break
+
+	if prioritized_steps.is_empty():
+		return {"found": false}
+
+	var best_step: Dictionary = prioritized_steps[0]
+	for candidate in prioritized_steps:
+		var candidate_angle := float(candidate.get("turn_angle", TAU))
+		var best_angle := float(best_step.get("turn_angle", TAU))
+		if candidate_angle < best_angle - epsilon:
+			best_step = candidate
+			continue
+		if is_equal_approx(candidate_angle, best_angle):
+			var candidate_distance := float(candidate.get("distance", INF))
+			var best_distance := float(best_step.get("distance", INF))
+			if candidate_distance < best_distance - epsilon:
+				best_step = candidate
+	}
+	return best_step
 
 
 func _recalculate_claimed_area() -> void:
