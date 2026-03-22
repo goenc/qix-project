@@ -61,7 +61,11 @@ var vertical_guide_indices_by_x: Dictionary = {}
 var horizontal_guide_indices_by_y: Dictionary = {}
 var vertical_guide_axis_keys: Array[int] = []
 var horizontal_guide_axis_keys: Array[int] = []
+var playfield_area_cached := 0.0
 var claimed_area := 0.0
+var claimed_ratio_cached := 0.0
+var boss_region_area_cached := 0.0
+var boss_region_ratio_cached := 0.0
 var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
 var game_over := false
 var show_vertical_guides := true
@@ -139,26 +143,43 @@ func set_show_area_percent_labels_from_debug(enabled: bool) -> void:
 	_sync_hud()
 
 
+func _refresh_playfield_area_cache() -> void:
+	playfield_area_cached = maxf(0.0, playfield_rect.size.x * playfield_rect.size.y)
+	_refresh_claimed_ratio_cache()
+	_refresh_boss_region_ratio_cache()
+
+
+func _refresh_claimed_ratio_cache() -> void:
+	claimed_ratio_cached = 0.0
+	if playfield_area_cached > 0.0:
+		claimed_ratio_cached = clampf(claimed_area / playfield_area_cached, 0.0, 1.0)
+
+
+func _refresh_boss_region_ratio_cache() -> void:
+	boss_region_ratio_cached = 0.0
+	if playfield_area_cached > 0.0 and boss_region_area_cached > 0.0:
+		boss_region_ratio_cached = clampf(boss_region_area_cached / playfield_area_cached, 0.0, 1.0)
+
+
+func _set_boss_region_polygon(polygon: PackedVector2Array) -> void:
+	boss_region_polygon = polygon
+	boss_region_area_cached = 0.0
+	if boss_region_polygon.size() >= 3:
+		boss_region_area_cached = PlayfieldBoundary.polygon_area(boss_region_polygon)
+	_refresh_boss_region_ratio_cache()
+
+
+func _sync_hud_area_labels() -> void:
+	if show_area_percent_labels:
+		claimed_label.text = "CLAIMED: %d%%" % int(round(claimed_ratio_cached * 100.0))
+		boss_region_label.text = "BOSS REGION: %d%%" % int(round(boss_region_ratio_cached * 100.0))
+		return
+	claimed_label.text = "CLAIMED: OFF"
+	boss_region_label.text = "BOSS REGION: OFF"
+
+
 func _sync_hud() -> void:
-	var playfield_area := playfield_rect.size.x * playfield_rect.size.y
-	var claimed_ratio := 0.0
-	if playfield_area > 0.0:
-		claimed_ratio = clampf(claimed_area / playfield_area, 0.0, 1.0)
-	if show_area_percent_labels:
-		claimed_label.text = "CLAIMED: %d%%" % int(round(claimed_ratio * 100.0))
-	else:
-		claimed_label.text = "CLAIMED: OFF"
-	var boss_region_ratio := 0.0
-	if playfield_area > 0.0 and boss_region_polygon.size() >= 3:
-		boss_region_ratio = clampf(
-			PlayfieldBoundary.polygon_area(boss_region_polygon) / playfield_area,
-			0.0,
-			1.0
-		)
-	if show_area_percent_labels:
-		boss_region_label.text = "BOSS REGION: %d%%" % int(round(boss_region_ratio * 100.0))
-	else:
-		boss_region_label.text = "BOSS REGION: OFF"
+	_sync_hud_area_labels()
 	_update_hp_label()
 
 	if game_over:
@@ -259,6 +280,7 @@ func _on_viewport_size_changed() -> void:
 
 func _recalculate_playfield_rect() -> void:
 	playfield_rect = _create_playfield_rect()
+	_refresh_playfield_area_cache()
 	if stage_cover_polygon.size() >= 3:
 		_rebuild_stage_cover_uvs()
 
@@ -312,13 +334,14 @@ func _initialize_outer_loop_from_rect() -> void:
 	guide_partition_fill_entries.clear()
 	guide_partition_fill_polygons_by_key.clear()
 	guide_partition_fill_entry_key_sequence = 0
-	boss_region_polygon = PackedVector2Array()
+	_set_boss_region_polygon(PackedVector2Array())
 	queue_redraw()
 	inactive_border_segments.clear()
 	inactive_border_segment_aabbs.clear()
 	capture_preview_active = false
 	if claimed_polygons.is_empty():
 		claimed_area = 0.0
+		_refresh_claimed_ratio_cache()
 	_rebuild_spatial_caches()
 	_rebuild_guide_axis_indices()
 	_refresh_guide_segments()
@@ -450,7 +473,10 @@ func _append_claimed_capture_results(candidate_loops: Array[Dictionary], retaine
 			claimed_polygons.append(captured_polygon)
 			captured_polygons_delta.append(captured_polygon)
 			captured_polygon_aabbs.append(_build_points_aabb(captured_polygon))
-			added_claimed_area += PlayfieldBoundary.polygon_area(captured_polygon)
+			var captured_polygon_area := float(candidate_loops[index].get("area", -1.0))
+			if captured_polygon_area < 0.0:
+				captured_polygon_area = PlayfieldBoundary.polygon_area(captured_polygon)
+			added_claimed_area += captured_polygon_area
 		var removed_path: PackedVector2Array = candidate_loops[index].get("boundary_path", PackedVector2Array())
 		var removed_segments := _polyline_to_segments(removed_path)
 		if removed_segments.is_empty():
@@ -469,30 +495,26 @@ func _append_claimed_capture_results(candidate_loops: Array[Dictionary], retaine
 	}
 
 
-func _collect_dirty_guide_indices_from_capture_delta(capture_delta: Dictionary) -> Array[int]:
+func _build_capture_context(capture_delta: Dictionary, capture_generation: int) -> Dictionary:
+	return {
+		"capture_delta": capture_delta,
+		"capture_generation": capture_generation,
+		"captured_polygons": _extract_captured_polygons_from_capture_delta(capture_delta),
+		"captured_polygon_aabbs": _extract_capture_delta_rects(capture_delta, "captured_polygon_aabbs"),
+		"inactive_segment_aabbs": _extract_capture_delta_rects(capture_delta, "inactive_segment_aabbs"),
+		"added_claimed_area": float(capture_delta.get("added_claimed_area", 0.0)),
+		"guide_epsilon": _get_guide_epsilon()
+	}
+
+
+func _collect_dirty_guide_indices_from_capture_context(capture_context: Dictionary) -> Array[int]:
 	var dirty_indices: Array[int] = []
-	var captured_polygons_delta: Array[PackedVector2Array] = []
-	if capture_delta.has("captured_polygons"):
-		captured_polygons_delta = capture_delta["captured_polygons"]
-	var inactive_segments_delta: Array[PackedVector2Array] = []
-	if capture_delta.has("inactive_segments"):
-		inactive_segments_delta = capture_delta["inactive_segments"]
-	if captured_polygons_delta.is_empty() and inactive_segments_delta.is_empty():
+	var captured_rects: Array[Rect2] = capture_context.get("captured_polygon_aabbs", [])
+	var inactive_rects: Array[Rect2] = capture_context.get("inactive_segment_aabbs", [])
+	if captured_rects.is_empty() and inactive_rects.is_empty():
 		return dirty_indices
 
-	var epsilon := _get_guide_epsilon()
-	var captured_rects: Array[Rect2] = []
-	for polygon in captured_polygons_delta:
-		if polygon.size() < 3:
-			continue
-		captured_rects.append(_build_points_aabb(polygon))
-
-	var inactive_rects: Array[Rect2] = []
-	for segment in inactive_segments_delta:
-		if segment.size() < 2:
-			continue
-		inactive_rects.append(_build_points_aabb(segment))
-
+	var epsilon := float(capture_context.get("guide_epsilon", _get_guide_epsilon()))
 	var candidate_indices := _collect_candidate_guide_indices_from_rects(captured_rects, inactive_rects, epsilon)
 	for index in candidate_indices:
 		if _guide_segment_overlaps_capture_delta(guide_segments[index], captured_rects, inactive_rects, epsilon):
@@ -745,16 +767,23 @@ func _build_segment_aabb_from_points(segment_start: Vector2, segment_end: Vector
 	return _build_points_aabb(segment)
 
 
+func _extract_capture_delta_rects(capture_delta: Dictionary, key: String) -> Array[Rect2]:
+	var rects: Array[Rect2] = []
+	if !capture_delta.has(key):
+		return rects
+	for raw_rect in capture_delta[key]:
+		if typeof(raw_rect) != TYPE_RECT2:
+			continue
+		rects.append(raw_rect)
+	return rects
+
+
 func _append_capture_delta_aabbs(capture_delta: Dictionary) -> void:
-	var captured_polygon_aabbs: Array[Rect2] = []
-	if capture_delta.has("captured_polygon_aabbs"):
-		captured_polygon_aabbs = capture_delta["captured_polygon_aabbs"]
+	var captured_polygon_aabbs := _extract_capture_delta_rects(capture_delta, "captured_polygon_aabbs")
 	if !captured_polygon_aabbs.is_empty():
 		claimed_polygon_aabbs.append_array(captured_polygon_aabbs)
 
-	var inactive_segment_aabbs: Array[Rect2] = []
-	if capture_delta.has("inactive_segment_aabbs"):
-		inactive_segment_aabbs = capture_delta["inactive_segment_aabbs"]
+	var inactive_segment_aabbs := _extract_capture_delta_rects(capture_delta, "inactive_segment_aabbs")
 	if !inactive_segment_aabbs.is_empty():
 		inactive_border_segment_aabbs.append_array(inactive_segment_aabbs)
 
@@ -979,21 +1008,22 @@ func _is_pending_guide_captured(
 	)
 
 
-func _collect_guide_capture_actions(
-	capture_delta: Dictionary,
-	capture_generation: int
-) -> Dictionary:
-	var actions := {
-		"remove": [],
-		"confirm": [],
-		"reresolve": []
-	}
-	var captured_polygons_delta := _extract_captured_polygons_from_capture_delta(capture_delta)
-	var captured_polygon_aabbs := _build_polygon_aabbs(captured_polygons_delta)
-	var epsilon := _get_guide_epsilon()
+func _resolve_pending_guide_segment_for_capture(guide_segment: Dictionary) -> Dictionary:
+	return _resolve_guide_segment(_build_confirmed_guide_segment(guide_segment), true)
+
+
+func _reresolve_guide_segment_for_capture(guide_segment: Dictionary) -> Dictionary:
+	return _resolve_guide_segment(_reset_guide_segment_for_reresolve(guide_segment), true)
+
+
+func _collect_pending_guide_capture_actions(capture_context: Dictionary, actions: Dictionary) -> void:
+	var captured_polygons_delta: Array[PackedVector2Array] = capture_context.get("captured_polygons", [])
+	var captured_polygon_aabbs: Array[Rect2] = capture_context.get("captured_polygon_aabbs", [])
+	var capture_generation := int(capture_context.get("capture_generation", -1))
+	var epsilon := float(capture_context.get("guide_epsilon", _get_guide_epsilon()))
 	var pending_indices := _collect_pending_guide_indices_for_capture(capture_generation)
 	for index in pending_indices:
-		var resolved_segment := _resolve_guide_segment(_build_confirmed_guide_segment(guide_segments[index]), true)
+		var resolved_segment := _resolve_pending_guide_segment_for_capture(guide_segments[index])
 		if _is_pending_guide_captured(resolved_segment, captured_polygons_delta, captured_polygon_aabbs, epsilon):
 			actions["remove"].append(index)
 			continue
@@ -1002,10 +1032,16 @@ func _collect_guide_capture_actions(
 			"segment": resolved_segment
 		})
 
-	if captured_polygons_delta.is_empty():
-		return actions
 
-	var candidate_indices := _collect_dirty_guide_indices_from_capture_delta(capture_delta)
+func _collect_dirty_guide_capture_actions(capture_context: Dictionary, actions: Dictionary) -> void:
+	var captured_polygons_delta: Array[PackedVector2Array] = capture_context.get("captured_polygons", [])
+	if captured_polygons_delta.is_empty():
+		return
+
+	var captured_polygon_aabbs: Array[Rect2] = capture_context.get("captured_polygon_aabbs", [])
+	var capture_generation := int(capture_context.get("capture_generation", -1))
+	var epsilon := float(capture_context.get("guide_epsilon", _get_guide_epsilon()))
+	var candidate_indices := _collect_dirty_guide_indices_from_capture_context(capture_context)
 	for index in candidate_indices:
 		if index < 0 or index >= guide_segments.size():
 			continue
@@ -1026,6 +1062,16 @@ func _collect_guide_capture_actions(
 			epsilon
 		):
 			actions["reresolve"].append(index)
+
+
+func _collect_guide_capture_actions(capture_context: Dictionary) -> Dictionary:
+	var actions := {
+		"remove": [],
+		"confirm": [],
+		"reresolve": []
+	}
+	_collect_pending_guide_capture_actions(capture_context, actions)
+	_collect_dirty_guide_capture_actions(capture_context, actions)
 	return actions
 
 
@@ -1091,6 +1137,7 @@ func _extract_capture_action_index(action_name: String, action_data: Variant) ->
 
 
 func _apply_capture_guide_actions(capture_actions: Dictionary) -> void:
+	var confirmed_indices: Array[int] = []
 	var confirm_updates: Array = capture_actions.get("confirm", [])
 	for update in confirm_updates:
 		var parsed_index := _extract_capture_action_index("confirm", update)
@@ -1104,6 +1151,7 @@ func _apply_capture_guide_actions(capture_actions: Dictionary) -> void:
 		if typeof(update) != TYPE_DICTIONARY:
 			continue
 		guide_segments[index] = update.get("segment", guide_segments[index])
+		confirmed_indices.append(index)
 
 	var reresolve_indices: Array = capture_actions.get("reresolve", [])
 	for raw_index in reresolve_indices:
@@ -1115,8 +1163,7 @@ func _apply_capture_guide_actions(capture_actions: Dictionary) -> void:
 			continue
 		if index < 0 or index >= guide_segments.size():
 			continue
-		var reset_segment := _reset_guide_segment_for_reresolve(guide_segments[index])
-		guide_segments[index] = _resolve_guide_segment(reset_segment, true)
+		guide_segments[index] = _reresolve_guide_segment_for_capture(guide_segments[index])
 
 	var remove_indices := _sort_unique_descending_indices(capture_actions.get("remove", []))
 	for index in remove_indices:
@@ -1124,45 +1171,102 @@ func _apply_capture_guide_actions(capture_actions: Dictionary) -> void:
 			continue
 		guide_segments.remove_at(index)
 
-	_rebuild_guide_axis_indices()
+	if !remove_indices.is_empty():
+		_rebuild_guide_axis_indices()
+		return
+
+	var needs_axis_key_refresh := false
+	for index in _sort_unique_descending_indices(confirmed_indices):
+		if index < 0 or index >= guide_segments.size():
+			continue
+		_register_guide_axis_index(index, guide_segments[index])
+		needs_axis_key_refresh = true
+	if needs_axis_key_refresh:
+		_rebuild_guide_axis_key_lists()
+
+
+func _apply_claimed_area_capture_delta(capture_context: Dictionary) -> void:
+	claimed_area += float(capture_context.get("added_claimed_area", 0.0))
+	if playfield_area_cached > 0.0:
+		claimed_area = minf(claimed_area, playfield_area_cached)
+	_refresh_claimed_ratio_cache()
 
 
 func _finalize_capture_closed(capture_delta: Dictionary, capture_generation: int) -> void:
-	claimed_area += float(capture_delta.get("added_claimed_area", 0.0))
-	var playfield_area := maxf(0.0, playfield_rect.size.x * playfield_rect.size.y)
-	claimed_area = minf(claimed_area, playfield_area)
+	var capture_context := _build_capture_context(capture_delta, capture_generation)
+	_apply_claimed_area_capture_delta(capture_context)
 	_append_capture_delta_aabbs(capture_delta)
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
-	var capture_actions := _collect_guide_capture_actions(capture_delta, capture_generation)
+	var capture_actions := _collect_guide_capture_actions(capture_context)
 	var affected_vertical_guide_keys := _collect_affected_vertical_guide_keys_from_capture_actions(capture_actions)
 	_apply_capture_guide_actions(capture_actions)
 	_sync_guide_partition_fill_entries_after_capture(affected_vertical_guide_keys, capture_delta)
 	_sync_boss_marker()
 	_recalculate_boss_region_polygon_after_capture()
-	queue_redraw()
 	_sync_hud()
+	queue_redraw()
 
 
-func _recalculate_boss_region_polygon_after_capture() -> void:
+func _build_boss_region_capture_context() -> Dictionary:
 	var epsilon := _get_guide_epsilon()
 	var selection_point := _get_boss_selection_point()
 	var boundary_segments := _build_boss_region_boundary_segments(epsilon)
 	if boundary_segments.is_empty():
-		return
+		return {}
 
 	var start_hit := _find_boss_region_start_hit(selection_point, boundary_segments, epsilon)
 	if !bool(start_hit.get("hit", false)):
-		return
+		return {}
 
-	var graph := _build_boss_region_graph(boundary_segments, start_hit, epsilon)
-	var traced_loop := _trace_boss_region_loop_clockwise(graph, epsilon)
+	return {
+		"epsilon": epsilon,
+		"selection_point": selection_point,
+		"boundary_segments": boundary_segments,
+		"start_hit": start_hit
+	}
+
+
+func _build_boss_region_graph_from_capture_context(boss_region_context: Dictionary) -> Dictionary:
+	var boundary_segments: Array[Dictionary] = boss_region_context.get("boundary_segments", [])
+	var start_hit: Dictionary = boss_region_context.get("start_hit", {})
+	if boundary_segments.is_empty() or !bool(start_hit.get("hit", false)):
+		return {}
+	return _build_boss_region_graph(
+		boundary_segments,
+		start_hit,
+		float(boss_region_context.get("epsilon", _get_guide_epsilon()))
+	)
+
+
+func _is_valid_traced_boss_region_loop(
+	traced_loop: PackedVector2Array,
+	selection_point: Vector2,
+	epsilon: float
+) -> bool:
 	if traced_loop.size() < 3:
-		return
-	if !Geometry2D.is_point_in_polygon(selection_point, traced_loop) and !PlayfieldBoundary.is_point_on_loop(traced_loop, selection_point, epsilon):
+		return false
+	return (
+		Geometry2D.is_point_in_polygon(selection_point, traced_loop)
+		or PlayfieldBoundary.is_point_on_loop(traced_loop, selection_point, epsilon)
+	)
+
+
+func _recalculate_boss_region_polygon_after_capture() -> void:
+	var boss_region_context := _build_boss_region_capture_context()
+	if boss_region_context.is_empty():
 		return
 
-	boss_region_polygon = traced_loop
+	var epsilon := float(boss_region_context.get("epsilon", _get_guide_epsilon()))
+	var selection_point: Vector2 = boss_region_context.get("selection_point", Vector2.ZERO)
+	var graph := _build_boss_region_graph_from_capture_context(boss_region_context)
+	if graph.is_empty():
+		return
+	var traced_loop := _trace_boss_region_loop_clockwise(graph, epsilon)
+	if !_is_valid_traced_boss_region_loop(traced_loop, selection_point, epsilon):
+		return
+
+	_set_boss_region_polygon(traced_loop)
 
 
 func _build_boss_region_boundary_segments(epsilon: float) -> Array[Dictionary]:
@@ -1607,8 +1711,8 @@ func _recalculate_claimed_area() -> void:
 	for polygon in claimed_polygons:
 		total_area += PlayfieldBoundary.polygon_area(polygon)
 
-	var playfield_area := maxf(0.0, playfield_rect.size.x * playfield_rect.size.y)
-	claimed_area = minf(total_area, playfield_area) if playfield_area > 0.0 else total_area
+	claimed_area = minf(total_area, playfield_area_cached) if playfield_area_cached > 0.0 else total_area
+	_refresh_claimed_ratio_cache()
 
 
 func _refresh_current_outer_loop_metrics() -> void:
@@ -1840,17 +1944,8 @@ func _build_guide_partition_update_region(
 
 
 func _collect_capture_delta_aabbs_for_partition_update(capture_delta: Dictionary) -> Array[Rect2]:
-	var rects: Array[Rect2] = []
-	if capture_delta.has("captured_polygon_aabbs"):
-		for raw_rect in capture_delta["captured_polygon_aabbs"]:
-			if typeof(raw_rect) != TYPE_RECT2:
-				continue
-			rects.append(raw_rect)
-	if capture_delta.has("inactive_segment_aabbs"):
-		for raw_rect in capture_delta["inactive_segment_aabbs"]:
-			if typeof(raw_rect) != TYPE_RECT2:
-				continue
-			rects.append(raw_rect)
+	var rects := _extract_capture_delta_rects(capture_delta, "captured_polygon_aabbs")
+	rects.append_array(_extract_capture_delta_rects(capture_delta, "inactive_segment_aabbs"))
 	return rects
 
 

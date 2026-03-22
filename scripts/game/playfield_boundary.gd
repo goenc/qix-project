@@ -520,12 +520,14 @@ static func split_outer_loop_by_trail(
 				polygon.append(point)
 
 		polygon = sanitize_loop(polygon)
-		if polygon.size() < 3 or polygon_area(polygon) <= epsilon:
+		var area := polygon_area(polygon)
+		if polygon.size() < 3 or area <= epsilon:
 			continue
 
 		candidates.append({
 			"loop": polygon,
 			"polygon": polygon,
+			"area": area,
 			"trail_points": sanitized_trail,
 			"boundary_path": boundary_path,
 			"clockwise": clockwise
@@ -551,7 +553,9 @@ static func select_loop_containing_point(
 		var contains_point := Geometry2D.is_point_in_polygon(point, loop) or is_point_on_loop(loop, point, epsilon)
 		var projection := project_point_to_loop(loop, point)
 		var distance := float(projection.get("distance", INF))
-		var area := polygon_area(loop)
+		var area := float(candidate_loops[index].get("area", -1.0))
+		if area < 0.0:
+			area = polygon_area(loop)
 		if contains_point:
 			if distance < best_distance - epsilon or (is_equal_approx(distance, best_distance) and area > best_area):
 				selected_index = index
