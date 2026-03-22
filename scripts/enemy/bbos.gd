@@ -36,6 +36,7 @@ var last_corner_hit_position := Vector2(INF, INF)
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 	rng.randomize()
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
@@ -391,17 +392,23 @@ func _attempt_player_hit(from_point: Vector2, to_point: Vector2, attack_radius: 
 		return
 
 	var targets: Dictionary = player.call("get_boss_hit_targets")
+	var body_hitbox_enabled := bool(targets.get("player", false))
+	var trail_hitbox_enabled := bool(targets.get("trail", false))
+	if player.has_method("is_body_damage_hitbox_enabled"):
+		body_hitbox_enabled = bool(player.call("is_body_damage_hitbox_enabled"))
+	if player.has_method("is_trail_damage_hitbox_enabled"):
+		trail_hitbox_enabled = bool(player.call("is_trail_damage_hitbox_enabled"))
 	var best_hit := {"hit": false}
 	var swept_aabb := _build_swept_aabb(from_point, to_point, attack_radius)
 
-	if bool(targets.get("player", false)) and player.has_method("get_body_damage_rect"):
+	if body_hitbox_enabled and player.has_method("get_body_damage_rect"):
 		var body_rect: Rect2 = player.call("get_body_damage_rect")
 		if _rects_overlap(swept_aabb, body_rect):
 			var body_hit := _find_segment_rect_contact(from_point, to_point, body_rect, attack_radius)
 			if bool(body_hit.get("hit", false)):
 				best_hit = body_hit
 
-	if bool(targets.get("trail", false)) and player.has_method("get_active_damage_trail_segments"):
+	if trail_hitbox_enabled and player.has_method("get_active_damage_trail_segments"):
 		var trail_segments: Array = []
 		var trail_segment_aabbs: Array = []
 		if player.has_method("get_active_damage_trail_data"):

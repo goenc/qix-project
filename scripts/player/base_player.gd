@@ -263,7 +263,17 @@ func get_boss_hit_targets() -> Dictionary:
 	}
 
 
+func is_body_damage_hitbox_enabled() -> bool:
+	return bool(get_boss_hit_targets().get("player", false))
+
+
+func is_trail_damage_hitbox_enabled() -> bool:
+	return bool(get_boss_hit_targets().get("trail", false))
+
+
 func get_body_damage_rect() -> Rect2:
+	if !is_body_damage_hitbox_enabled():
+		return Rect2(position, Vector2.ZERO)
 	if !is_instance_valid(pick_collision_shape):
 		return Rect2(position, Vector2.ZERO)
 
@@ -281,14 +291,18 @@ func get_body_damage_rect() -> Rect2:
 
 
 func get_active_damage_trail_segments() -> Array[PackedVector2Array]:
-	var targets := get_boss_hit_targets()
-	if !bool(targets.get("trail", false)):
+	if !is_trail_damage_hitbox_enabled():
 		var empty_segments: Array[PackedVector2Array] = []
 		return empty_segments
 	return active_damage_trail_segments
 
 
 func get_active_damage_trail_data() -> Dictionary:
+	if !is_trail_damage_hitbox_enabled():
+		return {
+			"segments": [],
+			"aabbs": []
+		}
 	return {
 		"segments": active_damage_trail_segments,
 		"aabbs": active_damage_trail_aabbs
@@ -1105,8 +1119,7 @@ func _update_damage_hitboxes() -> void:
 	if !is_instance_valid(pick_area):
 		return
 
-	var targets := get_boss_hit_targets()
-	var enable_player_hitbox := bool(targets.get("player", false))
+	var enable_player_hitbox := is_body_damage_hitbox_enabled()
 	pick_area.monitoring = enable_player_hitbox
 	pick_area.monitorable = enable_player_hitbox
 	if is_instance_valid(pick_collision_shape):
