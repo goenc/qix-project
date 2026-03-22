@@ -2,6 +2,8 @@ extends Node2D
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const MAX_REFLECTIONS_PER_FRAME := 2
+const VIEWPORT_BASE_DIAMETER_RATIO := 0.5
+const MIN_BOSS_REGION_DIAMETER_RATIO := 0.1
 
 signal position_changed(world_position: Vector2)
 
@@ -13,8 +15,7 @@ signal position_changed(world_position: Vector2)
 @export var min_collision_radius: float = 8.0
 @export var body_rotation_speed_deg: float = 90.0
 
-var base_visual_diameter := 0.0
-var min_diameter_ratio := 0.1
+var initial_visual_diameter := 0.0
 var boss_region_ratio := 1.0
 
 @onready var body: Sprite2D = $Body
@@ -31,7 +32,7 @@ var has_spawned := false
 var velocity := Vector2.ZERO
 var direction_change_timer := 0.0
 var base_scale := Vector2.ONE
-var base_collision_radius := 0.0
+var initial_collision_radius := 0.0
 var last_reported_position := Vector2(INF, INF)
 var corner_stuck_score := 0.0
 var corner_escape_cooldown := 0.0
@@ -44,9 +45,8 @@ func _ready() -> void:
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
 	base_scale = scale
-	base_collision_radius = _get_effective_collision_radius()
-	base_visual_diameter = _resolve_base_visual_diameter()
-	min_collision_radius = base_collision_radius * min_diameter_ratio
+	initial_collision_radius = _get_effective_collision_radius()
+	initial_visual_diameter = _resolve_initial_visual_diameter()
 	_sync_size_to_viewport()
 	var viewport := get_viewport()
 	if is_instance_valid(viewport) and !viewport.size_changed.is_connected(_on_viewport_size_changed):
@@ -191,21 +191,30 @@ func _on_viewport_size_changed() -> void:
 
 
 func _sync_size_to_viewport() -> void:
+	if get_viewport_rect().size.y <= 0.0:
+		return
 	_sync_boss_region_size()
 
 
 func _sync_boss_region_size() -> void:
-	if base_visual_diameter <= 0.0 or base_collision_radius <= 0.0:
+	if initial_visual_diameter <= 0.0 or initial_collision_radius <= 0.0:
 		return
 
-	var diameter_ratio := maxf(min_diameter_ratio, boss_region_ratio)
-	var target_visual_diameter := base_visual_diameter * diameter_ratio
-	var visual_scale := target_visual_diameter / base_visual_diameter
+	var viewport_height := get_viewport_rect().size.y
+	if viewport_height <= 0.0:
+		return
+
+	var base_diameter := viewport_height * VIEWPORT_BASE_DIAMETER_RATIO
+	var diameter_ratio := maxf(MIN_BOSS_REGION_DIAMETER_RATIO, boss_region_ratio)
+	var min_visual_scale := (base_diameter * MIN_BOSS_REGION_DIAMETER_RATIO) / initial_visual_diameter
+	var target_diameter := base_diameter * diameter_ratio
+	var visual_scale := target_diameter / initial_visual_diameter
+	min_collision_radius = initial_collision_radius * min_visual_scale
 	scale = base_scale * visual_scale
-	set_collision_radius(base_collision_radius * visual_scale)
+	set_collision_radius(initial_collision_radius * visual_scale)
 
 
-func _resolve_base_visual_diameter() -> float:
+func _resolve_initial_visual_diameter() -> float:
 	if is_instance_valid(body):
 		var body_rect := body.get_rect()
 		if body_rect.size.x > 0.0 and body_rect.size.y > 0.0:
@@ -214,7 +223,7 @@ func _resolve_base_visual_diameter() -> float:
 			var visual_width := body_rect.size.x * body_scale.x * root_scale.x
 			var visual_height := body_rect.size.y * body_scale.y * root_scale.y
 			return maxf(visual_width, visual_height)
-	return base_collision_radius * 2.0
+	return initial_collision_radius * 2.0
 
 
 func _get_spawnable_rect(rect: Rect2) -> Rect2:
