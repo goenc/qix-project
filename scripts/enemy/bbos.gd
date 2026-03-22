@@ -13,11 +13,11 @@ signal position_changed(world_position: Vector2)
 @export var min_collision_radius: float = 8.0
 @export var body_rotation_speed_deg: float = 90.0
 
-var base_diameter := 0.0
+var base_visual_diameter := 0.0
 var min_diameter_ratio := 0.1
-var boss_region_ratio := 0.0
+var boss_region_ratio := 1.0
 
-@onready var body: Node2D = $Body
+@onready var body: Sprite2D = $Body
 @onready var pick_area: Area2D = $PickArea
 @onready var base_player: Node = get_node_or_null("../BasePlayer")
 
@@ -44,8 +44,8 @@ func _ready() -> void:
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
 	base_scale = scale
-	base_collision_radius = maxf(collision_radius, maxf(min_collision_radius, 0.0))
-	base_diameter = base_collision_radius * 2.0
+	base_collision_radius = _get_effective_collision_radius()
+	base_visual_diameter = _resolve_base_visual_diameter()
 	min_collision_radius = base_collision_radius * min_diameter_ratio
 	_sync_size_to_viewport()
 	var viewport := get_viewport()
@@ -195,13 +195,26 @@ func _sync_size_to_viewport() -> void:
 
 
 func _sync_boss_region_size() -> void:
-	if base_diameter <= 0.0:
+	if base_visual_diameter <= 0.0 or base_collision_radius <= 0.0:
 		return
 
 	var diameter_ratio := maxf(min_diameter_ratio, boss_region_ratio)
-	var target_diameter := base_diameter * diameter_ratio
-	scale = base_scale * diameter_ratio
-	set_collision_radius(target_diameter * 0.5)
+	var target_visual_diameter := base_visual_diameter * diameter_ratio
+	var visual_scale := target_visual_diameter / base_visual_diameter
+	scale = base_scale * visual_scale
+	set_collision_radius(base_collision_radius * visual_scale)
+
+
+func _resolve_base_visual_diameter() -> float:
+	if is_instance_valid(body):
+		var body_rect := body.get_rect()
+		if body_rect.size.x > 0.0 and body_rect.size.y > 0.0:
+			var body_scale := body.scale.abs()
+			var root_scale := base_scale.abs()
+			var visual_width := body_rect.size.x * body_scale.x * root_scale.x
+			var visual_height := body_rect.size.y * body_scale.y * root_scale.y
+			return maxf(visual_width, visual_height)
+	return base_collision_radius * 2.0
 
 
 func _get_spawnable_rect(rect: Rect2) -> Rect2:

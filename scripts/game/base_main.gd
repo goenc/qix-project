@@ -334,7 +334,8 @@ func _initialize_outer_loop_from_rect() -> void:
 	guide_partition_fill_entries.clear()
 	guide_partition_fill_polygons_by_key.clear()
 	guide_partition_fill_entry_key_sequence = 0
-	_set_boss_region_polygon(PackedVector2Array())
+	var initial_boss_region_polygon := remaining_polygon if remaining_polygon.size() >= 3 else _create_playfield_cover_polygon()
+	_set_boss_region_polygon(initial_boss_region_polygon)
 	_apply_boss_region_ratio_to_bbos()
 	queue_redraw()
 	inactive_border_segments.clear()

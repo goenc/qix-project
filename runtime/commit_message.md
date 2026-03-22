@@ -1,5 +1,5 @@
-ボス領域比率をBBOS直径へ反映
+初期ボス領域とBBOSサイズ基準を修正
 
-・boss_region_ratio_cached を BBOS へ渡し初期化時と再計算時に再反映する処理を追加
-・BBOS のサイズ更新を base 直径と領域比率ベースへ変更し最低直径を元サイズの一割に固定
-・Godot headless で base_main.gd と bbos.gd の check only を実行し短時間起動確認を実施
+・ゲーム開始直後のボス領域をプレイフィールド全体として初期化し比率1.0をBBOSへ反映するよう修正
+・BBOSの基準サイズをBodyの見た目直径から取得し見た目倍率と当たり判定半径を同倍率で同期するよう修正
+・godot_consoleのheadless check-onlyでbase_main.gdとbbos.gdを確認し自動検証で初期比率1.0と縮小追従を確認
