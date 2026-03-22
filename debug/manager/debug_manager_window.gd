@@ -8,6 +8,8 @@ signal hitbox_overlay_toggled(enabled: bool)
 signal pause_toggled(enabled: bool)
 signal vertical_guides_toggled(enabled: bool)
 signal horizontal_guides_toggled(enabled: bool)
+signal area_fills_toggled(enabled: bool)
+signal area_percent_labels_toggled(enabled: bool)
 
 @onready var _open_input_debugger_button: Button = $FeatureButtons/OpenInputDebuggerButton
 @onready var _open_input_log_button: Button = $FeatureButtons/OpenInputLogButton
@@ -16,6 +18,8 @@ signal horizontal_guides_toggled(enabled: bool)
 @onready var _toggle_pause_button: CheckButton = $FeatureButtons/TogglePauseButton
 @onready var _toggle_vertical_guides_button: CheckButton = $FeatureButtons/ToggleVerticalGuidesButton
 @onready var _toggle_horizontal_guides_button: CheckButton = $FeatureButtons/ToggleHorizontalGuidesButton
+@onready var _toggle_area_fills_button: CheckButton = $FeatureButtons/ToggleAreaFillsButton
+@onready var _toggle_area_percent_labels_button: CheckButton = $FeatureButtons/ToggleAreaPercentLabelsButton
 
 
 func _ready() -> void:
@@ -34,6 +38,8 @@ func _connect_feature_buttons() -> void:
 	_toggle_pause_button.toggled.connect(_on_toggle_pause_button_toggled)
 	_toggle_vertical_guides_button.toggled.connect(_on_toggle_vertical_guides_button_toggled)
 	_toggle_horizontal_guides_button.toggled.connect(_on_toggle_horizontal_guides_button_toggled)
+	_toggle_area_fills_button.toggled.connect(_on_toggle_area_fills_button_toggled)
+	_toggle_area_percent_labels_button.toggled.connect(_on_toggle_area_percent_labels_button_toggled)
 
 
 func _move_near_main_window() -> void:
@@ -71,6 +77,14 @@ func set_horizontal_guides_enabled(enabled: bool) -> void:
 	_toggle_horizontal_guides_button.set_pressed_no_signal(enabled)
 
 
+func set_area_fills_enabled(enabled: bool) -> void:
+	_toggle_area_fills_button.set_pressed_no_signal(enabled)
+
+
+func set_area_percent_labels_enabled(enabled: bool) -> void:
+	_toggle_area_percent_labels_button.set_pressed_no_signal(enabled)
+
+
 func _on_toggle_hitbox_overlay_button_toggled(enabled: bool) -> void:
 	hitbox_overlay_toggled.emit(enabled)
 
@@ -85,3 +99,11 @@ func _on_toggle_vertical_guides_button_toggled(enabled: bool) -> void:
 
 func _on_toggle_horizontal_guides_button_toggled(enabled: bool) -> void:
 	horizontal_guides_toggled.emit(enabled)
+
+
+func _on_toggle_area_fills_button_toggled(enabled: bool) -> void:
+	area_fills_toggled.emit(enabled)
+
+
+func _on_toggle_area_percent_labels_button_toggled(enabled: bool) -> void:
+	area_percent_labels_toggled.emit(enabled)

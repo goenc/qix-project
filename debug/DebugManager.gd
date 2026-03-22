@@ -16,6 +16,8 @@ var _hitbox_overlay_enabled := false
 var _hitbox_overlay: CanvasItem = null
 var _show_vertical_guides := true
 var _show_horizontal_guides := true
+var _show_area_fills := true
+var _show_area_percent_labels := true
 
 
 func _ready() -> void:
@@ -78,6 +80,18 @@ func set_horizontal_guides_enabled(enabled: bool) -> void:
 	_sync_manager_window_horizontal_guides_state()
 
 
+func set_area_fills_enabled(enabled: bool) -> void:
+	_show_area_fills = enabled
+	_apply_guide_visibility_to_scene()
+	_sync_manager_window_area_fills_state()
+
+
+func set_area_percent_labels_enabled(enabled: bool) -> void:
+	_show_area_percent_labels = enabled
+	_apply_guide_visibility_to_scene()
+	_sync_manager_window_area_percent_labels_state()
+
+
 func is_hitbox_overlay_enabled() -> bool:
 	return _hitbox_overlay_enabled
 
@@ -92,6 +106,14 @@ func is_vertical_guides_enabled() -> bool:
 
 func is_horizontal_guides_enabled() -> bool:
 	return _show_horizontal_guides
+
+
+func is_area_fills_enabled() -> bool:
+	return _show_area_fills
+
+
+func is_area_percent_labels_enabled() -> bool:
+	return _show_area_percent_labels
 
 
 func _show_window(window_id: StringName) -> void:
@@ -148,6 +170,8 @@ func _configure_manager_window(window: DebugManagerWindow) -> void:
 	window.set_pause_enabled(is_game_paused())
 	window.set_vertical_guides_enabled(_show_vertical_guides)
 	window.set_horizontal_guides_enabled(_show_horizontal_guides)
+	window.set_area_fills_enabled(_show_area_fills)
+	window.set_area_percent_labels_enabled(_show_area_percent_labels)
 
 
 func _connect_manager_window_signals(window: DebugManagerWindow) -> void:
@@ -165,6 +189,10 @@ func _connect_manager_window_signals(window: DebugManagerWindow) -> void:
 		window.vertical_guides_toggled.connect(set_vertical_guides_enabled)
 	if !window.horizontal_guides_toggled.is_connected(set_horizontal_guides_enabled):
 		window.horizontal_guides_toggled.connect(set_horizontal_guides_enabled)
+	if !window.area_fills_toggled.is_connected(set_area_fills_enabled):
+		window.area_fills_toggled.connect(set_area_fills_enabled)
+	if !window.area_percent_labels_toggled.is_connected(set_area_percent_labels_enabled):
+		window.area_percent_labels_toggled.connect(set_area_percent_labels_enabled)
 
 
 func _sync_hitbox_overlay_visibility() -> void:
@@ -191,6 +219,8 @@ func _sync_manager_window_pause_state() -> void:
 func _sync_manager_window_guide_states() -> void:
 	_sync_manager_window_vertical_guides_state()
 	_sync_manager_window_horizontal_guides_state()
+	_sync_manager_window_area_fills_state()
+	_sync_manager_window_area_percent_labels_state()
 
 
 func _sync_manager_window_vertical_guides_state() -> void:
@@ -205,6 +235,20 @@ func _sync_manager_window_horizontal_guides_state() -> void:
 	if !is_instance_valid(manager_window):
 		return
 	manager_window.set_horizontal_guides_enabled(_show_horizontal_guides)
+
+
+func _sync_manager_window_area_fills_state() -> void:
+	var manager_window := _windows.get(MANAGER_WINDOW_ID) as DebugManagerWindow
+	if !is_instance_valid(manager_window):
+		return
+	manager_window.set_area_fills_enabled(_show_area_fills)
+
+
+func _sync_manager_window_area_percent_labels_state() -> void:
+	var manager_window := _windows.get(MANAGER_WINDOW_ID) as DebugManagerWindow
+	if !is_instance_valid(manager_window):
+		return
+	manager_window.set_area_percent_labels_enabled(_show_area_percent_labels)
 
 
 func _can_toggle_pause_from_debug_input() -> bool:
@@ -241,13 +285,17 @@ func _apply_guide_visibility_to_scene() -> void:
 	var guide_controller := _resolve_debug_method_target(
 		PackedStringArray([
 			"set_show_vertical_guides_from_debug",
-			"set_show_horizontal_guides_from_debug"
+			"set_show_horizontal_guides_from_debug",
+			"set_show_area_fills_from_debug",
+			"set_show_area_percent_labels_from_debug"
 		])
 	)
 	if !is_instance_valid(guide_controller):
 		return
 	guide_controller.call("set_show_vertical_guides_from_debug", _show_vertical_guides)
 	guide_controller.call("set_show_horizontal_guides_from_debug", _show_horizontal_guides)
+	guide_controller.call("set_show_area_fills_from_debug", _show_area_fills)
+	guide_controller.call("set_show_area_percent_labels_from_debug", _show_area_percent_labels)
 
 
 func _resolve_debug_method_target(method_names: PackedStringArray) -> Node:

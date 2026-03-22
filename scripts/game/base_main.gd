@@ -38,6 +38,7 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 @onready var state_label: Label = $Ui/Root/StateLabel
 @onready var position_label: Label = $Ui/Root/PositionLabel
 @onready var claimed_label: Label = $Ui/Root/ClaimedLabel
+@onready var boss_region_label: Label = $Ui/Root/BossRegionLabel
 @onready var hp_label: Label = $Ui/Root/HpLabel
 @onready var result_label: Label = $Ui/Root/ResultLabel
 
@@ -65,6 +66,8 @@ var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
 var game_over := false
 var show_vertical_guides := true
 var show_horizontal_guides := true
+var show_area_fills := true
+var show_area_percent_labels := true
 var current_capture_generation := 0
 var capture_preview_active := false
 var last_synced_boss_marker_position := Vector2.ZERO
@@ -122,12 +125,40 @@ func set_show_horizontal_guides_from_debug(enabled: bool) -> void:
 	queue_redraw()
 
 
+func set_show_area_fills_from_debug(enabled: bool) -> void:
+	if show_area_fills == enabled:
+		return
+	show_area_fills = enabled
+	queue_redraw()
+
+
+func set_show_area_percent_labels_from_debug(enabled: bool) -> void:
+	if show_area_percent_labels == enabled:
+		return
+	show_area_percent_labels = enabled
+	_sync_hud()
+
+
 func _sync_hud() -> void:
 	var playfield_area := playfield_rect.size.x * playfield_rect.size.y
 	var claimed_ratio := 0.0
 	if playfield_area > 0.0:
 		claimed_ratio = clampf(claimed_area / playfield_area, 0.0, 1.0)
-	claimed_label.text = "CLAIMED: %d%%" % int(round(claimed_ratio * 100.0))
+	if show_area_percent_labels:
+		claimed_label.text = "CLAIMED: %d%%" % int(round(claimed_ratio * 100.0))
+	else:
+		claimed_label.text = "CLAIMED: OFF"
+	var boss_region_ratio := 0.0
+	if playfield_area > 0.0 and boss_region_polygon.size() >= 3:
+		boss_region_ratio = clampf(
+			PlayfieldBoundary.polygon_area(boss_region_polygon) / playfield_area,
+			0.0,
+			1.0
+		)
+	if show_area_percent_labels:
+		boss_region_label.text = "BOSS REGION: %d%%" % int(round(boss_region_ratio * 100.0))
+	else:
+		boss_region_label.text = "BOSS REGION: OFF"
 	_update_hp_label()
 
 	if game_over:
@@ -201,12 +232,13 @@ func _draw() -> void:
 		draw_polygon(stage_cover_polygon, cover_colors, stage_cover_uvs, STAGE_COVER_BACKGROUND_TEXTURE)
 
 	var outer_rect := playfield_rect.grow(playfield_outer_frame_padding)
-	for polygon in claimed_polygons:
-		if polygon.size() >= 3:
-			draw_colored_polygon(polygon, claimed_fill_color)
-	if boss_region_polygon.size() >= 3:
-		draw_colored_polygon(boss_region_polygon, boss_region_fill_color)
-	_draw_guide_partition_fills()
+	if show_area_fills:
+		for polygon in claimed_polygons:
+			if polygon.size() >= 3:
+				draw_colored_polygon(polygon, claimed_fill_color)
+		if boss_region_polygon.size() >= 3:
+			draw_colored_polygon(boss_region_polygon, boss_region_fill_color)
+		_draw_guide_partition_fills()
 	_draw_border_segments(inactive_border_segments, inactive_border_color)
 	_draw_guide_segments()
 	_draw_border_loop(current_outer_loop, playfield_border_color)
@@ -3295,6 +3327,10 @@ func _sync_debug_guide_visibility() -> void:
 		show_vertical_guides = bool(debug_manager.call("is_vertical_guides_enabled"))
 	if debug_manager.has_method("is_horizontal_guides_enabled"):
 		show_horizontal_guides = bool(debug_manager.call("is_horizontal_guides_enabled"))
+	if debug_manager.has_method("is_area_fills_enabled"):
+		show_area_fills = bool(debug_manager.call("is_area_fills_enabled"))
+	if debug_manager.has_method("is_area_percent_labels_enabled"):
+		show_area_percent_labels = bool(debug_manager.call("is_area_percent_labels_enabled"))
 
 
 func _update_hp_label() -> void:
