@@ -1255,15 +1255,18 @@ func _is_valid_traced_boss_region_loop(
 func _recalculate_boss_region_polygon_after_capture() -> void:
 	var boss_region_context := _build_boss_region_capture_context()
 	if boss_region_context.is_empty():
+		_set_boss_region_polygon(PackedVector2Array())
 		return
 
 	var epsilon := float(boss_region_context.get("epsilon", _get_guide_epsilon()))
 	var selection_point: Vector2 = boss_region_context.get("selection_point", Vector2.ZERO)
 	var graph := _build_boss_region_graph_from_capture_context(boss_region_context)
 	if graph.is_empty():
+		_set_boss_region_polygon(PackedVector2Array())
 		return
 	var traced_loop := _trace_boss_region_loop_clockwise(graph, epsilon)
 	if !_is_valid_traced_boss_region_loop(traced_loop, selection_point, epsilon):
+		_set_boss_region_polygon(PackedVector2Array())
 		return
 
 	_set_boss_region_polygon(traced_loop)
