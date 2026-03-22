@@ -10,6 +10,7 @@ const ENEMY_COLOR := Color8(176, 96, 224)
 const GROUND_COLOR := Color8(64, 208, 96)
 const LINE_WIDTH := 2.0
 const ARC_SEGMENT_COUNT := 24
+const DISABLED_ALPHA_SCALE := 0.45
 
 const TILEMAP_OUTLINE_BUILDER := preload("res://debug/overlays/hitbox/tilemap_outline_builder.gd")
 
@@ -70,11 +71,10 @@ func _draw_collision_nodes(target: Node, color: Color) -> void:
 
 
 func _draw_collision_shape_2d(collision_shape: CollisionShape2D, color: Color) -> void:
-	if collision_shape.disabled:
-		return
 	var shape := collision_shape.shape
 	if shape == null:
 		return
+	var draw_color := _color_for_collision_state(color, collision_shape.disabled)
 	var shape_transform := collision_shape.global_transform
 
 	if shape is RectangleShape2D:
@@ -86,47 +86,48 @@ func _draw_collision_shape_2d(collision_shape: CollisionShape2D, color: Color) -
 			Vector2(half_size.x, half_size.y),
 			Vector2(-half_size.x, half_size.y),
 		])
-		_draw_closed_points(_transform_points(shape_transform, points), color)
+		_draw_closed_points(_transform_points(shape_transform, points), draw_color)
 		return
 
 	if shape is CircleShape2D:
 		var circle_shape := shape as CircleShape2D
-		_draw_closed_points(_transform_points(shape_transform, _build_circle_points(circle_shape.radius)), color)
+		_draw_closed_points(_transform_points(shape_transform, _build_circle_points(circle_shape.radius)), draw_color)
 		return
 
 	if shape is CapsuleShape2D:
 		var capsule_shape := shape as CapsuleShape2D
-		_draw_closed_points(_transform_points(shape_transform, _build_capsule_points(capsule_shape.radius, capsule_shape.height)), color)
+		_draw_closed_points(_transform_points(shape_transform, _build_capsule_points(capsule_shape.radius, capsule_shape.height)), draw_color)
 		return
 
 	if shape is ConvexPolygonShape2D:
 		var convex_shape := shape as ConvexPolygonShape2D
-		_draw_closed_points(_transform_points(shape_transform, convex_shape.points), color)
+		_draw_closed_points(_transform_points(shape_transform, convex_shape.points), draw_color)
 		return
 
 	if shape is ConcavePolygonShape2D:
 		var concave_shape := shape as ConcavePolygonShape2D
-		_draw_concave_segments(shape_transform, concave_shape.segments, color)
+		_draw_concave_segments(shape_transform, concave_shape.segments, draw_color)
 		return
 
 	if shape is SegmentShape2D:
 		var segment_shape := shape as SegmentShape2D
-		_draw_segment(shape_transform * segment_shape.a, shape_transform * segment_shape.b, color)
+		_draw_segment(shape_transform * segment_shape.a, shape_transform * segment_shape.b, draw_color)
 		return
 
 	if shape is SeparationRayShape2D:
 		var ray_shape := shape as SeparationRayShape2D
-		_draw_segment(shape_transform.origin, shape_transform * Vector2(ray_shape.length, 0.0), color)
+		_draw_segment(shape_transform.origin, shape_transform * Vector2(ray_shape.length, 0.0), draw_color)
 
 
 func _draw_collision_polygon_2d(collision_polygon: CollisionPolygon2D, color: Color) -> void:
-	if collision_polygon.disabled or collision_polygon.polygon.is_empty():
+	if collision_polygon.polygon.is_empty():
 		return
+	var draw_color := _color_for_collision_state(color, collision_polygon.disabled)
 	var transformed := _transform_points(collision_polygon.global_transform, collision_polygon.polygon)
 	if collision_polygon.build_mode == CollisionPolygon2D.BUILD_SEGMENTS:
-		draw_polyline(transformed, color, LINE_WIDTH, true)
+		draw_polyline(transformed, draw_color, LINE_WIDTH, true)
 		return
-	_draw_closed_points(transformed, color)
+	_draw_closed_points(transformed, draw_color)
 
 
 func _draw_concave_segments(transform_2d: Transform2D, segments: PackedVector2Array, color: Color) -> void:
@@ -178,3 +179,11 @@ func _build_capsule_points(radius: float, height: float) -> PackedVector2Array:
 		points.append(Vector2(cos(angle), sin(angle)) * radius + Vector2(0.0, half_cylinder))
 
 	return points
+
+
+func _color_for_collision_state(base_color: Color, disabled: bool) -> Color:
+	if !disabled:
+		return base_color
+	var color := base_color
+	color.a *= DISABLED_ALPHA_SCALE
+	return color

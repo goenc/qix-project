@@ -5,7 +5,7 @@
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_pick"]
 size = Vector2(64, 64)
 
-[node name="BBOS" type="Node2D" groups=["debug_bbos_collision"]]
+[node name="BBOS" type="Node2D" groups=["debug_enemy_collision"]]
 script = ExtResource("1_script")
 
 [node name="Body" type="Sprite2D" parent="."]

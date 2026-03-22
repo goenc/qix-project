@@ -3,6 +3,10 @@ class_name BasePlayer
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const ACTION_QIX_DRAW := &"qix_draw"
+const ACTION_MOVE_LEFT := &"move_left"
+const ACTION_MOVE_RIGHT := &"move_right"
+const ACTION_MOVE_UP := &"move_up"
+const ACTION_MOVE_DOWN := &"move_down"
 
 signal capture_closed(trail_points: PackedVector2Array)
 signal guide_turn_created(turn_point: Vector2, previous_direction: Vector2, new_direction: Vector2)
@@ -55,10 +59,10 @@ var rewind_speed := move_speed
 var rewind_index: int = -1
 var drawing_input_sequence := 0
 var drawing_input_order: Dictionary = {
-	&"move_left": 0,
-	&"move_right": 0,
-	&"move_up": 0,
-	&"move_down": 0
+	ACTION_MOVE_LEFT: 0,
+	ACTION_MOVE_RIGHT: 0,
+	ACTION_MOVE_UP: 0,
+	ACTION_MOVE_DOWN: 0
 }
 var drawing_move_direction := Vector2.ZERO
 var drawing_segment_direction := Vector2.ZERO
@@ -163,10 +167,7 @@ func _process(delta: float) -> void:
 			_apply_state_visuals()
 
 	_update_drawing_input_order()
-	var direction := Vector2(
-		Input.get_axis("move_left", "move_right"),
-		Input.get_axis("move_up", "move_down")
-	)
+	var direction := _get_move_input_vector()
 	var drawing_direction := _restrict_drawing_direction(direction)
 	if direction.length_squared() > 1.0:
 		direction = direction.normalized()
@@ -202,10 +203,7 @@ func get_debug_status() -> Dictionary:
 		"position": position,
 		"is_on_border": _is_on_border(position),
 		"is_on_corner": _is_corner_from_connected_directions(connected_border_directions),
-		"border_move_input": _get_border_move_input(Vector2(
-			Input.get_axis("move_left", "move_right"),
-			Input.get_axis("move_up", "move_down")
-		), position),
+		"border_move_input": _get_border_move_input(_get_move_input_vector(), position),
 		"connected_border_directions": connected_border_directions,
 		"border_segment_index": current_border_segment_index,
 		"trail_point_count": trail_points.size(),
@@ -427,14 +425,14 @@ func _append_trail_point_if_needed(force_add: bool) -> void:
 
 
 func _update_drawing_input_order() -> void:
-	_remember_drawing_input(&"move_left")
-	_remember_drawing_input(&"move_right")
-	_remember_drawing_input(&"move_up")
-	_remember_drawing_input(&"move_down")
+	_remember_drawing_input(ACTION_MOVE_LEFT)
+	_remember_drawing_input(ACTION_MOVE_RIGHT)
+	_remember_drawing_input(ACTION_MOVE_UP)
+	_remember_drawing_input(ACTION_MOVE_DOWN)
 
 
 func _remember_drawing_input(action_name: StringName) -> void:
-	if !Input.is_action_just_pressed(action_name):
+	if !_is_action_just_pressed_safe(action_name):
 		return
 
 	drawing_input_sequence += 1
@@ -442,11 +440,11 @@ func _remember_drawing_input(action_name: StringName) -> void:
 
 
 func _restrict_drawing_direction(_direction: Vector2) -> Vector2:
-	var horizontal := _get_prioritized_axis(&"move_left", &"move_right")
-	var vertical := _get_prioritized_axis(&"move_up", &"move_down")
+	var horizontal := _get_prioritized_axis(ACTION_MOVE_LEFT, ACTION_MOVE_RIGHT)
+	var vertical := _get_prioritized_axis(ACTION_MOVE_UP, ACTION_MOVE_DOWN)
 
 	if horizontal != 0.0 and vertical != 0.0:
-		if _get_axis_input_order(&"move_left", &"move_right") >= _get_axis_input_order(&"move_up", &"move_down"):
+		if _get_axis_input_order(ACTION_MOVE_LEFT, ACTION_MOVE_RIGHT) >= _get_axis_input_order(ACTION_MOVE_UP, ACTION_MOVE_DOWN):
 			vertical = 0.0
 		else:
 			horizontal = 0.0
@@ -455,8 +453,8 @@ func _restrict_drawing_direction(_direction: Vector2) -> Vector2:
 
 
 func _get_prioritized_axis(negative_action: StringName, positive_action: StringName) -> float:
-	var negative_pressed := Input.is_action_pressed(negative_action)
-	var positive_pressed := Input.is_action_pressed(positive_action)
+	var negative_pressed := _is_action_pressed_safe(negative_action)
+	var positive_pressed := _is_action_pressed_safe(positive_action)
 	if negative_pressed and positive_pressed:
 		if int(drawing_input_order.get(negative_action, 0)) >= int(drawing_input_order.get(positive_action, 0)):
 			return -1.0
@@ -470,9 +468,9 @@ func _get_prioritized_axis(negative_action: StringName, positive_action: StringN
 
 func _get_axis_input_order(negative_action: StringName, positive_action: StringName) -> int:
 	var order := 0
-	if Input.is_action_pressed(negative_action):
+	if _is_action_pressed_safe(negative_action):
 		order = max(order, int(drawing_input_order.get(negative_action, 0)))
-	if Input.is_action_pressed(positive_action):
+	if _is_action_pressed_safe(positive_action):
 		order = max(order, int(drawing_input_order.get(positive_action, 0)))
 	return order
 
@@ -1219,10 +1217,7 @@ func _build_debug_status_snapshot() -> Dictionary:
 	return {
 		"mode_text": get_state_text(),
 		"is_on_corner": _is_corner_from_connected_directions(connected_border_directions),
-		"border_move_input": _get_border_move_input(Vector2(
-			Input.get_axis("move_left", "move_right"),
-			Input.get_axis("move_up", "move_down")
-		), position),
+		"border_move_input": _get_border_move_input(_get_move_input_vector(), position),
 		"connected_border_directions": connected_border_directions,
 		"border_segment_index": current_border_segment_index,
 		"hp": current_hp,
@@ -1232,3 +1227,24 @@ func _build_debug_status_snapshot() -> Dictionary:
 
 func _is_capture_preview_active_state() -> bool:
 	return state == PlayerState.DRAWING or state == PlayerState.REWINDING
+
+
+func _get_move_input_vector() -> Vector2:
+	return Vector2(
+		_get_safe_axis(ACTION_MOVE_LEFT, ACTION_MOVE_RIGHT),
+		_get_safe_axis(ACTION_MOVE_UP, ACTION_MOVE_DOWN)
+	)
+
+
+func _get_safe_axis(negative_action: StringName, positive_action: StringName) -> float:
+	if !InputMap.has_action(negative_action) or !InputMap.has_action(positive_action):
+		return 0.0
+	return Input.get_axis(negative_action, positive_action)
+
+
+func _is_action_pressed_safe(action_name: StringName) -> bool:
+	return InputMap.has_action(action_name) and Input.is_action_pressed(action_name)
+
+
+func _is_action_just_pressed_safe(action_name: StringName) -> bool:
+	return InputMap.has_action(action_name) and Input.is_action_just_pressed(action_name)
