@@ -2,7 +2,6 @@ extends Node2D
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const MAX_REFLECTIONS_PER_FRAME := 2
-const VIEWPORT_HEIGHT_RATIO := 0.5
 
 signal position_changed(world_position: Vector2)
 
@@ -13,6 +12,10 @@ signal position_changed(world_position: Vector2)
 @export var collision_radius: float = 32.0
 @export var min_collision_radius: float = 8.0
 @export var body_rotation_speed_deg: float = 90.0
+
+var base_diameter := 0.0
+var min_diameter_ratio := 0.1
+var boss_region_ratio := 0.0
 
 @onready var body: Node2D = $Body
 @onready var pick_area: Area2D = $PickArea
@@ -42,6 +45,8 @@ func _ready() -> void:
 		pick_area.set_meta(&"debug_pick_owner", self)
 	base_scale = scale
 	base_collision_radius = maxf(collision_radius, maxf(min_collision_radius, 0.0))
+	base_diameter = base_collision_radius * 2.0
+	min_collision_radius = base_collision_radius * min_diameter_ratio
 	_sync_size_to_viewport()
 	var viewport := get_viewport()
 	if is_instance_valid(viewport) and !viewport.size_changed.is_connected(_on_viewport_size_changed):
@@ -170,6 +175,11 @@ func set_collision_radius(radius: float) -> void:
 	_emit_position_changed_if_needed()
 
 
+func set_boss_region_ratio(region_ratio: float) -> void:
+	boss_region_ratio = clampf(region_ratio, 0.0, 1.0)
+	_sync_boss_region_size()
+
+
 func get_active_reflection_loop() -> PackedVector2Array:
 	if _has_active_inner_loop():
 		return active_inner_loop
@@ -181,16 +191,16 @@ func _on_viewport_size_changed() -> void:
 
 
 func _sync_size_to_viewport() -> void:
-	var viewport_rect := get_viewport_rect()
-	if viewport_rect.size.y <= 0.0:
+	_sync_boss_region_size()
+
+
+func _sync_boss_region_size() -> void:
+	if base_diameter <= 0.0:
 		return
 
-	var target_diameter := viewport_rect.size.y * VIEWPORT_HEIGHT_RATIO
-	var source_diameter := base_collision_radius * 2.0
-	if source_diameter <= 0.0:
-		return
-
-	scale = base_scale * (target_diameter / source_diameter)
+	var diameter_ratio := maxf(min_diameter_ratio, boss_region_ratio)
+	var target_diameter := base_diameter * diameter_ratio
+	scale = base_scale * diameter_ratio
 	set_collision_radius(target_diameter * 0.5)
 
 

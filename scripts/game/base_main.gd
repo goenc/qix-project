@@ -335,6 +335,7 @@ func _initialize_outer_loop_from_rect() -> void:
 	guide_partition_fill_polygons_by_key.clear()
 	guide_partition_fill_entry_key_sequence = 0
 	_set_boss_region_polygon(PackedVector2Array())
+	_apply_boss_region_ratio_to_bbos()
 	queue_redraw()
 	inactive_border_segments.clear()
 	inactive_border_segment_aabbs.clear()
@@ -366,6 +367,14 @@ func _apply_playfield_to_bbos() -> void:
 		bbos.call("set_playfield_rect", playfield_rect)
 	if bbos.has_method("set_active_outer_loop"):
 		bbos.call("set_active_outer_loop", current_outer_loop)
+	_apply_boss_region_ratio_to_bbos()
+
+
+func _apply_boss_region_ratio_to_bbos() -> void:
+	if !is_instance_valid(bbos):
+		return
+	if bbos.has_method("set_boss_region_ratio"):
+		bbos.call("set_boss_region_ratio", boss_region_ratio_cached)
 
 
 func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
@@ -1256,6 +1265,7 @@ func _recalculate_boss_region_polygon_after_capture() -> void:
 	var boss_region_context := _build_boss_region_capture_context()
 	if boss_region_context.is_empty():
 		_set_boss_region_polygon(PackedVector2Array())
+		_apply_boss_region_ratio_to_bbos()
 		return
 
 	var epsilon := float(boss_region_context.get("epsilon", _get_guide_epsilon()))
@@ -1263,13 +1273,16 @@ func _recalculate_boss_region_polygon_after_capture() -> void:
 	var graph := _build_boss_region_graph_from_capture_context(boss_region_context)
 	if graph.is_empty():
 		_set_boss_region_polygon(PackedVector2Array())
+		_apply_boss_region_ratio_to_bbos()
 		return
 	var traced_loop := _trace_boss_region_loop_clockwise(graph, epsilon)
 	if !_is_valid_traced_boss_region_loop(traced_loop, selection_point, epsilon):
 		_set_boss_region_polygon(PackedVector2Array())
+		_apply_boss_region_ratio_to_bbos()
 		return
 
 	_set_boss_region_polygon(traced_loop)
+	_apply_boss_region_ratio_to_bbos()
 
 
 func _build_boss_region_boundary_segments(epsilon: float) -> Array[Dictionary]:
