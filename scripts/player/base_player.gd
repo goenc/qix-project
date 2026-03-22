@@ -7,6 +7,14 @@ const ACTION_MOVE_LEFT := &"move_left"
 const ACTION_MOVE_RIGHT := &"move_right"
 const ACTION_MOVE_UP := &"move_up"
 const ACTION_MOVE_DOWN := &"move_down"
+const BODY_FRAME_COLUMNS := 3
+const BODY_ROW_DOWN := 0
+const BODY_ROW_LEFT := 1
+const BODY_ROW_RIGHT := 2
+const BODY_ROW_UP := 3
+const BODY_IDLE_FRAME := 1
+const BODY_WALK_SEQUENCE := [0, 1, 2, 1]
+const BODY_DIRECTION_EPSILON := 0.0001
 
 signal capture_closed(trail_points: PackedVector2Array)
 signal guide_turn_created(turn_point: Vector2, previous_direction: Vector2, new_direction: Vector2)
@@ -24,8 +32,9 @@ signal capture_preview_changed(active: bool)
 @export var start_edge_ratio := 0.18
 @export var max_hp := 3
 @export var invincibility_duration := 0.75
+@export var walk_animation_fps := 8.0
 
-@onready var body: Polygon2D = $Body
+@onready var body: Sprite2D = $Body
 @onready var pick_area: Area2D = $PickArea
 @onready var pick_collision_shape: CollisionShape2D = $PickArea/CollisionShape2D
 @onready var trail_line: Line2D = $TrailLine
@@ -77,6 +86,8 @@ var last_capture_preview_active := false
 var active_damage_trail_segments: Array[PackedVector2Array] = []
 var active_damage_trail_aabbs: Array[Rect2] = []
 var last_visible_trail_cache_points: PackedVector2Array = PackedVector2Array()
+var body_facing_row := BODY_ROW_DOWN
+var walk_animation_time := 0.0
 
 
 func _ready() -> void:
@@ -93,6 +104,7 @@ func _ready() -> void:
 		trail_line.global_position = Vector2.ZERO
 		trail_line.points = PackedVector2Array()
 	_refresh_damage_trail_cache(PackedVector2Array())
+	_update_body_animation(Vector2.DOWN, Vector2.ZERO, 0.0)
 	_apply_state_visuals()
 	_update_damage_hitboxes()
 	_refresh_debug_notifications(true)
@@ -160,6 +172,7 @@ func _process(delta: float) -> void:
 	if playfield_rect.size.x <= 0.0 or playfield_rect.size.y <= 0.0 or outer_loop_total_length <= 0.0:
 		return
 
+	var previous_position := position
 	if invincibility_timer > 0.0:
 		var previous_timer := invincibility_timer
 		invincibility_timer = maxf(0.0, invincibility_timer - delta)
@@ -169,6 +182,7 @@ func _process(delta: float) -> void:
 	_update_drawing_input_order()
 	var direction := _get_move_input_vector()
 	var drawing_direction := _restrict_drawing_direction(direction)
+	var animation_direction := direction
 	if direction.length_squared() > 1.0:
 		direction = direction.normalized()
 
@@ -177,10 +191,13 @@ func _process(delta: float) -> void:
 			_process_border(direction, delta)
 		PlayerState.DRAWING:
 			_process_drawing(drawing_direction, delta)
+			animation_direction = drawing_direction
 		PlayerState.REWINDING:
 			_process_rewinding(delta)
+			animation_direction = Vector2.ZERO
 
 	_apply_movement_constraints()
+	_update_body_animation(animation_direction, position - previous_position, delta)
 	_update_damage_hitboxes()
 	_refresh_debug_notifications()
 
@@ -595,9 +612,64 @@ func _apply_state_visuals() -> void:
 		var next_color := drawing_color if state == PlayerState.DRAWING or state == PlayerState.REWINDING else border_color
 		if invincibility_timer > 0.0 and !is_defeated:
 			next_color.a = 0.45
-		body.color = next_color
+		body.modulate = next_color
 	if is_instance_valid(trail_line):
 		trail_line.modulate = Color(1.0, 1.0, 1.0, 0.55) if invincibility_timer > 0.0 and !is_defeated else Color.WHITE
+
+
+func _update_body_animation(input_direction: Vector2, movement_delta: Vector2, delta: float) -> void:
+	if !is_instance_valid(body):
+		return
+
+	var resolved_direction := _resolve_body_direction(input_direction, movement_delta)
+	if resolved_direction != Vector2.ZERO:
+		body_facing_row = _get_body_row_from_direction(resolved_direction)
+
+	var is_moving := movement_delta.length_squared() > BODY_DIRECTION_EPSILON
+	if is_moving:
+		walk_animation_time += maxf(delta, 0.0)
+	else:
+		walk_animation_time = 0.0
+
+	var frame_column := BODY_IDLE_FRAME
+	if is_moving:
+		var animation_fps := maxf(walk_animation_fps, 0.01)
+		var sequence_index := int(floor(walk_animation_time * animation_fps)) % BODY_WALK_SEQUENCE.size()
+		frame_column = int(BODY_WALK_SEQUENCE[sequence_index])
+
+	body.frame = body_facing_row * BODY_FRAME_COLUMNS + frame_column
+
+
+func _resolve_body_direction(input_direction: Vector2, movement_delta: Vector2) -> Vector2:
+	if movement_delta.length_squared() > BODY_DIRECTION_EPSILON:
+		return _snap_direction_to_cardinal(movement_delta)
+	if input_direction.length_squared() > BODY_DIRECTION_EPSILON:
+		return _snap_direction_to_cardinal(input_direction)
+	return Vector2.ZERO
+
+
+func _snap_direction_to_cardinal(direction: Vector2) -> Vector2:
+	if absf(direction.x) >= absf(direction.y):
+		if direction.x < 0.0:
+			return Vector2.LEFT
+		if direction.x > 0.0:
+			return Vector2.RIGHT
+	else:
+		if direction.y < 0.0:
+			return Vector2.UP
+		if direction.y > 0.0:
+			return Vector2.DOWN
+	return Vector2.ZERO
+
+
+func _get_body_row_from_direction(direction: Vector2) -> int:
+	if direction == Vector2.LEFT:
+		return BODY_ROW_LEFT
+	if direction == Vector2.RIGHT:
+		return BODY_ROW_RIGHT
+	if direction == Vector2.UP:
+		return BODY_ROW_UP
+	return BODY_ROW_DOWN
 
 
 func _apply_movement_constraints() -> void:
