@@ -1,6 +1,6 @@
 extends Node
 
-const MAIN_SCENE_PATH := "res://scenes/base_main.tscn"
+const STAGE_SELECT_SCENE_PATH := "res://scenes/stage_select_main.tscn"
 const InputActionUtils = preload("res://scripts/common/input_action_utils.gd")
 
 @onready var title_screen: TitleScreen = $Title
@@ -18,7 +18,7 @@ func _input(event: InputEvent) -> void:
 	if !event.is_pressed() or event.is_echo():
 		return
 	if Input.is_action_just_pressed("qix_start"):
-		get_tree().change_scene_to_file(MAIN_SCENE_PATH)
+		get_tree().change_scene_to_file(STAGE_SELECT_SCENE_PATH)
 
 
 func is_pause_toggle_allowed() -> bool:
