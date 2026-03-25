@@ -578,6 +578,94 @@ static func build_draw_polyline(loop: PackedVector2Array) -> PackedVector2Array:
 	return polyline
 
 
+static func build_points_aabb(points: PackedVector2Array) -> Rect2:
+	if points.is_empty():
+		return Rect2()
+
+	var min_point := points[0]
+	var max_point := points[0]
+	for index in range(1, points.size()):
+		var point := points[index]
+		min_point.x = minf(min_point.x, point.x)
+		min_point.y = minf(min_point.y, point.y)
+		max_point.x = maxf(max_point.x, point.x)
+		max_point.y = maxf(max_point.y, point.y)
+	return Rect2(min_point, max_point - min_point)
+
+
+static func build_polygon_aabbs(polygons: Array[PackedVector2Array]) -> Array[Rect2]:
+	var aabbs: Array[Rect2] = []
+	for polygon in polygons:
+		aabbs.append(build_points_aabb(polygon))
+	return aabbs
+
+
+static func build_segment_aabbs(segments: Array[PackedVector2Array]) -> Array[Rect2]:
+	var aabbs: Array[Rect2] = []
+	for segment in segments:
+		aabbs.append(build_points_aabb(segment))
+	return aabbs
+
+
+static func build_segment_aabb_from_points(segment_start: Vector2, segment_end: Vector2) -> Rect2:
+	var segment := PackedVector2Array()
+	segment.append(segment_start)
+	segment.append(segment_end)
+	return build_points_aabb(segment)
+
+
+static func rects_overlap(a: Rect2, b: Rect2, padding: float = 0.0) -> bool:
+	return (
+		a.position.x <= b.end.x + padding
+		and a.end.x >= b.position.x - padding
+		and a.position.y <= b.end.y + padding
+		and a.end.y >= b.position.y - padding
+	)
+
+
+static func point_overlaps_rect(point: Vector2, rect: Rect2, epsilon: float) -> bool:
+	return (
+		point.x >= rect.position.x - epsilon
+		and point.x <= rect.end.x + epsilon
+		and point.y >= rect.position.y - epsilon
+		and point.y <= rect.end.y + epsilon
+	)
+
+
+static func is_point_on_segment(point: Vector2, segment_start: Vector2, segment_end: Vector2, epsilon: float) -> bool:
+	var segment := segment_end - segment_start
+	var segment_length_squared := segment.length_squared()
+	if segment_length_squared <= epsilon * epsilon:
+		return point.distance_to(segment_start) <= epsilon
+
+	var projection := clampf((point - segment_start).dot(segment) / segment_length_squared, 0.0, 1.0)
+	var projected_point := segment_start + segment * projection
+	return projected_point.distance_to(point) <= epsilon
+
+
+static func polyline_to_segments(points: PackedVector2Array) -> Array[PackedVector2Array]:
+	var segments: Array[PackedVector2Array] = []
+	for index in range(points.size() - 1):
+		var segment_start: Vector2 = points[index]
+		var segment_end: Vector2 = points[index + 1]
+		if segment_start.is_equal_approx(segment_end):
+			continue
+		var segment := PackedVector2Array()
+		segment.append(segment_start)
+		segment.append(segment_end)
+		segments.append(segment)
+	return segments
+
+
+static func build_rect_polygon(rect: Rect2) -> PackedVector2Array:
+	var polygon := PackedVector2Array()
+	polygon.append(rect.position)
+	polygon.append(Vector2(rect.end.x, rect.position.y))
+	polygon.append(rect.end)
+	polygon.append(Vector2(rect.position.x, rect.end.y))
+	return polygon
+
+
 static func find_first_boundary_hit(
 	current_pos: Vector2,
 	next_pos: Vector2,
