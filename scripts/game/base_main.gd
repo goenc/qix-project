@@ -71,7 +71,7 @@ var game_over := false
 var game_clear := false
 var clear_reveal_active := false
 var clear_reveal_progress := 0.0
-var clear_reveal_speed := 0.75
+var clear_reveal_speed := 0.6
 var clear_boss_hidden_done := false
 var show_vertical_guides := true
 var show_horizontal_guides := true
@@ -288,7 +288,11 @@ func _draw() -> void:
 		_draw_guide_partition_fills()
 	_draw_border_segments(inactive_border_segments, inactive_border_color)
 	_draw_guide_segments()
-	_draw_border_loop(current_outer_loop, playfield_border_color)
+	if game_clear:
+		if clear_reveal_progress < 1.0:
+			_draw_clear_reveal_border_loop(current_outer_loop, playfield_border_color)
+	else:
+		_draw_border_loop(current_outer_loop, playfield_border_color)
 	draw_rect(outer_rect, playfield_outer_frame_color, false, 2.0)
 
 
@@ -1378,13 +1382,17 @@ func _draw_stage_cover() -> void:
 	draw_polygon(cover_polygon, cover_colors, cover_uvs, STAGE_COVER_BACKGROUND_TEXTURE)
 
 
+func _get_clear_reveal_cutoff_y() -> float:
+	return lerpf(playfield_rect.end.y, playfield_rect.position.y, clear_reveal_progress)
+
+
 func _build_clear_reveal_stage_cover_draw_data() -> Dictionary:
 	var clipped_polygon := PackedVector2Array()
 	var clipped_uvs := PackedVector2Array()
 	if stage_cover_polygon.size() < 3 or stage_cover_uvs.size() != stage_cover_polygon.size():
 		return {"polygon": clipped_polygon, "uvs": clipped_uvs}
 
-	var cutoff_y := lerpf(playfield_rect.end.y, playfield_rect.position.y, clear_reveal_progress)
+	var cutoff_y := _get_clear_reveal_cutoff_y()
 	for index in range(stage_cover_polygon.size()):
 		var current_point: Vector2 = stage_cover_polygon[index]
 		var current_uv: Vector2 = stage_cover_uvs[index]
@@ -1432,6 +1440,39 @@ func _append_clear_reveal_stage_cover_vertex(
 
 	points.append(point)
 	uvs.append(uv)
+
+
+func _draw_clear_reveal_border_loop(loop: PackedVector2Array, color: Color) -> void:
+	if loop.size() < 2:
+		return
+
+	var cutoff_y := _get_clear_reveal_cutoff_y()
+	for index in range(loop.size()):
+		var start_point: Vector2 = loop[index]
+		var end_point: Vector2 = loop[(index + 1) % loop.size()]
+		var start_visible := start_point.y <= cutoff_y
+		var end_visible := end_point.y <= cutoff_y
+
+		if start_visible and end_visible:
+			draw_line(start_point, end_point, color, playfield_border_width)
+			continue
+
+		if start_visible == end_visible:
+			continue
+
+		var delta_y := end_point.y - start_point.y
+		if is_zero_approx(delta_y):
+			continue
+
+		var t := clampf((cutoff_y - start_point.y) / delta_y, 0.0, 1.0)
+		var intersection_point := start_point.lerp(end_point, t)
+		intersection_point.y = cutoff_y
+
+		if start_visible:
+			if !start_point.is_equal_approx(intersection_point):
+				draw_line(start_point, intersection_point, color, playfield_border_width)
+		elif !intersection_point.is_equal_approx(end_point):
+			draw_line(intersection_point, end_point, color, playfield_border_width)
 
 
 func _build_boss_region_boundary_segments(epsilon: float) -> Array[Dictionary]:
