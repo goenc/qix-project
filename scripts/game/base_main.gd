@@ -181,6 +181,15 @@ func _refresh_boss_region_ratio_cache() -> void:
 		boss_region_ratio_cached = clampf(boss_region_area_cached / playfield_area_cached, 0.0, 1.0)
 
 
+func _get_remaining_area_ratio() -> float:
+	if playfield_area_cached <= 0.0:
+		return -1.0
+	if remaining_polygon.size() < 3:
+		return -1.0
+	var remaining_area := PlayfieldBoundary.polygon_area(remaining_polygon)
+	return clampf(remaining_area / playfield_area_cached, 0.0, 1.0)
+
+
 func _set_boss_region_polygon(polygon: PackedVector2Array) -> void:
 	boss_region_polygon = polygon
 	boss_region_area_cached = 0.0
@@ -1297,7 +1306,7 @@ func _recalculate_boss_region_polygon_after_capture() -> void:
 	if boss_region_context.is_empty():
 		_set_boss_region_polygon(PackedVector2Array())
 		_apply_boss_region_ratio_to_bbos()
-		_check_game_clear_after_boss_region_ratio_update()
+		_check_game_clear_after_remaining_area_update()
 		return
 
 	var epsilon := float(boss_region_context.get("epsilon", _get_guide_epsilon()))
@@ -1306,24 +1315,27 @@ func _recalculate_boss_region_polygon_after_capture() -> void:
 	if graph.is_empty():
 		_set_boss_region_polygon(PackedVector2Array())
 		_apply_boss_region_ratio_to_bbos()
-		_check_game_clear_after_boss_region_ratio_update()
+		_check_game_clear_after_remaining_area_update()
 		return
 	var traced_loop := _trace_boss_region_loop_clockwise(graph, epsilon)
 	if !_is_valid_traced_boss_region_loop(traced_loop, selection_point, epsilon):
 		_set_boss_region_polygon(PackedVector2Array())
 		_apply_boss_region_ratio_to_bbos()
-		_check_game_clear_after_boss_region_ratio_update()
+		_check_game_clear_after_remaining_area_update()
 		return
 
 	_set_boss_region_polygon(traced_loop)
 	_apply_boss_region_ratio_to_bbos()
-	_check_game_clear_after_boss_region_ratio_update()
+	_check_game_clear_after_remaining_area_update()
 
 
-func _check_game_clear_after_boss_region_ratio_update() -> void:
+func _check_game_clear_after_remaining_area_update() -> void:
 	if game_over or game_clear:
 		return
-	if boss_region_ratio_cached <= 0.15:
+	var remaining_area_ratio := _get_remaining_area_ratio()
+	if remaining_area_ratio < 0.0:
+		return
+	if remaining_area_ratio <= 0.15:
 		_begin_game_clear_reveal()
 
 
