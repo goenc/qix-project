@@ -1,6 +1,6 @@
-BBOS の boss領域連動サイズを viewport 基準へ修正
+敵接触時に侵入開始位置へ自機を復帰するよう修正
 
-・BBOS の 100パーセントサイズを viewport 高さの半分の直径へ戻し 初期見た目直径と初期当たり判定半径を同倍率で同期するよう修正
-・boss領域比率は 10パーセント下限付きで反映し viewport リサイズ時も現在比率のまま再同期するよう修正
-・Godot headless の check only で bbos.gd と base_main.gd の構文確認を実施
-・1280かける720相当の確認で 初期100パーセント直径360 50パーセントで180 5パーセント指定時も下限で36となり 当たり判定半径も同倍率で一致することを確認
+・BasePlayer に侵入開始 border 座標の保持変数を追加し BORDER から DRAWING へ入る瞬間の座標を保存するよう修正
+・apply_boss_damage で DRAWING と REWINDING 時だけ保存座標へ戻し trail_points の破棄と状態復帰を行うよう修正
+・finish_rewinding の共通復帰処理を追加し trail_line が残らないよう整理
+・Godot headless で BasePlayer と BBOS のスクリプト読み込み確認を実施

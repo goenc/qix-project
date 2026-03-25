@@ -75,6 +75,7 @@ var drawing_input_order: Dictionary = {
 }
 var drawing_move_direction := Vector2.ZERO
 var drawing_segment_direction := Vector2.ZERO
+var drawing_start_border_position := Vector2.ZERO
 var current_hp := 0
 var invincibility_timer := 0.0
 var is_defeated := false
@@ -335,6 +336,9 @@ func apply_boss_damage() -> bool:
 	else:
 		invincibility_timer = maxf(invincibility_duration, 0.0)
 
+	if state == PlayerState.DRAWING or state == PlayerState.REWINDING:
+		_restore_border_state_at_point(drawing_start_border_position)
+
 	hp_changed.emit(current_hp, get_max_hp())
 	_apply_state_visuals()
 	_update_damage_hitboxes()
@@ -390,6 +394,7 @@ func _start_drawing() -> void:
 	drawing_segment_direction = Vector2.ZERO
 	position = _snap_point_to_border(position)
 	_sync_border_state_from_position(position)
+	drawing_start_border_position = position
 	trail_points = PackedVector2Array()
 	trail_points.append(position)
 	_update_trail_line()
@@ -595,7 +600,11 @@ func _interrupt_rewinding() -> void:
 
 
 func _finish_rewinding() -> void:
-	position = _snap_point_to_border(position)
+	_restore_border_state_at_point(_snap_point_to_border(position))
+
+
+func _restore_border_state_at_point(point: Vector2) -> void:
+	position = point
 	_sync_border_state_from_position(position)
 	trail_points = PackedVector2Array()
 	rewind_index = -1
