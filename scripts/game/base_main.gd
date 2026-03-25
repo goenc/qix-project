@@ -295,14 +295,16 @@ func _draw() -> void:
 		if boss_region_polygon.size() >= 3:
 			draw_colored_polygon(boss_region_polygon, boss_region_fill_color)
 		_draw_guide_partition_fills()
-	_draw_border_segments(inactive_border_segments, inactive_border_color)
-	_draw_guide_segments()
+	if not game_clear:
+		_draw_border_segments(inactive_border_segments, inactive_border_color)
+		_draw_guide_segments()
 	if game_clear:
 		if clear_reveal_progress < 1.0:
 			_draw_clear_reveal_border_loop(current_outer_loop, playfield_border_color)
 	else:
 		_draw_border_loop(current_outer_loop, playfield_border_color)
-	draw_rect(outer_rect, playfield_outer_frame_color, false, 2.0)
+	if not game_clear:
+		draw_rect(outer_rect, playfield_outer_frame_color, false, 2.0)
 
 
 func _on_viewport_size_changed() -> void:

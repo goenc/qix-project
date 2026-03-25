@@ -1,5 +1,5 @@
-未切断面積基準へゲームクリア判定を変更
+ゲームクリア時の枠線と補助線描画を停止
 
-・base_main.gd のクリア判定を remaining_polygon 面積比へ変更
-・remaining_polygon が無効な場合は -1.0 扱いにして誤判定を防止
-・Godot headless 起動で構文確認を実施
+・描画処理にゲームクリア条件を追加した
+・headless 起動で読み込み確認を行った
+・非 headless 起動で読み込み確認を行った
