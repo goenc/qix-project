@@ -69,6 +69,10 @@ var boss_region_ratio_cached := 0.0
 var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
 var game_over := false
 var game_clear := false
+var clear_reveal_active := false
+var clear_reveal_progress := 0.0
+var clear_reveal_speed := 0.75
+var clear_boss_hidden_done := false
 var show_vertical_guides := true
 var show_horizontal_guides := true
 var show_area_fills := true
@@ -103,6 +107,21 @@ func _unhandled_input(_event: InputEvent) -> void:
 	if Input.is_action_just_pressed("ui_cancel"):
 		get_tree().paused = false
 		get_tree().change_scene_to_file(TITLE_SCENE_PATH)
+
+
+func _process(delta: float) -> void:
+	if !clear_reveal_active:
+		return
+
+	var previous_progress := clear_reveal_progress
+	clear_reveal_progress = clampf(clear_reveal_progress + clear_reveal_speed * delta, 0.0, 1.0)
+	if clear_reveal_progress != previous_progress:
+		queue_redraw()
+
+	if clear_reveal_progress >= 1.0:
+		clear_reveal_active = false
+		set_process(false)
+		queue_redraw()
 
 
 func is_pause_toggle_allowed() -> bool:
@@ -257,11 +276,7 @@ func _draw() -> void:
 		return
 
 	draw_texture_rect(STAGE_REMAINING_BACKGROUND_TEXTURE, playfield_rect, false)
-	if stage_cover_polygon.size() >= 3:
-		var cover_colors := PackedColorArray()
-		for _index in range(stage_cover_polygon.size()):
-			cover_colors.append(Color.WHITE)
-		draw_polygon(stage_cover_polygon, cover_colors, stage_cover_uvs, STAGE_COVER_BACKGROUND_TEXTURE)
+	_draw_stage_cover()
 
 	var outer_rect := playfield_rect.grow(playfield_outer_frame_padding)
 	if show_area_fills:
@@ -1305,8 +1320,118 @@ func _check_game_clear_after_boss_region_ratio_update() -> void:
 	if game_over or game_clear:
 		return
 	if boss_region_ratio_cached <= 0.15:
-		game_clear = true
-		get_tree().paused = true
+		_begin_game_clear_reveal()
+
+
+func _begin_game_clear_reveal() -> void:
+	if game_over or game_clear:
+		return
+
+	game_clear = true
+	clear_reveal_active = true
+	clear_reveal_progress = 0.0
+	clear_boss_hidden_done = false
+	_hide_game_clear_bosses()
+	get_tree().paused = true
+	set_process(true)
+	_sync_hud()
+	queue_redraw()
+
+
+func _hide_game_clear_bosses() -> void:
+	if clear_boss_hidden_done:
+		return
+
+	_hide_game_clear_target(bbos)
+	_hide_game_clear_target(boss)
+	clear_boss_hidden_done = true
+
+
+func _hide_game_clear_target(target: Node2D) -> void:
+	if !is_instance_valid(target):
+		return
+
+	target.visible = false
+	target.set_process(false)
+	target.set_physics_process(false)
+
+
+func _draw_stage_cover() -> void:
+	if stage_cover_polygon.size() < 3 or stage_cover_uvs.size() != stage_cover_polygon.size():
+		return
+
+	var cover_polygon := stage_cover_polygon
+	var cover_uvs := stage_cover_uvs
+	if game_clear:
+		if clear_reveal_progress >= 1.0:
+			return
+
+		var reveal_data := _build_clear_reveal_stage_cover_draw_data()
+		cover_polygon = reveal_data.get("polygon", PackedVector2Array())
+		cover_uvs = reveal_data.get("uvs", PackedVector2Array())
+		if cover_polygon.size() < 3 or cover_uvs.size() != cover_polygon.size():
+			return
+
+	var cover_colors := PackedColorArray()
+	for _index in range(cover_polygon.size()):
+		cover_colors.append(Color.WHITE)
+	draw_polygon(cover_polygon, cover_colors, cover_uvs, STAGE_COVER_BACKGROUND_TEXTURE)
+
+
+func _build_clear_reveal_stage_cover_draw_data() -> Dictionary:
+	var clipped_polygon := PackedVector2Array()
+	var clipped_uvs := PackedVector2Array()
+	if stage_cover_polygon.size() < 3 or stage_cover_uvs.size() != stage_cover_polygon.size():
+		return {"polygon": clipped_polygon, "uvs": clipped_uvs}
+
+	var cutoff_y := lerpf(playfield_rect.end.y, playfield_rect.position.y, clear_reveal_progress)
+	for index in range(stage_cover_polygon.size()):
+		var current_point: Vector2 = stage_cover_polygon[index]
+		var current_uv: Vector2 = stage_cover_uvs[index]
+		var next_index := (index + 1) % stage_cover_polygon.size()
+		var next_point: Vector2 = stage_cover_polygon[next_index]
+		var next_uv: Vector2 = stage_cover_uvs[next_index]
+		var current_inside := current_point.y <= cutoff_y
+		var next_inside := next_point.y <= cutoff_y
+
+		if current_inside:
+			_append_clear_reveal_stage_cover_vertex(clipped_polygon, clipped_uvs, current_point, current_uv)
+
+		if current_inside == next_inside:
+			continue
+
+		var segment_delta_y := next_point.y - current_point.y
+		if is_zero_approx(segment_delta_y):
+			continue
+
+		var t := clampf((cutoff_y - current_point.y) / segment_delta_y, 0.0, 1.0)
+		var intersection_point := current_point.lerp(next_point, t)
+		intersection_point.y = cutoff_y
+		var intersection_uv := current_uv.lerp(next_uv, t)
+		_append_clear_reveal_stage_cover_vertex(clipped_polygon, clipped_uvs, intersection_point, intersection_uv)
+
+	if clipped_polygon.size() >= 2 and clipped_polygon[0].is_equal_approx(clipped_polygon[clipped_polygon.size() - 1]):
+		clipped_polygon.remove_at(clipped_polygon.size() - 1)
+		clipped_uvs.remove_at(clipped_uvs.size() - 1)
+
+	return {
+		"polygon": clipped_polygon,
+		"uvs": clipped_uvs
+	}
+
+
+func _append_clear_reveal_stage_cover_vertex(
+	points: PackedVector2Array,
+	uvs: PackedVector2Array,
+	point: Vector2,
+	uv: Vector2
+) -> void:
+	if points.size() > 0 and points[points.size() - 1].is_equal_approx(point):
+		uvs[uvs.size() - 1] = uv
+		return
+
+	points.append(point)
+	uvs.append(uv)
 
 
 func _build_boss_region_boundary_segments(epsilon: float) -> Array[Dictionary]:
