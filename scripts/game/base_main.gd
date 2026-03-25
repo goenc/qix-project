@@ -68,6 +68,7 @@ var boss_region_area_cached := 0.0
 var boss_region_ratio_cached := 0.0
 var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
 var game_over := false
+var game_clear := false
 var show_vertical_guides := true
 var show_horizontal_guides := true
 var show_area_fills := true
@@ -109,7 +110,7 @@ func is_pause_toggle_allowed() -> bool:
 
 
 func set_paused_from_debug(enabled: bool) -> void:
-	if game_over and !enabled:
+	if (game_over or game_clear) and !enabled:
 		return
 	get_tree().paused = enabled
 	_sync_hud()
@@ -185,6 +186,16 @@ func _sync_hud() -> void:
 	if game_over:
 		state_label.text = "MODE: GAME OVER"
 		result_label.text = "GAME OVER"
+		help_label.text = "ESC: TITLE"
+		if is_instance_valid(base_player):
+			_sync_hud_position(base_player.position)
+		else:
+			position_label.text = "POS: (-, -)"
+		return
+
+	if game_clear:
+		state_label.text = "MODE: GAME CLEAR"
+		result_label.text = "GAME CLEAR"
 		help_label.text = "ESC: TITLE"
 		if is_instance_valid(base_player):
 			_sync_hud_position(base_player.position)
@@ -1267,6 +1278,7 @@ func _recalculate_boss_region_polygon_after_capture() -> void:
 	if boss_region_context.is_empty():
 		_set_boss_region_polygon(PackedVector2Array())
 		_apply_boss_region_ratio_to_bbos()
+		_check_game_clear_after_boss_region_ratio_update()
 		return
 
 	var epsilon := float(boss_region_context.get("epsilon", _get_guide_epsilon()))
@@ -1275,15 +1287,26 @@ func _recalculate_boss_region_polygon_after_capture() -> void:
 	if graph.is_empty():
 		_set_boss_region_polygon(PackedVector2Array())
 		_apply_boss_region_ratio_to_bbos()
+		_check_game_clear_after_boss_region_ratio_update()
 		return
 	var traced_loop := _trace_boss_region_loop_clockwise(graph, epsilon)
 	if !_is_valid_traced_boss_region_loop(traced_loop, selection_point, epsilon):
 		_set_boss_region_polygon(PackedVector2Array())
 		_apply_boss_region_ratio_to_bbos()
+		_check_game_clear_after_boss_region_ratio_update()
 		return
 
 	_set_boss_region_polygon(traced_loop)
 	_apply_boss_region_ratio_to_bbos()
+	_check_game_clear_after_boss_region_ratio_update()
+
+
+func _check_game_clear_after_boss_region_ratio_update() -> void:
+	if game_over or game_clear:
+		return
+	if boss_region_ratio_cached <= 0.15:
+		game_clear = true
+		get_tree().paused = true
 
 
 func _build_boss_region_boundary_segments(epsilon: float) -> Array[Dictionary]:
@@ -3461,7 +3484,7 @@ func _update_hp_label() -> void:
 
 
 func _sync_hud_status(status: Dictionary) -> void:
-	if game_over or get_tree().paused or !is_instance_valid(base_player):
+	if game_over or game_clear or get_tree().paused or !is_instance_valid(base_player):
 		_sync_hud()
 		return
 
@@ -3480,6 +3503,8 @@ func _on_player_hp_changed(_current_hp: int, _max_hp: int) -> void:
 
 
 func _on_player_defeated() -> void:
+	if game_over or game_clear:
+		return
 	game_over = true
 	get_tree().paused = true
 	_sync_hud()
@@ -3490,7 +3515,7 @@ func _on_player_debug_status_changed(status: Dictionary) -> void:
 
 
 func _on_player_debug_position_changed(world_position: Vector2) -> void:
-	if game_over or get_tree().paused or !is_instance_valid(base_player):
+	if game_over or game_clear or get_tree().paused or !is_instance_valid(base_player):
 		_sync_hud()
 		return
 	_sync_hud_position(world_position)
