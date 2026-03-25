@@ -2,6 +2,7 @@ extends RefCounted
 class_name BaseMainGuideCaptureService
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
+const BaseMainGuideCommon = preload("res://scripts/game/services/base_main_guide_common.gd")
 
 
 func rebuild_spatial_caches(
@@ -331,7 +332,7 @@ func _segment_overlaps_rect(
 
 
 func _is_pending_guide_segment(guide_segment: Dictionary) -> bool:
-	return bool(guide_segment.get("pending", false))
+	return BaseMainGuideCommon.is_pending_guide_segment(guide_segment)
 
 
 func _is_guide_created_in_current_capture(guide_segment: Dictionary, capture_generation: int) -> bool:
@@ -502,9 +503,7 @@ func _reset_guide_segment_for_reresolve(guide_segment: Dictionary) -> Dictionary
 
 
 func _build_confirmed_guide_segment(guide_segment: Dictionary) -> Dictionary:
-	var confirmed_segment := guide_segment.duplicate()
-	confirmed_segment["pending"] = false
-	return confirmed_segment
+	return BaseMainGuideCommon.build_confirmed_guide_segment(guide_segment)
 
 
 func _collect_pending_guide_indices_for_capture(
@@ -688,63 +687,16 @@ func _extract_capture_action_index(action_name: String, action_data: Variant) ->
 
 
 func _stringify_value(value: Variant, default_text: String = "") -> String:
-	if typeof(value) == TYPE_NIL:
-		return default_text
-	return str(value)
+	return BaseMainGuideCommon.stringify_value(value, default_text)
 
 
 func _normalize_guide_direction(direction: Vector2) -> Vector2:
-	if absf(direction.x) > absf(direction.y):
-		return Vector2(signf(direction.x), 0.0)
-	if absf(direction.y) > 0.0:
-		return Vector2(0.0, signf(direction.y))
-	return Vector2.ZERO
+	return BaseMainGuideCommon.normalize_guide_direction(direction)
 
 
 func _get_guide_scan_bounds(start: Vector2, end: Vector2, direction: Vector2) -> Dictionary:
-	if absf(direction.x) > 0.0:
-		if direction.x > 0.0:
-			return {
-				"valid": true,
-				"horizontal": true,
-				"from": int(ceil(start.x)),
-				"to": int(floor(end.x)),
-				"fixed": int(round(start.y)),
-				"step": 1
-			}
-		return {
-			"valid": true,
-			"horizontal": true,
-			"from": int(floor(start.x)),
-			"to": int(ceil(end.x)),
-			"fixed": int(round(start.y)),
-			"step": -1
-		}
-
-	if absf(direction.y) > 0.0:
-		if direction.y > 0.0:
-			return {
-				"valid": true,
-				"horizontal": false,
-				"from": int(ceil(start.y)),
-				"to": int(floor(end.y)),
-				"fixed": int(round(start.x)),
-				"step": 1
-			}
-		return {
-			"valid": true,
-			"horizontal": false,
-			"from": int(floor(start.y)),
-			"to": int(ceil(end.y)),
-			"fixed": int(round(start.x)),
-			"step": -1
-		}
-
-	return {"valid": false}
+	return BaseMainGuideCommon.build_guide_scan_bounds(start, end, direction)
 
 
 func _build_guide_scan_point(scan_bounds: Dictionary, axis_value: int) -> Vector2:
-	var fixed_axis := float(scan_bounds.get("fixed", 0))
-	if bool(scan_bounds.get("horizontal", false)):
-		return Vector2(float(axis_value), fixed_axis)
-	return Vector2(fixed_axis, float(axis_value))
+	return BaseMainGuideCommon.build_guide_scan_point(scan_bounds, axis_value)

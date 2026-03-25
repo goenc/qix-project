@@ -2,6 +2,7 @@ extends RefCounted
 class_name BaseMainGuideResolutionService
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
+const BaseMainGuideCommon = preload("res://scripts/game/services/base_main_guide_common.gd")
 
 
 func collect_guide_draw_segments(context: Dictionary, guide_segments: Array[Dictionary]) -> Array[Dictionary]:
@@ -80,11 +81,7 @@ func resolve_guide_segment(
 
 
 func normalize_guide_direction(direction: Vector2) -> Vector2:
-	if absf(direction.x) > absf(direction.y):
-		return Vector2(signf(direction.x), 0.0)
-	if absf(direction.y) > 0.0:
-		return Vector2(0.0, signf(direction.y))
-	return Vector2.ZERO
+	return BaseMainGuideCommon.normalize_guide_direction(direction)
 
 
 func has_pending_guides(guide_segments: Array[Dictionary]) -> bool:
@@ -128,9 +125,7 @@ func _build_pending_guide_preview_segment(context: Dictionary, guide_segment: Di
 
 
 func _build_confirmed_guide_segment(guide_segment: Dictionary) -> Dictionary:
-	var confirmed_segment := guide_segment.duplicate()
-	confirmed_segment["pending"] = false
-	return confirmed_segment
+	return BaseMainGuideCommon.build_confirmed_guide_segment(guide_segment)
 
 
 func _resolve_pending_guide_preview_end(
@@ -445,52 +440,11 @@ func _is_inclusive_guide_range(value: float, range_start: float, range_end: floa
 
 
 func _get_guide_scan_bounds(start: Vector2, end: Vector2, direction: Vector2) -> Dictionary:
-	if absf(direction.x) > 0.0:
-		if direction.x > 0.0:
-			return {
-				"valid": true,
-				"horizontal": true,
-				"from": int(ceil(start.x)),
-				"to": int(floor(end.x)),
-				"fixed": int(round(start.y)),
-				"step": 1
-			}
-		return {
-			"valid": true,
-			"horizontal": true,
-			"from": int(floor(start.x)),
-			"to": int(ceil(end.x)),
-			"fixed": int(round(start.y)),
-			"step": -1
-		}
-
-	if absf(direction.y) > 0.0:
-		if direction.y > 0.0:
-			return {
-				"valid": true,
-				"horizontal": false,
-				"from": int(ceil(start.y)),
-				"to": int(floor(end.y)),
-				"fixed": int(round(start.x)),
-				"step": 1
-			}
-		return {
-			"valid": true,
-			"horizontal": false,
-			"from": int(floor(start.y)),
-			"to": int(ceil(end.y)),
-			"fixed": int(round(start.x)),
-			"step": -1
-		}
-
-	return {"valid": false}
+	return BaseMainGuideCommon.build_guide_scan_bounds(start, end, direction)
 
 
 func _build_guide_scan_point(scan_bounds: Dictionary, axis_value: int) -> Vector2:
-	var fixed_axis := float(scan_bounds.get("fixed", 0))
-	if bool(scan_bounds.get("horizontal", false)):
-		return Vector2(float(axis_value), fixed_axis)
-	return Vector2(fixed_axis, float(axis_value))
+	return BaseMainGuideCommon.build_guide_scan_point(scan_bounds, axis_value)
 
 
 func _find_first_guide_boundary_hit(
@@ -660,7 +614,7 @@ func _is_point_in_remaining_region(context: Dictionary, point: Vector2, epsilon:
 
 
 func _is_pending_guide_segment(guide_segment: Dictionary) -> bool:
-	return bool(guide_segment.get("pending", false))
+	return BaseMainGuideCommon.is_pending_guide_segment(guide_segment)
 
 
 func _get_guide_segment_axis_length(start: Vector2, end: Vector2, is_vertical: bool) -> float:
