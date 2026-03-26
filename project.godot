@@ -15,16 +15,16 @@ run/main_scene="res://scenes/title_main.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 config/icon="res://icon.svg"
 
+[autoload]
+
+DebugInputData="*res://debug/services/input_debug_data.gd"
+DebugManager="*res://debug/DebugManager.gd"
+
 [display]
 
 window/size/viewport_width=1280
 window/size/viewport_height=776
 window/size/resizable=false
-
-[autoload]
-
-DebugInputData="*res://debug/services/input_debug_data.gd"
-DebugManager="*res://debug/DebugManager.gd"
 
 [input]
 

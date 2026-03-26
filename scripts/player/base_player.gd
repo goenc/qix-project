@@ -15,6 +15,8 @@ const BODY_ROW_UP := 3
 const BODY_IDLE_FRAME := 1
 const BODY_WALK_SEQUENCE := [0, 1, 2, 1]
 const BODY_DIRECTION_EPSILON := 0.0001
+const TOP_OUTLINE_COUNTDOWN_SECONDS := 20.0
+const TOP_OUTLINE_COUNTDOWN_DISPLAY_EPSILON := 0.0001
 
 signal capture_closed(trail_points: PackedVector2Array)
 signal guide_turn_created(turn_point: Vector2, previous_direction: Vector2, new_direction: Vector2)
@@ -38,6 +40,7 @@ signal capture_preview_changed(active: bool)
 @onready var pick_area: Area2D = $PickArea
 @onready var pick_collision_shape: CollisionShape2D = $PickArea/CollisionShape2D
 @onready var trail_line: Line2D = $TrailLine
+@onready var top_outline_countdown_label: Label = $TopOutlineCountdownLabel
 
 enum PlayerState {
 	BORDER,
@@ -89,6 +92,7 @@ var active_damage_trail_aabbs: Array[Rect2] = []
 var last_visible_trail_cache_points: PackedVector2Array = PackedVector2Array()
 var body_facing_row := BODY_ROW_DOWN
 var walk_animation_time := 0.0
+var top_outline_countdown_remaining := TOP_OUTLINE_COUNTDOWN_SECONDS
 
 
 func _ready() -> void:
@@ -104,6 +108,7 @@ func _ready() -> void:
 		trail_line.top_level = true
 		trail_line.global_position = Vector2.ZERO
 		trail_line.points = PackedVector2Array()
+	_update_top_outline_countdown_label()
 	_refresh_damage_trail_cache(PackedVector2Array())
 	_update_body_animation(Vector2.DOWN, Vector2.ZERO, 0.0)
 	_apply_state_visuals()
@@ -179,6 +184,7 @@ func _process(delta: float) -> void:
 		invincibility_timer = maxf(0.0, invincibility_timer - delta)
 		if !is_equal_approx(previous_timer, invincibility_timer):
 			_apply_state_visuals()
+	_update_top_outline_countdown(delta)
 
 	_update_drawing_input_order()
 	var direction := _get_move_input_vector()
@@ -201,6 +207,39 @@ func _process(delta: float) -> void:
 	_update_body_animation(animation_direction, position - previous_position, delta)
 	_update_damage_hitboxes()
 	_refresh_debug_notifications()
+
+
+func _update_top_outline_countdown(delta: float) -> void:
+	if _is_top_outline_countdown_active():
+		var previous_remaining := top_outline_countdown_remaining
+		top_outline_countdown_remaining = maxf(0.0, top_outline_countdown_remaining - delta)
+		if !is_equal_approx(previous_remaining, top_outline_countdown_remaining):
+			_update_top_outline_countdown_label()
+		return
+
+	if !is_equal_approx(top_outline_countdown_remaining, TOP_OUTLINE_COUNTDOWN_SECONDS):
+		top_outline_countdown_remaining = TOP_OUTLINE_COUNTDOWN_SECONDS
+		_update_top_outline_countdown_label()
+
+
+func _is_top_outline_countdown_active() -> bool:
+	if state != PlayerState.BORDER:
+		return false
+	if !_is_on_border(position):
+		return false
+	return absf(position.y - playfield_rect.position.y) <= border_epsilon
+
+
+func _update_top_outline_countdown_label() -> void:
+	if !is_instance_valid(top_outline_countdown_label):
+		return
+	top_outline_countdown_label.text = str(_get_top_outline_countdown_display_seconds())
+
+
+func _get_top_outline_countdown_display_seconds() -> int:
+	if top_outline_countdown_remaining <= 0.0:
+		return 0
+	return int(ceil(top_outline_countdown_remaining + TOP_OUTLINE_COUNTDOWN_DISPLAY_EPSILON))
 
 
 func get_state_text() -> String:
