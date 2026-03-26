@@ -38,6 +38,41 @@ anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 
+[node name="CutRatingArea" type="Control" parent="Ui/Root"]
+offset_left = 32.0
+offset_top = 10.0
+offset_right = 936.0
+offset_bottom = 52.0
+
+[node name="CutRatingSummaryLabel" type="Label" parent="Ui/Root/CutRatingArea"]
+offset_right = 904.0
+offset_bottom = 18.0
+text = "CUT -- / DELTA -- / RATE 50%"
+
+[node name="CutRatingBadLabel" type="Label" parent="Ui/Root/CutRatingArea"]
+offset_top = 22.0
+offset_right = 48.0
+offset_bottom = 42.0
+text = "BAD"
+
+[node name="CutRatingBar" type="ProgressBar" parent="Ui/Root/CutRatingArea"]
+offset_left = 56.0
+offset_top = 22.0
+offset_right = 848.0
+offset_bottom = 42.0
+min_value = 0.0
+max_value = 100.0
+value = 50.0
+show_percentage = false
+
+[node name="CutRatingGoodLabel" type="Label" parent="Ui/Root/CutRatingArea"]
+offset_left = 856.0
+offset_top = 22.0
+offset_right = 904.0
+offset_bottom = 42.0
+horizontal_alignment = 2
+text = "GOOD"
+
 [node name="TitleLabel" type="Label" parent="Ui/Root"]
 anchor_left = 1.0
 anchor_right = 1.0

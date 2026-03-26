@@ -8,6 +8,7 @@ const BaseMainCaptureService = preload("res://scripts/game/services/base_main_ca
 const BaseMainGuideService = preload("res://scripts/game/services/base_main_guide_service.gd")
 const BaseMainBossRegionService = preload("res://scripts/game/services/base_main_boss_region_service.gd")
 const BaseMainHudService = preload("res://scripts/game/services/base_main_hud_service.gd")
+const BaseMainCutRatingService = preload("res://scripts/game/services/base_main_cut_rating_service.gd")
 const ACTION_QIX_DRAW := &"qix_draw"
 const PLAYFIELD_SIZE := Vector2(904.0, 640.0)
 const STAGE_REMAINING_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/stage_001/claimed_background_904x640.png")
@@ -45,6 +46,10 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 @onready var boss_region_label: Label = $Ui/Root/BossRegionLabel
 @onready var hp_label: Label = $Ui/Root/HpLabel
 @onready var result_label: Label = $Ui/Root/ResultLabel
+@onready var cut_rating_bad_label: Label = $Ui/Root/CutRatingArea/CutRatingBadLabel
+@onready var cut_rating_good_label: Label = $Ui/Root/CutRatingArea/CutRatingGoodLabel
+@onready var cut_rating_summary_label: Label = $Ui/Root/CutRatingArea/CutRatingSummaryLabel
+@onready var cut_rating_bar: ProgressBar = $Ui/Root/CutRatingArea/CutRatingBar
 
 var playfield_rect: Rect2 = Rect2()
 var stage_cover_polygon: PackedVector2Array = PackedVector2Array()
@@ -68,6 +73,10 @@ var horizontal_guide_axis_keys: Array[int] = []
 var playfield_area_cached := 0.0
 var claimed_area := 0.0
 var claimed_ratio_cached := 0.0
+var current_cut_rating_value := BaseMainCutRatingService.INITIAL_VALUE
+var last_single_capture_percent := 0.0
+var last_cut_rating_delta := 0
+var has_cut_rating_update := false
 var boss_region_area_cached := 0.0
 var boss_region_ratio_cached := 0.0
 var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
@@ -402,6 +411,7 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 		push_warning(str(capture_result.get("warning", "Capture skipped.")))
 		return
 
+	_update_cut_rating_after_capture(capture_result.get("capture_context", {}))
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
 	if guide_service != null:
@@ -642,7 +652,27 @@ func _sync_boss_marker() -> void:
 
 func _create_playfield_rect() -> Rect2:
 	var viewport_rect := get_viewport_rect()
-	return Rect2(viewport_rect.position + playfield_margin, PLAYFIELD_SIZE)
+	var top_margin := playfield_margin.y + BaseMainCutRatingService.BAR_BAND_HEIGHT
+	return Rect2(
+		Vector2(viewport_rect.position.x + playfield_margin.x, viewport_rect.position.y + top_margin),
+		PLAYFIELD_SIZE
+	)
+
+
+func _update_cut_rating_after_capture(capture_context: Dictionary) -> void:
+	var single_capture_percent := _calculate_single_capture_percent(capture_context)
+	var delta := BaseMainCutRatingService.resolve_delta(single_capture_percent)
+	last_single_capture_percent = single_capture_percent
+	last_cut_rating_delta = delta
+	current_cut_rating_value = BaseMainCutRatingService.clamp_value(current_cut_rating_value + delta)
+	has_cut_rating_update = true
+
+
+func _calculate_single_capture_percent(capture_context: Dictionary) -> float:
+	if playfield_area_cached <= 0.0:
+		return 0.0
+	var added_claimed_area := float(capture_context.get("added_claimed_area", 0.0))
+	return maxf(0.0, added_claimed_area / playfield_area_cached * 100.0)
 
 
 func _create_playfield_cover_polygon() -> PackedVector2Array:

@@ -1,6 +1,8 @@
 extends RefCounted
 class_name BaseMainHudService
 
+const BaseMainCutRatingService = preload("res://scripts/game/services/base_main_cut_rating_service.gd")
+
 var _main
 
 
@@ -12,6 +14,7 @@ func sync() -> void:
 	if _main == null:
 		return
 
+	sync_cut_rating_bar()
 	sync_area_labels()
 	update_hp_label()
 
@@ -65,6 +68,24 @@ func sync_area_labels() -> void:
 	_main.boss_region_label.text = "BOSS REGION: OFF"
 
 
+func sync_cut_rating_bar() -> void:
+	if (
+		_main == null
+		or !is_instance_valid(_main.cut_rating_bar)
+		or !is_instance_valid(_main.cut_rating_summary_label)
+		or !is_instance_valid(_main.cut_rating_bad_label)
+		or !is_instance_valid(_main.cut_rating_good_label)
+	):
+		return
+
+	_main.cut_rating_bar.min_value = BaseMainCutRatingService.MIN_VALUE
+	_main.cut_rating_bar.max_value = BaseMainCutRatingService.MAX_VALUE
+	_main.cut_rating_bar.value = _main.current_cut_rating_value
+	_main.cut_rating_bad_label.text = BaseMainCutRatingService.BAD_LABEL
+	_main.cut_rating_good_label.text = BaseMainCutRatingService.GOOD_LABEL
+	_main.cut_rating_summary_label.text = _build_cut_rating_summary_text()
+
+
 func update_hp_label() -> void:
 	if _main == null or !is_instance_valid(_main.hp_label):
 		return
@@ -107,3 +128,21 @@ func sync_position(current_position: Vector2) -> void:
 		int(round(current_position.x)),
 		int(round(current_position.y))
 	]
+
+
+func _build_cut_rating_summary_text() -> String:
+	var rate_text := "%d%%" % _main.current_cut_rating_value
+	if !_main.has_cut_rating_update:
+		return "CUT -- / DELTA -- / RATE %s" % rate_text
+
+	return "CUT %.1f%% / DELTA %s / RATE %s" % [
+		_main.last_single_capture_percent,
+		_format_cut_rating_delta(_main.last_cut_rating_delta),
+		rate_text
+	]
+
+
+func _format_cut_rating_delta(delta: int) -> String:
+	if delta > 0:
+		return "+%d" % delta
+	return "%d" % delta
