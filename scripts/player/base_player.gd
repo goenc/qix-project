@@ -210,24 +210,34 @@ func _process(delta: float) -> void:
 
 
 func _update_top_outline_countdown(delta: float) -> void:
-	if _is_top_outline_countdown_active():
-		var previous_remaining := top_outline_countdown_remaining
-		top_outline_countdown_remaining = maxf(0.0, top_outline_countdown_remaining - delta)
-		if !is_equal_approx(previous_remaining, top_outline_countdown_remaining):
-			_update_top_outline_countdown_label()
+	if !_is_top_outline_countdown_active():
 		return
 
-	if !is_equal_approx(top_outline_countdown_remaining, TOP_OUTLINE_COUNTDOWN_SECONDS):
-		top_outline_countdown_remaining = TOP_OUTLINE_COUNTDOWN_SECONDS
+	var previous_remaining := top_outline_countdown_remaining
+	top_outline_countdown_remaining = maxf(0.0, top_outline_countdown_remaining - delta)
+	if !is_equal_approx(previous_remaining, top_outline_countdown_remaining):
 		_update_top_outline_countdown_label()
 
 
 func _is_top_outline_countdown_active() -> bool:
+	if !_is_on_top_outline_border():
+		return false
+	return top_outline_countdown_remaining > 0.0
+
+
+func _is_on_top_outline_border() -> bool:
 	if state != PlayerState.BORDER:
 		return false
 	if !_is_on_border(position):
 		return false
 	return absf(position.y - playfield_rect.position.y) <= border_epsilon
+
+
+func _reset_top_outline_countdown() -> void:
+	if is_equal_approx(top_outline_countdown_remaining, TOP_OUTLINE_COUNTDOWN_SECONDS):
+		return
+	top_outline_countdown_remaining = TOP_OUTLINE_COUNTDOWN_SECONDS
+	_update_top_outline_countdown_label()
 
 
 func _update_top_outline_countdown_label() -> void:
@@ -306,6 +316,14 @@ func get_boss_hit_targets() -> Dictionary:
 			if draw_pressed:
 				risk_state = BossHitRisk.PLAYER_ONLY
 				player_target = true
+
+	if state == PlayerState.BORDER and _is_on_top_outline_border():
+		if top_outline_countdown_remaining > 0.0:
+			risk_state = BossHitRisk.NONE
+			player_target = false
+		else:
+			risk_state = BossHitRisk.PLAYER_ONLY
+			player_target = true
 
 	var damage_blocked := _is_damage_blocked()
 	return {
@@ -419,6 +437,7 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 
 	_append_trail_point_if_needed(false)
 	if !has_left_border and !_is_on_border(position):
+		_reset_top_outline_countdown()
 		has_left_border = true
 
 	if has_left_border and _is_on_border(position):
