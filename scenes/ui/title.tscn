@@ -32,7 +32,7 @@ offset_top = 84.0
 offset_right = 532.0
 offset_bottom = 132.0
 theme_override_font_sizes/font_size = 32
-text = "QIX INITIAL PROJECT"
+text = "陣取りバトル"
 horizontal_alignment = 1
 
 [node name="SubLabel" type="Label" parent="Root"]
@@ -41,7 +41,7 @@ offset_top = 152.0
 offset_right = 512.0
 offset_bottom = 196.0
 theme_override_font_sizes/font_size = 18
-text = "MINIMAL TITLE AND MOVE TEST"
+text = "線を引いて領域を奪うアクションゲーム"
 horizontal_alignment = 1
 
 [node name="Prompt" type="Label" parent="Root"]
@@ -50,5 +50,5 @@ offset_top = 248.0
 offset_right = 488.0
 offset_bottom = 286.0
 theme_override_font_sizes/font_size = 20
-text = "PRESS ACCEPT TO START"
+text = "Aボタン / Enterでスタート"
 horizontal_alignment = 1

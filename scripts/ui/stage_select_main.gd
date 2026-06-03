@@ -6,28 +6,28 @@ const InputActionUtils = preload("res://scripts/common/input_action_utils.gd")
 const STAGE_ENTRIES: Array[Dictionary] = [
 	{
 		"stage_id": 1,
-		"title": "STAGE 1",
+		"title": "ステージ 1",
 		"available": true,
 		"scene_path": "res://scenes/base_main.tscn",
-		"detail_text": "PLAYABLE / BASE MAIN"
+		"detail_text": "プレイ可能 / 基本モード"
 	},
 	{
 		"stage_id": 2,
-		"title": "STAGE 2",
+		"title": "ステージ 2",
 		"available": false,
 		"scene_path": "",
 		"detail_text": "未実装のモックです"
 	},
 	{
 		"stage_id": 3,
-		"title": "STAGE 3",
+		"title": "ステージ 3",
 		"available": false,
 		"scene_path": "",
 		"detail_text": "未実装のモックです"
 	},
 	{
 		"stage_id": 4,
-		"title": "STAGE 4",
+		"title": "ステージ 4",
 		"available": false,
 		"scene_path": "",
 		"detail_text": "未実装のモックです"

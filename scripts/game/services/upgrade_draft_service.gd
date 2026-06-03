@@ -4,56 +4,56 @@ class_name UpgradeDraftService
 const UPGRADE_POOL := [
 	{
 		"id": "fast_speed",
-		"title": "FAST ROUTE",
-		"description": "Fast Draw speed +12% and shard gain +10%.",
+		"title": "速攻ルート",
+		"description": "ファスト描画速度が12%上がり、シャード獲得量が10%増えます。",
 		"max_rank": 3
 	},
 	{
 		"id": "slow_power",
-		"title": "SLOW PRESSURE",
-		"description": "Slow Draw speed +8% and boss squeeze reward +20%.",
+		"title": "重圧ライン",
+		"description": "スロー描画速度が8%上がり、ボス圧縮報酬が20%増えます。",
 		"max_rank": 3
 	},
 	{
 		"id": "guard_charge",
-		"title": "LINE GUARD",
-		"description": "Gain 1 guard charge that blocks one boss hit.",
+		"title": "ラインガード",
+		"description": "ボスの接触を1回だけ防ぐガードを1つ得ます。",
 		"max_rank": 3
 	},
 	{
 		"id": "growth_discount",
-		"title": "FLOW STATE",
-		"description": "Next growth thresholds become 10% cheaper.",
+		"title": "集中維持",
+		"description": "次回以降の成長に必要な量が10%軽くなります。",
 		"max_rank": 2
 	},
 	{
 		"id": "top_outline_boost",
-		"title": "TOP WINDOW",
-		"description": "Top border grace +4 seconds.",
+		"title": "上辺猶予",
+		"description": "上辺の安全時間が4秒伸びます。",
 		"max_rank": 3
 	},
 	{
 		"id": "small_chain_bonus",
-		"title": "CHAIN CUTS",
-		"description": "Small safe captures gain more shards and growth.",
+		"title": "連続小取り",
+		"description": "小さく安全な確保で得られるシャードと成長量が増えます。",
 		"max_rank": 3
 	},
 	{
 		"id": "large_cut_bonus",
-		"title": "BIG CLAIM",
-		"description": "Large captures gain more shards and territory.",
+		"title": "大取り報酬",
+		"description": "大きな確保で得られるシャードと領域値が増えます。",
 		"max_rank": 3
 	},
 	{
 		"id": "reroll_charge",
-		"title": "SIGNAL RESET",
-		"description": "Gain 1 reroll for future upgrade drafts.",
+		"title": "再抽選",
+		"description": "次回以降の強化選択で使える再抽選回数を1つ得ます。",
 		"max_rank": 2
 	},
 	{
 		"id": "streak_bonus",
-		"title": "NO HIT RHYTHM",
-		"description": "No-damage capture streaks give more growth and shards.",
+		"title": "無傷テンポ",
+		"description": "無傷での連続確保時に成長量とシャード獲得量が増えます。",
 		"max_rank": 3
 	}
 ]

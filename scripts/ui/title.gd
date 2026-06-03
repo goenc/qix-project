@@ -17,4 +17,4 @@ func set_active(active: bool) -> void:
 	visible = active
 	root.visible = active
 	if active:
-		prompt.text = "PRESS A / ENTER TO START"
+		prompt.text = "Aボタン / Enterでスタート"

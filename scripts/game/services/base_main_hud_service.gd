@@ -21,47 +21,47 @@ func sync() -> void:
 	update_hp_label()
 
 	if _main.game_over:
-		_main.state_label.text = "MODE: GAME OVER"
-		_main.result_label.text = "GAME OVER"
-		_main.help_label.text = "ESC: TITLE"
+		_main.state_label.text = "状態: ゲームオーバー"
+		_main.result_label.text = "ゲームオーバー"
+		_main.help_label.text = "Esc: タイトルへ戻る"
 		if is_instance_valid(_main.base_player):
 			sync_position(_main.base_player.position)
 		else:
-			_main.position_label.text = "POS: (-, -)"
+			_main.position_label.text = "座標: (-, -)"
 		return
 
 	if _main.game_clear:
-		_main.state_label.text = "MODE: GAME CLEAR"
-		_main.result_label.text = "GAME CLEAR"
-		_main.help_label.text = "ESC: TITLE"
+		_main.state_label.text = "状態: クリア"
+		_main.result_label.text = "ゲームクリア"
+		_main.help_label.text = "Esc: タイトルへ戻る"
 		if is_instance_valid(_main.base_player):
 			sync_position(_main.base_player.position)
 		else:
-			_main.position_label.text = "POS: (-, -)"
+			_main.position_label.text = "座標: (-, -)"
 		return
 
 	if _main.is_upgrade_draft_active():
-		_main.state_label.text = "MODE: UPGRADE"
-		_main.result_label.text = "SELECT AN UPGRADE"
-		_main.help_label.text = "MOVE: ARROWS/WASD FAST: SHIFT/PAD-A SLOW: CTRL/PAD-X 1-3: PICK R: REROLL ESC: TITLE"
+		_main.state_label.text = "状態: 強化選択"
+		_main.result_label.text = "強化を1つ選択"
+		_main.help_label.text = "移動: 矢印/WASD 速描: Shift/A 遅描: Ctrl/X 1-3: 決定 R: 再抽選 Esc: タイトル"
 		if is_instance_valid(_main.base_player):
 			sync_position(_main.base_player.position)
 		else:
-			_main.position_label.text = "POS: (-, -)"
+			_main.position_label.text = "座標: (-, -)"
 		return
 
 	if _main.get_tree().paused:
-		_main.state_label.text = "MODE: PAUSED"
-		_main.position_label.text = "POS: (-, -)"
+		_main.state_label.text = "状態: 一時停止"
+		_main.position_label.text = "座標: (-, -)"
 		_main.result_label.text = ""
-		_main.help_label.text = "MOVE: ARROWS/WASD FAST: SHIFT/PAD-A SLOW: CTRL/PAD-X ESC: TITLE"
+		_main.help_label.text = "移動: 矢印/WASD 速描: Shift/A 遅描: Ctrl/X Esc: タイトル"
 		return
 
 	if !is_instance_valid(_main.base_player):
-		_main.state_label.text = "MODE: BORDER"
-		_main.position_label.text = "POS: (-, -)"
+		_main.state_label.text = "状態: 外周"
+		_main.position_label.text = "座標: (-, -)"
 		_main.result_label.text = ""
-		_main.help_label.text = "MOVE: ARROWS/WASD FAST: SHIFT/PAD-A SLOW: CTRL/PAD-X ESC: TITLE"
+		_main.help_label.text = "移動: 矢印/WASD 速描: Shift/A 遅描: Ctrl/X Esc: タイトル"
 		return
 
 	var status: Dictionary = _main.base_player.get_debug_status()
@@ -73,11 +73,11 @@ func sync_area_labels() -> void:
 	if _main == null:
 		return
 	if _main.show_area_percent_labels:
-		_main.claimed_label.text = "CLAIMED: %d%%" % int(round(_main.claimed_ratio_cached * 100.0))
-		_main.boss_region_label.text = "BOSS REGION: %d%%" % int(round(_main.boss_region_ratio_cached * 100.0))
+		_main.claimed_label.text = "確保率: %d%%" % int(round(_main.claimed_ratio_cached * 100.0))
+		_main.boss_region_label.text = "ボス領域: %d%%" % int(round(_main.boss_region_ratio_cached * 100.0))
 		return
-	_main.claimed_label.text = "CLAIMED: OFF"
-	_main.boss_region_label.text = "BOSS REGION: OFF"
+	_main.claimed_label.text = "確保率: 非表示"
+	_main.boss_region_label.text = "ボス領域: 非表示"
 
 
 func sync_cut_rating_bar() -> void:
@@ -127,17 +127,17 @@ func sync_status(status: Dictionary) -> void:
 		sync()
 		return
 
-	var mode_text := str(status.get("mode_text", "BORDER"))
-	var draw_mode := str(status.get("draw_mode", "FAST"))
-	_main.state_label.text = "MODE: %s / %s" % [mode_text, draw_mode]
+	var mode_text := _localize_mode_text(str(status.get("mode_text", "BORDER")))
+	var draw_mode := _localize_draw_mode_text(str(status.get("draw_mode", "FAST")))
+	_main.state_label.text = "状態: %s / %s" % [mode_text, draw_mode]
 	_main.result_label.text = ""
-	_main.help_label.text = "MOVE: ARROWS/WASD FAST: SHIFT/PAD-A SLOW: CTRL/PAD-X ESC: TITLE"
+	_main.help_label.text = "移動: 矢印/WASD 速描: Shift/A 遅描: Ctrl/X Esc: タイトル"
 
 
 func sync_position(current_position: Vector2) -> void:
 	if _main == null:
 		return
-	_main.position_label.text = "POS: (%d, %d)" % [
+	_main.position_label.text = "座標: (%d, %d)" % [
 		int(round(current_position.x)),
 		int(round(current_position.y))
 	]
@@ -147,21 +147,21 @@ func sync_run_progress_labels() -> void:
 	if _main == null:
 		return
 	var snapshot: Dictionary = _main.get_run_progress_hud_snapshot()
-	_main.shards_label.text = "SHARDS: %d  TERRITORY: %d" % [
+	_main.shards_label.text = "シャード: %d  領域値: %d" % [
 		int(snapshot.get("shards", 0)),
 		int(snapshot.get("territory", 0))
 	]
-	_main.growth_label.text = "GROWTH: Lv.%d  %.1f / %.1f" % [
+	_main.growth_label.text = "成長: Lv.%d  %.1f / %.1f" % [
 		int(snapshot.get("run_level", 0)),
 		float(snapshot.get("growth_progress", 0.0)),
 		float(snapshot.get("next_growth_threshold", 0.0))
 	]
-	_main.objective_primary_label.text = "PRIMARY: %s" % str(snapshot.get("primary_objective", "[ ] Compress boss region below 20%."))
-	_main.objective_optional_1_label.text = "OPTIONAL: %s" % str(snapshot.get("optional_objective_1", "[ ] Clear under 3:00."))
-	_main.objective_optional_2_label.text = "OPTIONAL: %s" % str(snapshot.get("optional_objective_2", "[ ] Land a single 15% cut."))
-	_main.build_label.text = str(snapshot.get("build_summary", "BUILD: FAST/Slow hybrid"))
-	_main.meta_label.text = "%s" % str(snapshot.get("meta_summary", "META: Core 0  Guard 0  Reroll 0"))
-	_main.quest_label.text = "QUESTS: %s" % str(snapshot.get("quest_summary", ""))
+	_main.objective_primary_label.text = "主目標: %s" % str(snapshot.get("primary_objective", "未達成: ボス領域を20%未満まで圧縮する"))
+	_main.objective_optional_1_label.text = "任意目標: %s" % str(snapshot.get("optional_objective_1", "未達成: 3分以内にクリアする"))
+	_main.objective_optional_2_label.text = "任意目標: %s" % str(snapshot.get("optional_objective_2", "未達成: 単発15%以上の大取りを決める"))
+	_main.build_label.text = str(snapshot.get("build_summary", "ビルド: バランス型"))
+	_main.meta_label.text = "%s" % str(snapshot.get("meta_summary", "恒久強化: コア 0  ガード 0  再抽選 0"))
+	_main.quest_label.text = "課題: %s" % str(snapshot.get("quest_summary", ""))
 
 
 func sync_upgrade_overlay() -> void:
@@ -185,15 +185,15 @@ func sync_upgrade_overlay() -> void:
 			var choice: Dictionary = choices[index]
 			label.text = "%d. %s\n%s" % [
 				index + 1,
-				str(choice.get("title", "UPGRADE")),
+				str(choice.get("title", "強化")),
 				str(choice.get("description", ""))
 			]
 		else:
 			label.text = "%d. --" % [index + 1]
-	_main.upgrade_title_label.text = "UPGRADE DRAFT"
-	_main.upgrade_hint_label.text = "Pick one to keep the run moving."
+	_main.upgrade_title_label.text = "強化選択"
+	_main.upgrade_hint_label.text = "1つ選ぶとプレイに戻ります。"
 	var snapshot: Dictionary = _main.get_run_progress_hud_snapshot()
-	_main.upgrade_meta_label.text = "REROLL: %d  GUARD: %d" % [
+	_main.upgrade_meta_label.text = "再抽選: %d  ガード: %d" % [
 		int(snapshot.get("reroll_charges", 0)),
 		int(snapshot.get("guard_charges", 0))
 	]
@@ -202,13 +202,27 @@ func sync_upgrade_overlay() -> void:
 func _build_cut_rating_summary_text() -> String:
 	var rate_text := "%d%%" % _main.current_cut_rating_value
 	if !_main.has_cut_rating_update:
-		return "CUT -- / DELTA -- / RATE %s" % rate_text
+		return "直近確保 -- / 変動 -- / 傾向 %s" % rate_text
 
-	return "CUT %.1f%% / DELTA %s / RATE %s" % [
+	return "直近確保 %.1f%% / 変動 %s / 傾向 %s" % [
 		_main.last_single_capture_percent,
 		_format_cut_rating_delta(_main.last_cut_rating_delta),
 		rate_text
 	]
+
+
+func _localize_mode_text(mode_text: String) -> String:
+	match mode_text:
+		"DRAWING":
+			return "描画中"
+		"REWINDING":
+			return "巻き戻し"
+		_:
+			return "外周移動"
+
+
+func _localize_draw_mode_text(draw_mode: String) -> String:
+	return "遅描き" if draw_mode == "SLOW" else "速描き"
 
 
 func _format_cut_rating_delta(delta: int) -> String:

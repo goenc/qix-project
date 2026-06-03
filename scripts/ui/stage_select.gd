@@ -63,7 +63,7 @@ func _apply_stage_entry(card: Dictionary, entry: Dictionary, selected: bool) -> 
 	var stage_label: Label = card.get("title") as Label
 	var status_label: Label = card.get("status") as Label
 	var detail_label: Label = card.get("detail") as Label
-	var stage_title := str(entry.get("title", "STAGE"))
+	var stage_title := str(entry.get("title", "ステージ"))
 	var available := bool(entry.get("available", false))
 	var detail_text := str(entry.get("detail_text", ""))
 
@@ -73,11 +73,11 @@ func _apply_stage_entry(card: Dictionary, entry: Dictionary, selected: bool) -> 
 	if available:
 		if selected:
 			card_root.color = Color(0.20, 0.34, 0.20, 0.96)
-			status_label.text = "SELECTED"
+			status_label.text = "選択中"
 			status_label.add_theme_color_override("font_color", Color(0.95, 1.0, 0.75))
 		else:
 			card_root.color = Color(0.12, 0.22, 0.14, 0.90)
-			status_label.text = "READY"
+			status_label.text = "挑戦可能"
 			status_label.add_theme_color_override("font_color", Color(0.78, 0.98, 0.78))
 	else:
 		if selected:

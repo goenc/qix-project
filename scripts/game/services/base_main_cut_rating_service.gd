@@ -5,8 +5,8 @@ const INITIAL_VALUE := 50
 const MIN_VALUE := 0
 const MAX_VALUE := 100
 const BAR_BAND_HEIGHT := 56.0
-const BAD_LABEL := "BAD"
-const GOOD_LABEL := "GOOD"
+const BAD_LABEL := "大取り"
+const GOOD_LABEL := "小取り"
 const CUT_DELTA_RULES := [
 	{"min_percent": 0.0, "max_percent": 5.0, "delta": 2},
 	{"min_percent": 5.0, "max_percent": 10.0, "delta": 1},

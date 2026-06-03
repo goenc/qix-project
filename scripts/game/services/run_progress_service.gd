@@ -2,12 +2,12 @@ extends RefCounted
 class_name RunProgressService
 
 const SAVE_PATH := "user://run_progress.cfg"
-const DEFAULT_PRIMARY_OBJECTIVE := "Compress boss region below 20%."
-const DEFAULT_OPTIONAL_OBJECTIVE_TIME := "Clear under 3:00."
-const DEFAULT_OPTIONAL_OBJECTIVE_BIG_CUT := "Land a single 15% cut."
-const DEFAULT_QUEST_THIRTY := "Reach 30% claimed once."
-const DEFAULT_QUEST_FAST_ONLY := "Clear one run without using Slow Draw."
-const DEFAULT_QUEST_STREAK := "Return safely 3 captures in a row."
+const DEFAULT_PRIMARY_OBJECTIVE := "ボス領域を20%未満まで圧縮する"
+const DEFAULT_OPTIONAL_OBJECTIVE_TIME := "3分以内にクリアする"
+const DEFAULT_OPTIONAL_OBJECTIVE_BIG_CUT := "単発15%以上の大取りを決める"
+const DEFAULT_QUEST_THIRTY := "確保率30%に一度到達する"
+const DEFAULT_QUEST_FAST_ONLY := "スロー描画を使わずに1回クリアする"
+const DEFAULT_QUEST_STREAK := "無傷で3回連続帰還する"
 const GROWTH_THRESHOLDS := [12.0, 28.0, 48.0, 72.0, 100.0, 132.0, 168.0]
 
 var _main
@@ -341,9 +341,10 @@ func _apply_upgrade(upgrade_id: String) -> void:
 
 
 func _update_build_summary(upgrade_id: String, rank: int) -> void:
-	var summary_line := "%s Lv.%d" % [upgrade_id.replace("_", " ").to_upper(), rank]
+	var upgrade_name := _get_upgrade_display_name(upgrade_id)
+	var summary_line := "%s Lv.%d" % [upgrade_name, rank]
 	for index in range(current_build_summary.size()):
-		if current_build_summary[index].begins_with(upgrade_id.replace("_", " ").to_upper()):
+		if current_build_summary[index].begins_with(upgrade_name):
 			current_build_summary[index] = summary_line
 			return
 	current_build_summary.append(summary_line)
@@ -353,23 +354,23 @@ func _update_build_summary(upgrade_id: String, rank: int) -> void:
 
 func _build_summary_text() -> String:
 	if current_build_summary.is_empty():
-		return "BUILD: FAST/Slow hybrid"
-	return "BUILD: %s" % _join_summary_lines(current_build_summary)
+		return "ビルド: バランス型"
+	return "ビルド: %s" % _join_summary_lines(current_build_summary)
 
 
 func _build_meta_summary_text() -> String:
-	return "META: Core %d  Guard %d  Reroll %d" % [core_data_total, guard_charges, reroll_charges]
+	return "恒久強化: コア %d  ガード %d  再抽選 %d" % [core_data_total, guard_charges, reroll_charges]
 
 
 func _build_quest_summary_text() -> String:
 	var streak_text := _format_objective_text(quest_streak_completed, DEFAULT_QUEST_STREAK)
 	var fast_only_text := _format_objective_text(quest_fast_only_completed, DEFAULT_QUEST_FAST_ONLY)
 	var claim_text := _format_objective_text(quest_claimed_thirty_completed, DEFAULT_QUEST_THIRTY)
-	return "%s | %s | %s" % [claim_text, fast_only_text, streak_text]
+	return "%s / %s / %s" % [claim_text, fast_only_text, streak_text]
 
 
 func _format_objective_text(completed: bool, label: String) -> String:
-	return "[OK] %s" % label if completed else "[ ] %s" % label
+	return "達成: %s" % label if completed else "未達成: %s" % label
 
 
 func _award_core_data(amount: int) -> void:
@@ -412,6 +413,30 @@ func _join_summary_lines(lines: Array[String]) -> String:
 	var result := ""
 	for index in range(lines.size()):
 		if index > 0:
-			result += ", "
+			result += " / "
 		result += lines[index]
 	return result
+
+
+func _get_upgrade_display_name(upgrade_id: String) -> String:
+	match upgrade_id:
+		"fast_speed":
+			return "速攻ルート"
+		"slow_power":
+			return "重圧ライン"
+		"guard_charge":
+			return "ラインガード"
+		"growth_discount":
+			return "集中維持"
+		"top_outline_boost":
+			return "上辺猶予"
+		"small_chain_bonus":
+			return "連続小取り"
+		"large_cut_bonus":
+			return "大取り報酬"
+		"reroll_charge":
+			return "再抽選"
+		"streak_bonus":
+			return "無傷テンポ"
+		_:
+			return "強化"
