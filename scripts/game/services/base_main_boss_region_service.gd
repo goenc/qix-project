@@ -487,8 +487,6 @@ func _choose_next_boss_region_step(
 		if step_direction.length_squared() <= epsilon * epsilon:
 			continue
 		step_direction = step_direction.normalized()
-		if is_start_step and step_direction.dot(Vector2.RIGHT) > 1.0 - 0.001:
-			continue
 
 		candidate_steps.append({
 			"found": true,
@@ -582,6 +580,10 @@ func _is_guide_segment_within_short_threshold(guide_length: float, epsilon: floa
 
 func _get_partition_fill_target_boss_diameter() -> float:
 	if is_instance_valid(_main.bbos):
+		if _main.bbos.has_method("get_partition_reference_diameter"):
+			return maxf(float(_main.bbos.call("get_partition_reference_diameter")), 0.0)
+		if _main.bbos.has_method("get_logical_capture_radius"):
+			return maxf(float(_main.bbos.call("get_logical_capture_radius")), 0.0) * 2.0
 		if _main.bbos.has_method("_get_effective_collision_radius"):
 			return maxf(float(_main.bbos.call("_get_effective_collision_radius")), 0.0) * 2.0
 		if _main.bbos.has_method("get"):

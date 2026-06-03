@@ -61,6 +61,19 @@ func _get_boss_selection_point() -> Vector2:
 	return _main.current_outer_loop[0]
 
 
+func _get_boss_selection_radius() -> float:
+	if is_instance_valid(_main.bbos):
+		if _main.bbos.has_method("get_logical_capture_radius"):
+			return maxf(float(_main.bbos.call("get_logical_capture_radius")), 0.0)
+		if _main.bbos.has_method("_get_effective_collision_radius"):
+			return maxf(float(_main.bbos.call("_get_effective_collision_radius")), 0.0)
+		if _main.bbos.has_method("get"):
+			return maxf(float(_main.bbos.get("collision_radius")), 0.0)
+	if is_instance_valid(_main.boss) and _main.boss.has_method("get"):
+		return maxf(float(_main.boss.get("collision_radius")), 0.0)
+	return 0.0
+
+
 func _build_capture_candidate_loops(trail_points: PackedVector2Array, epsilon: float) -> Array[Dictionary]:
 	return PlayfieldBoundary.split_outer_loop_by_trail(
 		_main.current_outer_loop,
@@ -73,7 +86,75 @@ func _build_capture_candidate_loops(trail_points: PackedVector2Array, epsilon: f
 func _select_boss_side_loop(candidate_loops: Array[Dictionary], epsilon: float) -> int:
 	_main._sync_boss_marker()
 	var selection_point := _get_boss_selection_point()
-	return PlayfieldBoundary.select_loop_containing_point(candidate_loops, selection_point, epsilon)
+	var selection_radius := _get_boss_selection_radius()
+	var selected_index := -1
+	var best_circle_fit := false
+	var best_contains_point := false
+	var best_push_distance := INF
+	var best_area := -INF
+
+	for index in range(candidate_loops.size()):
+		var loop: PackedVector2Array = candidate_loops[index].get("loop", PackedVector2Array())
+		if loop.size() < 3:
+			continue
+
+		var contains_circle := (
+			selection_radius > epsilon
+			and PlayfieldBoundary.can_circle_center_fit(loop, selection_point, selection_radius, epsilon)
+		)
+		var contains_point := Geometry2D.is_point_in_polygon(selection_point, loop) or PlayfieldBoundary.is_point_on_loop(loop, selection_point, epsilon)
+		var push_target := (
+			PlayfieldBoundary.ensure_circle_center_inside(loop, selection_point, selection_radius, epsilon)
+			if selection_radius > epsilon
+			else PlayfieldBoundary.ensure_point_inside(loop, selection_point, epsilon)
+		)
+		var push_distance := selection_point.distance_to(push_target)
+		var area := float(candidate_loops[index].get("area", -1.0))
+		if area < 0.0:
+			area = PlayfieldBoundary.polygon_area(loop)
+
+		if selected_index == -1:
+			selected_index = index
+			best_circle_fit = contains_circle
+			best_contains_point = contains_point
+			best_push_distance = push_distance
+			best_area = area
+			continue
+
+		if contains_circle != best_circle_fit:
+			if contains_circle:
+				selected_index = index
+				best_circle_fit = contains_circle
+				best_contains_point = contains_point
+				best_push_distance = push_distance
+				best_area = area
+			continue
+
+		if contains_point != best_contains_point:
+			if contains_point:
+				selected_index = index
+				best_circle_fit = contains_circle
+				best_contains_point = contains_point
+				best_push_distance = push_distance
+				best_area = area
+			continue
+
+		if push_distance < best_push_distance - epsilon:
+			selected_index = index
+			best_circle_fit = contains_circle
+			best_contains_point = contains_point
+			best_push_distance = push_distance
+			best_area = area
+			continue
+
+		if is_equal_approx(push_distance, best_push_distance) and area > best_area + epsilon:
+			selected_index = index
+			best_circle_fit = contains_circle
+			best_contains_point = contains_point
+			best_push_distance = push_distance
+			best_area = area
+
+	return selected_index
 
 
 func _apply_retained_capture_loop(retained_candidate: Dictionary) -> void:

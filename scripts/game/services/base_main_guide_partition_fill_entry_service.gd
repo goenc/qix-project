@@ -313,7 +313,6 @@ func _append_guide_partition_fill_entry_between(
 		"left_interval_key": left_interval_key,
 		"right_interval_key": right_interval_key,
 		"pair_key": _build_guide_partition_pair_key(left_interval_key, right_interval_key),
-		"persist": true,
 		"left_guide_key": left_guide_key,
 		"right_guide_key": right_guide_key,
 		"rect": rect
@@ -326,11 +325,10 @@ func _upsert_guide_partition_fill_entry(partition_state: Dictionary, entry: Dict
 	if pair_key.is_empty():
 		return
 	entry["pair_key"] = pair_key
-	if _is_guide_partition_fill_entry_persistent(entry):
-		var entry_key := BaseMainGuideCommon.stringify_value(entry.get("entry_key", ""), "")
-		if entry_key.is_empty():
-			entry_key = _allocate_guide_partition_fill_entry_key(partition_state, pair_key)
-			entry["entry_key"] = entry_key
+	var entry_key := BaseMainGuideCommon.stringify_value(entry.get("entry_key", ""), "")
+	if entry_key.is_empty():
+		entry_key = _allocate_guide_partition_fill_entry_key(partition_state, pair_key)
+		entry["entry_key"] = entry_key
 	var entry_index := _find_guide_partition_fill_entry_index(partition_state, entry)
 	if entry_index >= 0:
 		guide_partition_fill_entries[entry_index] = entry
@@ -382,10 +380,6 @@ func _allocate_guide_partition_fill_entry_key(partition_state: Dictionary, pair_
 	return "%s#%d" % [pair_key, int(partition_state.get("guide_partition_fill_entry_key_sequence", 0))]
 
 
-func _is_guide_partition_fill_entry_persistent(entry: Dictionary) -> bool:
-	return bool(entry.get("persist", true))
-
-
 func _remove_guide_partition_fill_entries_for_guide_interval(
 	partition_state: Dictionary,
 	guide: Dictionary,
@@ -398,8 +392,6 @@ func _remove_guide_partition_fill_entries_for_guide_interval(
 		return
 	for index in range(guide_partition_fill_entries.size() - 1, -1, -1):
 		var entry: Dictionary = guide_partition_fill_entries[index]
-		if _is_guide_partition_fill_entry_persistent(entry):
-			continue
 		var left_interval_key := BaseMainGuideCommon.stringify_value(entry.get("left_interval_key", ""), "")
 		var right_interval_key := BaseMainGuideCommon.stringify_value(entry.get("right_interval_key", ""), "")
 		if left_interval_key == interval_key or right_interval_key == interval_key:
@@ -450,8 +442,6 @@ func _prune_guide_partition_fill_entries(
 	var guide_partition_fill_entries: Array[Dictionary] = partition_state.get("guide_partition_fill_entries", [])
 	for index in range(guide_partition_fill_entries.size() - 1, -1, -1):
 		var entry: Dictionary = guide_partition_fill_entries[index]
-		if _is_guide_partition_fill_entry_persistent(entry):
-			continue
 		if !_guide_partition_entry_has_active_vertical_guides(entry, active_vertical_guides_by_interval_key):
 			guide_partition_fill_entries.remove_at(index)
 			continue

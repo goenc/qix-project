@@ -32,11 +32,13 @@ var has_spawned := false
 var velocity := Vector2.ZERO
 var direction_change_timer := 0.0
 var base_scale := Vector2.ONE
+var body_base_scale := Vector2.ONE
 var initial_collision_radius := 0.0
 var last_reported_position := Vector2(INF, INF)
 var corner_stuck_score := 0.0
 var corner_escape_cooldown := 0.0
 var last_corner_hit_position := Vector2(INF, INF)
+var logical_capture_radius := 0.0
 
 
 func _ready() -> void:
@@ -45,7 +47,10 @@ func _ready() -> void:
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
 	base_scale = scale
+	if is_instance_valid(body):
+		body_base_scale = body.scale
 	initial_collision_radius = _get_effective_collision_radius()
+	logical_capture_radius = initial_collision_radius
 	initial_visual_diameter = _resolve_initial_visual_diameter()
 	_sync_size_to_viewport()
 	var viewport := get_viewport()
@@ -186,6 +191,14 @@ func get_active_reflection_loop() -> PackedVector2Array:
 	return active_outer_loop
 
 
+func get_logical_capture_radius() -> float:
+	return maxf(logical_capture_radius, 0.0)
+
+
+func get_partition_reference_diameter() -> float:
+	return get_logical_capture_radius() * 2.0
+
+
 func _on_viewport_size_changed() -> void:
 	_sync_size_to_viewport()
 
@@ -206,12 +219,11 @@ func _sync_boss_region_size() -> void:
 
 	var base_diameter := viewport_height * VIEWPORT_BASE_DIAMETER_RATIO
 	var diameter_ratio := maxf(MIN_BOSS_REGION_DIAMETER_RATIO, boss_region_ratio)
-	var min_visual_scale := (base_diameter * MIN_BOSS_REGION_DIAMETER_RATIO) / initial_visual_diameter
 	var target_diameter := base_diameter * diameter_ratio
 	var visual_scale := target_diameter / initial_visual_diameter
-	min_collision_radius = initial_collision_radius * min_visual_scale
-	scale = base_scale * visual_scale
-	set_collision_radius(initial_collision_radius * visual_scale)
+	scale = base_scale
+	if is_instance_valid(body):
+		body.scale = body_base_scale * visual_scale
 
 
 func _resolve_initial_visual_diameter() -> float:

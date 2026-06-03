@@ -191,6 +191,10 @@ func _get_guide_epsilon() -> float:
 
 func _get_partition_fill_target_boss_diameter() -> float:
 	if is_instance_valid(_main.bbos):
+		if _main.bbos.has_method("get_partition_reference_diameter"):
+			return maxf(float(_main.bbos.call("get_partition_reference_diameter")), 0.0)
+		if _main.bbos.has_method("get_logical_capture_radius"):
+			return maxf(float(_main.bbos.call("get_logical_capture_radius")), 0.0) * 2.0
 		if _main.bbos.has_method("_get_effective_collision_radius"):
 			return maxf(float(_main.bbos.call("_get_effective_collision_radius")), 0.0) * 2.0
 		if _main.bbos.has_method("get"):
