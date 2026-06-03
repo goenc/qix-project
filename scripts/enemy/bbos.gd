@@ -35,6 +35,9 @@ var velocity := Vector2.ZERO
 var direction_change_timer := 0.0
 var base_scale := Vector2.ONE
 var body_base_scale := Vector2.ONE
+var pick_collision_base_scale := Vector2.ONE
+var base_collision_radius := 0.0
+var base_min_collision_radius := 0.0
 var initial_collision_radius := 0.0
 var last_reported_position := Vector2(INF, INF)
 var corner_stuck_score := 0.0
@@ -51,6 +54,10 @@ func _ready() -> void:
 	base_scale = scale
 	if is_instance_valid(body):
 		body_base_scale = body.scale
+	if is_instance_valid(pick_area):
+		pick_collision_base_scale = pick_area.scale
+	base_collision_radius = collision_radius
+	base_min_collision_radius = min_collision_radius
 	initial_collision_radius = _get_effective_collision_radius()
 	logical_capture_radius = initial_collision_radius
 	initial_visual_diameter = _resolve_initial_visual_diameter()
@@ -165,7 +172,8 @@ func set_active_outer_loop(loop: PackedVector2Array) -> void:
 
 
 func set_collision_radius(radius: float) -> void:
-	collision_radius = maxf(radius, maxf(min_collision_radius, 0.0))
+	base_collision_radius = maxf(radius, maxf(base_min_collision_radius, 0.0))
+	collision_radius = base_collision_radius
 	_rebuild_active_inner_loop()
 	_reset_corner_stuck_state()
 
@@ -227,6 +235,12 @@ func _sync_boss_region_size() -> void:
 	scale = base_scale
 	if is_instance_valid(body):
 		body.scale = body_base_scale * visual_scale
+	if is_instance_valid(pick_area):
+		pick_area.scale = pick_collision_base_scale * visual_scale
+	collision_radius = maxf(base_collision_radius * visual_scale, base_min_collision_radius * visual_scale)
+	min_collision_radius = base_min_collision_radius * visual_scale
+	logical_capture_radius = collision_radius
+	_rebuild_active_inner_loop()
 
 
 func _resolve_initial_visual_diameter() -> float:
