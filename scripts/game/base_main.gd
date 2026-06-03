@@ -515,6 +515,7 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 
 	var capture_context: Dictionary = capture_result.get("capture_context", {})
 	_update_cut_rating_after_capture(capture_context)
+	_remove_captured_minor_enemies(capture_context)
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
 	if guide_service != null:
@@ -973,6 +974,37 @@ func _apply_upgrade_choice(index: int) -> bool:
 	get_tree().paused = false
 	_sync_hud()
 	return true
+
+
+func _remove_captured_minor_enemies(capture_context: Dictionary) -> void:
+	var captured_polygons: Array = capture_context.get("captured_polygons", [])
+	if captured_polygons.is_empty():
+		return
+	var epsilon := float(capture_context.get("guide_epsilon", PlayfieldBoundary.DEFAULT_EPSILON))
+	for enemy in _get_minor_enemies():
+		if !_is_minor_enemy_captured(enemy, captured_polygons, epsilon):
+			continue
+		if enemy == minor_enemy_a:
+			minor_enemy_a = null
+		elif enemy == minor_enemy_b:
+			minor_enemy_b = null
+		enemy.queue_free()
+
+
+func _is_minor_enemy_captured(enemy: Node2D, captured_polygons: Array, epsilon: float) -> bool:
+	if !is_instance_valid(enemy):
+		return false
+	var enemy_position := enemy.global_position
+	for raw_polygon in captured_polygons:
+		var polygon: PackedVector2Array = raw_polygon
+		if polygon.size() < 3:
+			continue
+		if (
+			Geometry2D.is_point_in_polygon(enemy_position, polygon)
+			or PlayfieldBoundary.is_point_on_loop(polygon, enemy_position, epsilon)
+		):
+			return true
+	return false
 
 
 func _get_minor_enemies() -> Array[Node2D]:
