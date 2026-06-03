@@ -1,9 +1,10 @@
-[gd_scene load_steps=5 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://scripts/game/base_main.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/player/base_player.tscn" id="2_player_scene"]
 [ext_resource type="PackedScene" path="res://scenes/enemy/bbos.tscn" id="3_bbos_scene"]
-[ext_resource type="Texture2D" path="res://assets/backgrounds/common/game_background_1280x720.png" id="4_background"]
+[ext_resource type="PackedScene" path="res://scenes/enemy/minor_enemy.tscn" id="4_minor_enemy_scene"]
+[ext_resource type="Texture2D" path="res://assets/backgrounds/common/game_background_1280x720.png" id="5_background"]
 
 [node name="BaseMain" type="Node2D"]
 script = ExtResource("1_script")
@@ -21,11 +22,21 @@ offset_top = 0.0
 offset_right = 0.0
 offset_bottom = 0.0
 mouse_filter = 2
-texture = ExtResource("4_background")
+texture = ExtResource("5_background")
 
 [node name="BasePlayer" parent="." instance=ExtResource("2_player_scene")]
 
 [node name="BBOS" parent="." instance=ExtResource("3_bbos_scene")]
+
+[node name="MinorEnemyA" parent="." instance=ExtResource("4_minor_enemy_scene")]
+move_speed = 170.0
+initial_spawn_ratio = Vector2(0.28, 0.28)
+initial_direction = Vector2(1, -1)
+
+[node name="MinorEnemyB" parent="." instance=ExtResource("4_minor_enemy_scene")]
+move_speed = 150.0
+initial_spawn_ratio = Vector2(0.72, 0.62)
+initial_direction = Vector2(-1, 1)
 
 [node name="Boss" type="Node2D" parent="."]
 position = Vector2(320, 240)

@@ -4,6 +4,7 @@ const TITLE_SCENE_PATH := "res://scenes/title_main.tscn"
 const InputActionUtils = preload("res://scripts/common/input_action_utils.gd")
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const BBOS_SCENE = preload("res://scenes/enemy/bbos.tscn")
+const MINOR_ENEMY_SCENE = preload("res://scenes/enemy/minor_enemy.tscn")
 const BaseMainCaptureService = preload("res://scripts/game/services/base_main_capture_service.gd")
 const BaseMainGuideService = preload("res://scripts/game/services/base_main_guide_service.gd")
 const BaseMainBossRegionService = preload("res://scripts/game/services/base_main_boss_region_service.gd")
@@ -42,6 +43,8 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 
 @onready var base_player = get_node_or_null("BasePlayer")
 @onready var bbos: Node2D = get_node_or_null("BBOS")
+@onready var minor_enemy_a: Node2D = get_node_or_null("MinorEnemyA")
+@onready var minor_enemy_b: Node2D = get_node_or_null("MinorEnemyB")
 @onready var boss: Node2D = get_node_or_null("Boss")
 @onready var help_label: Label = $Ui/Root/HelpLabel
 @onready var state_label: Label = $Ui/Root/StateLabel
@@ -137,6 +140,7 @@ func _ready() -> void:
 	run_progress_service.setup(self, upgrade_draft_service)
 	_register_input_map()
 	_ensure_bbos_node()
+	_ensure_minor_enemy_nodes()
 	_recalculate_playfield_rect()
 	_initialize_outer_loop_from_rect()
 	_connect_player_signal()
@@ -391,6 +395,19 @@ func _ensure_bbos_node() -> void:
 	bbos = bbos_instance as Node2D
 
 
+func _ensure_minor_enemy_nodes() -> void:
+	if !is_instance_valid(minor_enemy_a):
+		var enemy_a := MINOR_ENEMY_SCENE.instantiate()
+		enemy_a.name = "MinorEnemyA"
+		add_child(enemy_a)
+		minor_enemy_a = enemy_a as Node2D
+	if !is_instance_valid(minor_enemy_b):
+		var enemy_b := MINOR_ENEMY_SCENE.instantiate()
+		enemy_b.name = "MinorEnemyB"
+		add_child(enemy_b)
+		minor_enemy_b = enemy_b as Node2D
+
+
 func _connect_player_signal() -> void:
 	if !is_instance_valid(base_player):
 		return
@@ -458,12 +475,22 @@ func _apply_playfield_to_bbos() -> void:
 	if current_outer_loop.is_empty():
 		_initialize_outer_loop_from_rect()
 	if !is_instance_valid(bbos):
+		_apply_playfield_to_minor_enemies()
 		return
 	if bbos.has_method("set_playfield_rect"):
 		bbos.call("set_playfield_rect", playfield_rect)
 	if bbos.has_method("set_active_outer_loop"):
 		bbos.call("set_active_outer_loop", current_outer_loop)
+	_apply_playfield_to_minor_enemies()
 	_apply_boss_region_ratio_to_bbos()
+
+
+func _apply_playfield_to_minor_enemies() -> void:
+	for enemy in _get_minor_enemies():
+		if enemy.has_method("set_playfield_rect"):
+			enemy.call("set_playfield_rect", playfield_rect)
+		if enemy.has_method("set_active_outer_loop"):
+			enemy.call("set_active_outer_loop", current_outer_loop)
 
 
 func _apply_boss_region_ratio_to_bbos() -> void:
@@ -557,6 +584,8 @@ func _hide_game_clear_bosses() -> void:
 		return
 
 	_hide_game_clear_target(bbos)
+	for enemy in _get_minor_enemies():
+		_hide_game_clear_target(enemy)
 	_hide_game_clear_target(boss)
 	clear_boss_hidden_done = true
 
@@ -944,6 +973,15 @@ func _apply_upgrade_choice(index: int) -> bool:
 	get_tree().paused = false
 	_sync_hud()
 	return true
+
+
+func _get_minor_enemies() -> Array[Node2D]:
+	var enemies: Array[Node2D] = []
+	if is_instance_valid(minor_enemy_a):
+		enemies.append(minor_enemy_a)
+	if is_instance_valid(minor_enemy_b):
+		enemies.append(minor_enemy_b)
+	return enemies
 
 
 func _on_bbos_position_changed(_world_position: Vector2) -> void:
