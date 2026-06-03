@@ -3,6 +3,8 @@ class_name BasePlayer
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const ACTION_QIX_DRAW := &"qix_draw"
+const ACTION_QIX_DRAW_FAST := &"qix_draw_fast"
+const ACTION_QIX_DRAW_SLOW := &"qix_draw_slow"
 const ACTION_MOVE_LEFT := &"move_left"
 const ACTION_MOVE_RIGHT := &"move_right"
 const ACTION_MOVE_UP := &"move_up"
@@ -27,6 +29,8 @@ signal debug_position_changed(world_position: Vector2)
 signal capture_preview_changed(active: bool)
 
 @export var move_speed := 240.0
+@export var fast_draw_speed := 240.0
+@export var slow_draw_speed := 160.0
 @export var border_epsilon := 2.0
 @export var trail_min_point_distance := 8.0
 @export var border_color := Color(1.0, 1.0, 1.0, 1.0)
@@ -46,6 +50,11 @@ enum PlayerState {
 	BORDER,
 	DRAWING,
 	REWINDING
+}
+
+enum DrawMode {
+	FAST,
+	SLOW
 }
 
 enum BossHitRisk {
@@ -80,6 +89,7 @@ var drawing_move_direction := Vector2.ZERO
 var drawing_segment_direction := Vector2.ZERO
 var drawing_start_border_position := Vector2.ZERO
 var current_hp := 0
+var base_max_hp := 0
 var invincibility_timer := 0.0
 var is_defeated := false
 var is_draw_action_configured := true
@@ -93,14 +103,21 @@ var last_visible_trail_cache_points: PackedVector2Array = PackedVector2Array()
 var body_facing_row := BODY_ROW_DOWN
 var walk_animation_time := 0.0
 var top_outline_countdown_remaining := TOP_OUTLINE_COUNTDOWN_SECONDS
+var current_draw_mode: int = DrawMode.FAST
+var current_capture_draw_duration := 0.0
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
+	base_max_hp = max_hp
 	current_hp = get_max_hp()
-	is_draw_action_configured = InputMap.has_action(ACTION_QIX_DRAW)
+	is_draw_action_configured = (
+		InputMap.has_action(ACTION_QIX_DRAW)
+		or InputMap.has_action(ACTION_QIX_DRAW_FAST)
+		or InputMap.has_action(ACTION_QIX_DRAW_SLOW)
+	)
 	if !is_draw_action_configured:
-		push_error("Missing InputMap action '%s'. Register Shift and PAD-A to '%s' before starting gameplay." % [String(ACTION_QIX_DRAW), String(ACTION_QIX_DRAW)])
+		push_error("Missing QIX draw input actions. Register qix_draw or qix_draw_fast/qix_draw_slow before starting gameplay.")
 		set_process(false)
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
@@ -234,9 +251,10 @@ func _is_on_top_outline_border() -> bool:
 
 
 func _reset_top_outline_countdown() -> void:
-	if is_equal_approx(top_outline_countdown_remaining, TOP_OUTLINE_COUNTDOWN_SECONDS):
+	var countdown_total := _get_top_outline_countdown_total_seconds()
+	if is_equal_approx(top_outline_countdown_remaining, countdown_total):
 		return
-	top_outline_countdown_remaining = TOP_OUTLINE_COUNTDOWN_SECONDS
+	top_outline_countdown_remaining = countdown_total
 	_update_top_outline_countdown_label()
 
 
@@ -250,6 +268,13 @@ func _get_top_outline_countdown_display_seconds() -> int:
 	if top_outline_countdown_remaining <= 0.0:
 		return 0
 	return int(ceil(top_outline_countdown_remaining + TOP_OUTLINE_COUNTDOWN_DISPLAY_EPSILON))
+
+
+func _get_top_outline_countdown_total_seconds() -> float:
+	var owner := get_parent()
+	if is_instance_valid(owner) and owner.has_method("get_top_outline_countdown_bonus_seconds"):
+		return TOP_OUTLINE_COUNTDOWN_SECONDS + float(owner.call("get_top_outline_countdown_bonus_seconds"))
+	return TOP_OUTLINE_COUNTDOWN_SECONDS
 
 
 func get_state_text() -> String:
@@ -267,6 +292,7 @@ func get_debug_status() -> Dictionary:
 	return {
 		"mode_text": get_state_text(),
 		"state": get_state_text(),
+		"draw_mode": get_current_draw_mode_name(),
 		"position": position,
 		"is_on_border": _is_on_border(position),
 		"is_on_corner": _is_corner_from_connected_directions(connected_border_directions),
@@ -286,6 +312,33 @@ func get_current_hp() -> int:
 
 func get_max_hp() -> int:
 	return max(1, max_hp)
+
+
+func get_current_draw_mode_name() -> String:
+	return "SLOW" if current_draw_mode == DrawMode.SLOW else "FAST"
+
+
+func is_drawing_interior() -> bool:
+	return state == PlayerState.DRAWING and has_left_border
+
+
+func build_capture_snapshot() -> Dictionary:
+	return {
+		"draw_mode": get_current_draw_mode_name(),
+		"draw_duration": current_capture_draw_duration,
+		"trail_point_count": trail_points.size(),
+		"top_outline_remaining": top_outline_countdown_remaining
+	}
+
+
+func apply_run_configuration(config: Dictionary) -> void:
+	base_max_hp = max(1, int(config.get("base_max_hp", base_max_hp)))
+	var max_hp_bonus: int = max(0, int(config.get("max_hp_bonus", 0)))
+	max_hp = base_max_hp + max_hp_bonus
+	current_hp = get_max_hp()
+	top_outline_countdown_remaining = _get_top_outline_countdown_total_seconds()
+	_update_top_outline_countdown_label()
+	hp_changed.emit(current_hp, get_max_hp())
 
 
 func is_dead() -> bool:
@@ -385,6 +438,9 @@ func get_active_damage_trail_data() -> Dictionary:
 func apply_boss_damage() -> bool:
 	if _is_damage_blocked():
 		return false
+	var owner := get_parent()
+	if is_instance_valid(owner) and owner.has_method("try_consume_run_guard") and bool(owner.call("try_consume_run_guard")):
+		return false
 
 	current_hp = max(current_hp - 1, 0)
 	if current_hp <= 0:
@@ -416,11 +472,12 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 		_start_rewinding()
 		return
 
+	current_capture_draw_duration += delta
 	var drawing_direction := _restrict_drawing_backtracking(direction)
 	var current_position := position
 	var next_position := _limit_drawing_position(
 		current_position,
-		current_position + drawing_direction * move_speed * delta
+		current_position + drawing_direction * _get_current_draw_speed() * delta
 	)
 	var is_waiting_to_leave_border := !has_left_border and _is_on_border(current_position)
 	var should_block_border_movement := is_waiting_to_leave_border and _is_on_border(next_position)
@@ -446,6 +503,8 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 
 func _start_drawing() -> void:
 	state = PlayerState.DRAWING
+	current_draw_mode = _resolve_requested_draw_mode()
+	current_capture_draw_duration = 0.0
 	has_left_border = false
 	rewind_index = -1
 	drawing_move_direction = Vector2.ZERO
@@ -471,12 +530,13 @@ func _finish_drawing() -> void:
 	trail_points = PackedVector2Array()
 	has_left_border = false
 	rewind_index = -1
+	current_capture_draw_duration = 0.0
 	_update_trail_line()
 	_apply_state_visuals()
 
 
 func _start_rewinding() -> void:
-	rewind_speed = move_speed
+	rewind_speed = _get_current_draw_speed()
 	_ensure_trail_endpoint(position)
 
 	drawing_move_direction = Vector2.ZERO
@@ -669,6 +729,7 @@ func _restore_border_state_at_point(point: Vector2) -> void:
 	has_left_border = false
 	drawing_move_direction = Vector2.ZERO
 	drawing_segment_direction = Vector2.ZERO
+	current_capture_draw_duration = 0.0
 	state = PlayerState.BORDER
 	_update_trail_line()
 	_apply_state_visuals()
@@ -1267,12 +1328,40 @@ func _is_damage_blocked() -> bool:
 	return is_defeated or invincibility_timer > 0.0
 
 
+func _resolve_requested_draw_mode() -> int:
+	if _is_action_pressed_safe(ACTION_QIX_DRAW_SLOW):
+		return DrawMode.SLOW
+	return DrawMode.FAST
+
+
+func _get_current_draw_speed() -> float:
+	var base_speed := slow_draw_speed if current_draw_mode == DrawMode.SLOW else fast_draw_speed
+	var owner := get_parent()
+	if is_instance_valid(owner) and owner.has_method("get_draw_speed_multiplier"):
+		return base_speed * float(owner.call("get_draw_speed_multiplier", get_current_draw_mode_name()))
+	return base_speed
+
+
 func _is_draw_action_pressed() -> bool:
-	return is_draw_action_configured and Input.is_action_pressed(ACTION_QIX_DRAW)
+	return (
+		is_draw_action_configured
+		and (
+			(InputMap.has_action(ACTION_QIX_DRAW) and Input.is_action_pressed(ACTION_QIX_DRAW))
+			or (InputMap.has_action(ACTION_QIX_DRAW_FAST) and Input.is_action_pressed(ACTION_QIX_DRAW_FAST))
+			or (InputMap.has_action(ACTION_QIX_DRAW_SLOW) and Input.is_action_pressed(ACTION_QIX_DRAW_SLOW))
+		)
+	)
 
 
 func _is_draw_action_just_pressed() -> bool:
-	return is_draw_action_configured and Input.is_action_just_pressed(ACTION_QIX_DRAW)
+	return (
+		is_draw_action_configured
+		and (
+			(InputMap.has_action(ACTION_QIX_DRAW) and Input.is_action_just_pressed(ACTION_QIX_DRAW))
+			or (InputMap.has_action(ACTION_QIX_DRAW_FAST) and Input.is_action_just_pressed(ACTION_QIX_DRAW_FAST))
+			or (InputMap.has_action(ACTION_QIX_DRAW_SLOW) and Input.is_action_just_pressed(ACTION_QIX_DRAW_SLOW))
+		)
+	)
 
 
 func _refresh_damage_trail_cache(visible_points: PackedVector2Array) -> void:
@@ -1355,6 +1444,7 @@ func _build_debug_status_snapshot() -> Dictionary:
 	var connected_border_directions := _get_connected_border_direction_names(position)
 	return {
 		"mode_text": get_state_text(),
+		"draw_mode": get_current_draw_mode_name(),
 		"is_on_corner": _is_corner_from_connected_directions(connected_border_directions),
 		"border_move_input": _get_border_move_input(_get_move_input_vector(), position),
 		"connected_border_directions": connected_border_directions,

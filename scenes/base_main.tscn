@@ -131,22 +131,164 @@ offset_bottom = 328.0
 horizontal_alignment = 2
 text = "BOSS REGION: 0%"
 
-[node name="HpLabel" type="Label" parent="Ui/Root"]
+[node name="ShardsLabel" type="Label" parent="Ui/Root"]
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -264.0
 offset_top = 340.0
 offset_right = -24.0
 offset_bottom = 368.0
+text = "SHARDS: 0  TERRITORY: 0"
+
+[node name="GrowthLabel" type="Label" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 376.0
+offset_right = -24.0
+offset_bottom = 404.0
+text = "GROWTH: Lv.0  0.0 / 12.0"
+
+[node name="ObjectivePrimaryLabel" type="Label" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 416.0
+offset_right = -24.0
+offset_bottom = 452.0
+autowrap_mode = 3
+text = "PRIMARY: [ ] Compress boss region below 20%."
+
+[node name="ObjectiveOptional1Label" type="Label" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 456.0
+offset_right = -24.0
+offset_bottom = 492.0
+autowrap_mode = 3
+text = "OPTIONAL: [ ] Clear under 3:00."
+
+[node name="ObjectiveOptional2Label" type="Label" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 496.0
+offset_right = -24.0
+offset_bottom = 532.0
+autowrap_mode = 3
+text = "OPTIONAL: [ ] Land a single 15% cut."
+
+[node name="BuildLabel" type="Label" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 540.0
+offset_right = -24.0
+offset_bottom = 576.0
+autowrap_mode = 3
+text = "BUILD: FAST/Slow hybrid"
+
+[node name="MetaLabel" type="Label" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 580.0
+offset_right = -24.0
+offset_bottom = 608.0
+text = "META: Core 0  Guard 0  Reroll 0"
+
+[node name="QuestLabel" type="Label" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 616.0
+offset_right = -24.0
+offset_bottom = 680.0
+autowrap_mode = 3
+text = "QUESTS:"
+
+[node name="HpLabel" type="Label" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 688.0
+offset_right = -24.0
+offset_bottom = 716.0
 text = "HP: 3/3"
 
 [node name="ResultLabel" type="Label" parent="Ui/Root"]
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -264.0
-offset_top = 388.0
+offset_top = 724.0
 offset_right = -24.0
-offset_bottom = 430.0
+offset_bottom = 766.0
 theme_override_font_sizes/font_size = 28
 horizontal_alignment = 2
 text = ""
+
+[node name="UpgradeOverlay" type="Control" parent="Ui/Root"]
+visible = false
+offset_left = 188.0
+offset_top = 132.0
+offset_right = 988.0
+offset_bottom = 644.0
+mouse_filter = 2
+
+[node name="UpgradeBackdrop" type="ColorRect" parent="Ui/Root/UpgradeOverlay"]
+offset_right = 800.0
+offset_bottom = 512.0
+color = Color(0.03, 0.03, 0.06, 0.88)
+
+[node name="UpgradeTitleLabel" type="Label" parent="Ui/Root/UpgradeOverlay"]
+offset_left = 48.0
+offset_top = 20.0
+offset_right = 752.0
+offset_bottom = 60.0
+theme_override_font_sizes/font_size = 28
+horizontal_alignment = 1
+text = "UPGRADE DRAFT"
+
+[node name="UpgradeHintLabel" type="Label" parent="Ui/Root/UpgradeOverlay"]
+offset_left = 48.0
+offset_top = 68.0
+offset_right = 752.0
+offset_bottom = 108.0
+horizontal_alignment = 1
+text = "Pick one to keep the run moving."
+
+[node name="UpgradeChoice1Label" type="Label" parent="Ui/Root/UpgradeOverlay"]
+offset_left = 56.0
+offset_top = 140.0
+offset_right = 744.0
+offset_bottom = 228.0
+autowrap_mode = 3
+theme_override_font_sizes/font_size = 22
+text = "1. FAST ROUTE"
+
+[node name="UpgradeChoice2Label" type="Label" parent="Ui/Root/UpgradeOverlay"]
+offset_left = 56.0
+offset_top = 244.0
+offset_right = 744.0
+offset_bottom = 332.0
+autowrap_mode = 3
+theme_override_font_sizes/font_size = 22
+text = "2. SLOW PRESSURE"
+
+[node name="UpgradeChoice3Label" type="Label" parent="Ui/Root/UpgradeOverlay"]
+offset_left = 56.0
+offset_top = 348.0
+offset_right = 744.0
+offset_bottom = 436.0
+autowrap_mode = 3
+theme_override_font_sizes/font_size = 22
+text = "3. LINE GUARD"
+
+[node name="UpgradeMetaLabel" type="Label" parent="Ui/Root/UpgradeOverlay"]
+offset_left = 56.0
+offset_top = 460.0
+offset_right = 744.0
+offset_bottom = 500.0
+horizontal_alignment = 1
+text = "REROLL: 0  GUARD: 0"

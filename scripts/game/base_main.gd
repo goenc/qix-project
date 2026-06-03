@@ -9,7 +9,11 @@ const BaseMainGuideService = preload("res://scripts/game/services/base_main_guid
 const BaseMainBossRegionService = preload("res://scripts/game/services/base_main_boss_region_service.gd")
 const BaseMainHudService = preload("res://scripts/game/services/base_main_hud_service.gd")
 const BaseMainCutRatingService = preload("res://scripts/game/services/base_main_cut_rating_service.gd")
+const RunProgressService = preload("res://scripts/game/services/run_progress_service.gd")
+const UpgradeDraftService = preload("res://scripts/game/services/upgrade_draft_service.gd")
 const ACTION_QIX_DRAW := &"qix_draw"
+const ACTION_QIX_DRAW_FAST := &"qix_draw_fast"
+const ACTION_QIX_DRAW_SLOW := &"qix_draw_slow"
 const PLAYFIELD_SIZE := Vector2(904.0, 640.0)
 const STAGE_REMAINING_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/stage_001/claimed_background_904x640.png")
 const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/stage_001/cover_background_904x640.png")
@@ -44,8 +48,23 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 @onready var position_label: Label = $Ui/Root/PositionLabel
 @onready var claimed_label: Label = $Ui/Root/ClaimedLabel
 @onready var boss_region_label: Label = $Ui/Root/BossRegionLabel
+@onready var shards_label: Label = $Ui/Root/ShardsLabel
+@onready var growth_label: Label = $Ui/Root/GrowthLabel
+@onready var objective_primary_label: Label = $Ui/Root/ObjectivePrimaryLabel
+@onready var objective_optional_1_label: Label = $Ui/Root/ObjectiveOptional1Label
+@onready var objective_optional_2_label: Label = $Ui/Root/ObjectiveOptional2Label
+@onready var build_label: Label = $Ui/Root/BuildLabel
+@onready var meta_label: Label = $Ui/Root/MetaLabel
+@onready var quest_label: Label = $Ui/Root/QuestLabel
 @onready var hp_label: Label = $Ui/Root/HpLabel
 @onready var result_label: Label = $Ui/Root/ResultLabel
+@onready var upgrade_overlay: Control = $Ui/Root/UpgradeOverlay
+@onready var upgrade_title_label: Label = $Ui/Root/UpgradeOverlay/UpgradeTitleLabel
+@onready var upgrade_hint_label: Label = $Ui/Root/UpgradeOverlay/UpgradeHintLabel
+@onready var upgrade_choice_1_label: Label = $Ui/Root/UpgradeOverlay/UpgradeChoice1Label
+@onready var upgrade_choice_2_label: Label = $Ui/Root/UpgradeOverlay/UpgradeChoice2Label
+@onready var upgrade_choice_3_label: Label = $Ui/Root/UpgradeOverlay/UpgradeChoice3Label
+@onready var upgrade_meta_label: Label = $Ui/Root/UpgradeOverlay/UpgradeMetaLabel
 @onready var cut_rating_bad_label: Label = $Ui/Root/CutRatingArea/CutRatingBadLabel
 @onready var cut_rating_good_label: Label = $Ui/Root/CutRatingArea/CutRatingGoodLabel
 @onready var cut_rating_summary_label: Label = $Ui/Root/CutRatingArea/CutRatingSummaryLabel
@@ -98,6 +117,8 @@ var capture_service: BaseMainCaptureService
 var guide_service: BaseMainGuideService
 var boss_region_service: BaseMainBossRegionService
 var hud_service: BaseMainHudService
+var upgrade_draft_service: UpgradeDraftService
+var run_progress_service: RunProgressService
 
 
 func _ready() -> void:
@@ -107,10 +128,13 @@ func _ready() -> void:
 	guide_service = BaseMainGuideService.new()
 	boss_region_service = BaseMainBossRegionService.new()
 	hud_service = BaseMainHudService.new()
+	upgrade_draft_service = UpgradeDraftService.new()
+	run_progress_service = RunProgressService.new()
 	capture_service.setup(self)
 	guide_service.setup(self)
 	boss_region_service.setup(self)
 	hud_service.setup(self)
+	run_progress_service.setup(self, upgrade_draft_service)
 	_register_input_map()
 	_ensure_bbos_node()
 	_recalculate_playfield_rect()
@@ -119,6 +143,9 @@ func _ready() -> void:
 	_connect_bbos_signal()
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
+	if is_instance_valid(base_player) and base_player.has_method("apply_run_configuration"):
+		base_player.call("apply_run_configuration", run_progress_service.build_player_run_configuration())
+	run_progress_service.begin_run()
 	_sync_debug_guide_visibility()
 	_sync_boss_marker()
 	var viewport := get_viewport()
@@ -129,12 +156,17 @@ func _ready() -> void:
 
 
 func _unhandled_input(_event: InputEvent) -> void:
+	if _handle_upgrade_overlay_input(_event):
+		return
 	if Input.is_action_just_pressed("ui_cancel"):
 		get_tree().paused = false
 		get_tree().change_scene_to_file(TITLE_SCENE_PATH)
 
 
 func _process(delta: float) -> void:
+	if run_progress_service != null and !game_over and !game_clear and !run_progress_service.has_pending_upgrade_draft():
+		run_progress_service.tick(delta)
+		_sync_hud()
 	if !clear_reveal_active:
 		return
 
@@ -150,7 +182,7 @@ func _process(delta: float) -> void:
 
 
 func is_pause_toggle_allowed() -> bool:
-	return true
+	return run_progress_service == null or !run_progress_service.has_pending_upgrade_draft()
 
 
 func set_paused_from_debug(enabled: bool) -> void:
@@ -232,12 +264,51 @@ func _sync_hud() -> void:
 	hud_service.sync()
 
 
+func get_run_progress_hud_snapshot() -> Dictionary:
+	if run_progress_service == null:
+		return {}
+	return run_progress_service.get_hud_snapshot()
+
+
+func get_upgrade_draft_choices() -> Array[Dictionary]:
+	if run_progress_service == null:
+		return []
+	return run_progress_service.get_pending_upgrade_choices()
+
+
+func is_upgrade_draft_active() -> bool:
+	return run_progress_service != null and run_progress_service.has_pending_upgrade_draft()
+
+
+func get_draw_speed_multiplier(draw_mode_name: String) -> float:
+	if run_progress_service == null:
+		return 1.0
+	return run_progress_service.get_draw_speed_multiplier(draw_mode_name)
+
+
+func get_top_outline_countdown_bonus_seconds() -> float:
+	if run_progress_service == null:
+		return 0.0
+	return run_progress_service.get_top_outline_countdown_bonus_seconds()
+
+
+func try_consume_run_guard() -> bool:
+	if run_progress_service == null:
+		return false
+	var blocked := run_progress_service.try_consume_guard()
+	if blocked:
+		_sync_hud()
+	return blocked
+
+
 func _register_input_map() -> void:
 	_ensure_action("move_left", [_key_event(KEY_LEFT), _key_event(KEY_A), _joypad_button(JOY_BUTTON_DPAD_LEFT)])
 	_ensure_action("move_right", [_key_event(KEY_RIGHT), _key_event(KEY_D), _joypad_button(JOY_BUTTON_DPAD_RIGHT)])
 	_ensure_action("move_up", [_key_event(KEY_UP), _key_event(KEY_W), _joypad_button(JOY_BUTTON_DPAD_UP)])
 	_ensure_action("move_down", [_key_event(KEY_DOWN), _key_event(KEY_S), _joypad_button(JOY_BUTTON_DPAD_DOWN)])
 	_sync_draw_action_events([_key_event(KEY_SHIFT), _joypad_button(JOY_BUTTON_A)])
+	_ensure_action(String(ACTION_QIX_DRAW_FAST), [_key_event(KEY_SHIFT), _joypad_button(JOY_BUTTON_A)])
+	_ensure_action(String(ACTION_QIX_DRAW_SLOW), [_key_event(KEY_CTRL), _joypad_button(JOY_BUTTON_X)])
 	_ensure_action("ui_cancel", [_key_event(KEY_ESCAPE), _joypad_button(JOY_BUTTON_B), _joypad_button(JOY_BUTTON_BACK)])
 	_ensure_action("pause", [_key_event(KEY_P), _joypad_button(JOY_BUTTON_START)])
 
@@ -406,18 +477,24 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 	if capture_service == null:
 		push_warning("Capture skipped: capture service is not ready.")
 		return
+	var capture_snapshot := {}
+	if is_instance_valid(base_player) and base_player.has_method("build_capture_snapshot"):
+		capture_snapshot = base_player.call("build_capture_snapshot")
+	var pre_boss_region_ratio := boss_region_ratio_cached
 	var capture_result := capture_service.resolve_capture_closed(trail_points)
 	if !bool(capture_result.get("success", false)):
 		push_warning(str(capture_result.get("warning", "Capture skipped.")))
 		return
 
-	_update_cut_rating_after_capture(capture_result.get("capture_context", {}))
+	var capture_context: Dictionary = capture_result.get("capture_context", {})
+	_update_cut_rating_after_capture(capture_context)
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
 	if guide_service != null:
-		guide_service.handle_capture_context(capture_result.get("capture_context", {}))
+		guide_service.handle_capture_context(capture_context)
 	_sync_boss_marker()
 	_recalculate_boss_region_polygon_after_capture()
+	_register_run_capture(capture_context, capture_snapshot, pre_boss_region_ratio)
 	_sync_hud()
 	queue_redraw()
 
@@ -463,6 +540,8 @@ func _begin_game_clear_reveal() -> void:
 		return
 
 	game_clear = true
+	if run_progress_service != null:
+		run_progress_service.register_stage_clear()
 	clear_reveal_active = true
 	clear_reveal_progress = 0.0
 	clear_boss_hidden_done = false
@@ -771,6 +850,8 @@ func _sync_hud_position(current_position: Vector2) -> void:
 	hud_service.sync_position(current_position)
 
 func _on_player_hp_changed(_current_hp: int, _max_hp: int) -> void:
+	if run_progress_service != null:
+		run_progress_service.register_damage_taken()
 	_sync_hud()
 
 
@@ -797,6 +878,73 @@ func _on_player_capture_preview_changed(active: bool) -> void:
 	capture_preview_active = active
 	if !capture_preview_active and guide_service != null and guide_service.cleanup_pending_guides_outside_capture():
 		queue_redraw()
+
+
+func _register_run_capture(capture_context: Dictionary, capture_snapshot: Dictionary, pre_boss_region_ratio: float) -> void:
+	if run_progress_service == null:
+		return
+	var enriched_context := capture_context.duplicate(true)
+	enriched_context["single_capture_percent"] = _calculate_single_capture_percent(capture_context)
+	enriched_context["claimed_ratio"] = claimed_ratio_cached
+	enriched_context["pre_boss_region_ratio"] = pre_boss_region_ratio
+	enriched_context["post_boss_region_ratio"] = boss_region_ratio_cached
+	enriched_context["boss_region_reduction_percent"] = maxf(0.0, (pre_boss_region_ratio - boss_region_ratio_cached) * 100.0)
+	enriched_context["draw_mode"] = str(capture_snapshot.get("draw_mode", "FAST"))
+	enriched_context["draw_duration"] = float(capture_snapshot.get("draw_duration", 0.0))
+	enriched_context["trail_point_count"] = int(capture_snapshot.get("trail_point_count", 0))
+	enriched_context["top_outline_remaining"] = float(capture_snapshot.get("top_outline_remaining", 0.0))
+	enriched_context["risk_grade"] = _resolve_capture_risk_grade(enriched_context)
+	enriched_context["capture_size_band"] = _resolve_capture_size_band(float(enriched_context["single_capture_percent"]))
+	enriched_context["streak_state"] = "clean"
+	var _reward_result := run_progress_service.register_capture(enriched_context)
+	if run_progress_service.has_pending_upgrade_draft():
+		get_tree().paused = true
+
+
+func _resolve_capture_risk_grade(capture_context: Dictionary) -> String:
+	var draw_duration := float(capture_context.get("draw_duration", 0.0))
+	var trail_point_count := int(capture_context.get("trail_point_count", 0))
+	var reduction_percent := float(capture_context.get("boss_region_reduction_percent", 0.0))
+	if draw_duration >= 2.2 or trail_point_count >= 4 or reduction_percent >= 8.0:
+		return "high"
+	if draw_duration >= 1.1 or trail_point_count >= 3:
+		return "medium"
+	return "safe"
+
+
+func _resolve_capture_size_band(single_capture_percent: float) -> String:
+	if single_capture_percent >= 15.0:
+		return "large"
+	if single_capture_percent >= 6.0:
+		return "medium"
+	return "small"
+
+
+func _handle_upgrade_overlay_input(event: InputEvent) -> bool:
+	if !is_upgrade_draft_active():
+		return false
+	if event is InputEventKey and event.pressed and !event.echo:
+		match event.keycode:
+			KEY_1, KEY_KP_1:
+				return _apply_upgrade_choice(0)
+			KEY_2, KEY_KP_2:
+				return _apply_upgrade_choice(1)
+			KEY_3, KEY_KP_3:
+				return _apply_upgrade_choice(2)
+			KEY_R:
+				if run_progress_service != null and run_progress_service.reroll_upgrade_choices():
+					_sync_hud()
+					return true
+	return false
+
+
+func _apply_upgrade_choice(index: int) -> bool:
+	if run_progress_service == null or !run_progress_service.apply_upgrade_choice(index):
+		return false
+	get_tree().paused = false
+	_sync_hud()
+	return true
+
 
 func _on_bbos_position_changed(_world_position: Vector2) -> void:
 	_sync_boss_marker()

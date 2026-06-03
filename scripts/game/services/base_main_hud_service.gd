@@ -16,6 +16,8 @@ func sync() -> void:
 
 	sync_cut_rating_bar()
 	sync_area_labels()
+	sync_run_progress_labels()
+	sync_upgrade_overlay()
 	update_hp_label()
 
 	if _main.game_over:
@@ -38,18 +40,28 @@ func sync() -> void:
 			_main.position_label.text = "POS: (-, -)"
 		return
 
+	if _main.is_upgrade_draft_active():
+		_main.state_label.text = "MODE: UPGRADE"
+		_main.result_label.text = "SELECT AN UPGRADE"
+		_main.help_label.text = "MOVE: ARROWS/WASD FAST: SHIFT/PAD-A SLOW: CTRL/PAD-X 1-3: PICK R: REROLL ESC: TITLE"
+		if is_instance_valid(_main.base_player):
+			sync_position(_main.base_player.position)
+		else:
+			_main.position_label.text = "POS: (-, -)"
+		return
+
 	if _main.get_tree().paused:
 		_main.state_label.text = "MODE: PAUSED"
 		_main.position_label.text = "POS: (-, -)"
 		_main.result_label.text = ""
-		_main.help_label.text = "MOVE: ARROWS/WASD DRAW: SHIFT/PAD-A ESC: TITLE"
+		_main.help_label.text = "MOVE: ARROWS/WASD FAST: SHIFT/PAD-A SLOW: CTRL/PAD-X ESC: TITLE"
 		return
 
 	if !is_instance_valid(_main.base_player):
 		_main.state_label.text = "MODE: BORDER"
 		_main.position_label.text = "POS: (-, -)"
 		_main.result_label.text = ""
-		_main.help_label.text = "MOVE: ARROWS/WASD DRAW: SHIFT/PAD-A ESC: TITLE"
+		_main.help_label.text = "MOVE: ARROWS/WASD FAST: SHIFT/PAD-A SLOW: CTRL/PAD-X ESC: TITLE"
 		return
 
 	var status: Dictionary = _main.base_player.get_debug_status()
@@ -116,9 +128,10 @@ func sync_status(status: Dictionary) -> void:
 		return
 
 	var mode_text := str(status.get("mode_text", "BORDER"))
-	_main.state_label.text = "MODE: %s" % mode_text
+	var draw_mode := str(status.get("draw_mode", "FAST"))
+	_main.state_label.text = "MODE: %s / %s" % [mode_text, draw_mode]
 	_main.result_label.text = ""
-	_main.help_label.text = "MOVE: ARROWS/WASD DRAW: SHIFT/PAD-A ESC: TITLE"
+	_main.help_label.text = "MOVE: ARROWS/WASD FAST: SHIFT/PAD-A SLOW: CTRL/PAD-X ESC: TITLE"
 
 
 func sync_position(current_position: Vector2) -> void:
@@ -127,6 +140,62 @@ func sync_position(current_position: Vector2) -> void:
 	_main.position_label.text = "POS: (%d, %d)" % [
 		int(round(current_position.x)),
 		int(round(current_position.y))
+	]
+
+
+func sync_run_progress_labels() -> void:
+	if _main == null:
+		return
+	var snapshot: Dictionary = _main.get_run_progress_hud_snapshot()
+	_main.shards_label.text = "SHARDS: %d  TERRITORY: %d" % [
+		int(snapshot.get("shards", 0)),
+		int(snapshot.get("territory", 0))
+	]
+	_main.growth_label.text = "GROWTH: Lv.%d  %.1f / %.1f" % [
+		int(snapshot.get("run_level", 0)),
+		float(snapshot.get("growth_progress", 0.0)),
+		float(snapshot.get("next_growth_threshold", 0.0))
+	]
+	_main.objective_primary_label.text = "PRIMARY: %s" % str(snapshot.get("primary_objective", "[ ] Compress boss region below 20%."))
+	_main.objective_optional_1_label.text = "OPTIONAL: %s" % str(snapshot.get("optional_objective_1", "[ ] Clear under 3:00."))
+	_main.objective_optional_2_label.text = "OPTIONAL: %s" % str(snapshot.get("optional_objective_2", "[ ] Land a single 15% cut."))
+	_main.build_label.text = str(snapshot.get("build_summary", "BUILD: FAST/Slow hybrid"))
+	_main.meta_label.text = "%s" % str(snapshot.get("meta_summary", "META: Core 0  Guard 0  Reroll 0"))
+	_main.quest_label.text = "QUESTS: %s" % str(snapshot.get("quest_summary", ""))
+
+
+func sync_upgrade_overlay() -> void:
+	if _main == null or !is_instance_valid(_main.upgrade_overlay):
+		return
+	var active: bool = _main.is_upgrade_draft_active()
+	_main.upgrade_overlay.visible = active
+	if !active:
+		return
+	var choices: Array[Dictionary] = _main.get_upgrade_draft_choices()
+	var choice_labels := [
+		_main.upgrade_choice_1_label,
+		_main.upgrade_choice_2_label,
+		_main.upgrade_choice_3_label
+	]
+	for index in range(choice_labels.size()):
+		var label: Label = choice_labels[index]
+		if !is_instance_valid(label):
+			continue
+		if index < choices.size():
+			var choice: Dictionary = choices[index]
+			label.text = "%d. %s\n%s" % [
+				index + 1,
+				str(choice.get("title", "UPGRADE")),
+				str(choice.get("description", ""))
+			]
+		else:
+			label.text = "%d. --" % [index + 1]
+	_main.upgrade_title_label.text = "UPGRADE DRAFT"
+	_main.upgrade_hint_label.text = "Pick one to keep the run moving."
+	var snapshot: Dictionary = _main.get_run_progress_hud_snapshot()
+	_main.upgrade_meta_label.text = "REROLL: %d  GUARD: %d" % [
+		int(snapshot.get("reroll_charges", 0)),
+		int(snapshot.get("guard_charges", 0))
 	]
 
 
