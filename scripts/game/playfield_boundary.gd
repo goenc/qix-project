@@ -823,12 +823,22 @@ static func find_first_boundary_hit_for_circle(
 
 static func ensure_point_inside(loop: PackedVector2Array, point: Vector2, epsilon: float) -> Vector2:
 	var sanitized_loop := sanitize_loop(loop)
+	var metrics := build_loop_metrics(sanitized_loop)
+	return ensure_point_inside_with_metrics(sanitized_loop, point, epsilon, metrics)
+
+
+static func ensure_point_inside_with_metrics(
+	loop: PackedVector2Array,
+	point: Vector2,
+	epsilon: float,
+	metrics: Dictionary
+) -> Vector2:
+	var sanitized_loop := loop
 	if sanitized_loop.size() < 3:
 		return point
 	if Geometry2D.is_point_in_polygon(point, sanitized_loop) and !is_point_on_loop(sanitized_loop, point, epsilon):
 		return point
 
-	var metrics := build_loop_metrics(sanitized_loop)
 	var projection := project_point_to_loop(sanitized_loop, point, metrics)
 	var segment_index := int(projection.get("segment_index", -1))
 	if segment_index < 0:
@@ -850,13 +860,17 @@ static func ensure_circle_center_inside(
 	radius: float,
 	epsilon: float,
 	cached_inset_loop: PackedVector2Array = PackedVector2Array(),
-	has_cached_inset_loop: bool = false
+	has_cached_inset_loop: bool = false,
+	cached_inset_metrics: Dictionary = {}
 ) -> Vector2:
 	var sanitized_loop := sanitize_loop(loop)
 	var safe_radius := maxf(radius, 0.0)
 	if has_cached_inset_loop:
 		if cached_inset_loop.size() >= 3:
-			return ensure_point_inside(cached_inset_loop, point, epsilon)
+			var resolved_cached_metrics := cached_inset_metrics
+			if resolved_cached_metrics.is_empty():
+				resolved_cached_metrics = build_loop_metrics(cached_inset_loop)
+			return ensure_point_inside_with_metrics(cached_inset_loop, point, epsilon, resolved_cached_metrics)
 		return _ensure_circle_center_inside_without_inset(
 			sanitized_loop,
 			point,

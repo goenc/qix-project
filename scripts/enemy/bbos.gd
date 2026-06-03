@@ -24,7 +24,9 @@ var boss_region_ratio := 1.0
 
 var playfield_rect: Rect2 = Rect2()
 var active_outer_loop: PackedVector2Array = PackedVector2Array()
+var active_outer_loop_metrics: Dictionary = {}
 var active_inner_loop: PackedVector2Array = PackedVector2Array()
+var active_inner_loop_metrics: Dictionary = {}
 var active_inner_loop_total_length := 0.0
 var active_inner_loop_cache_ready := false
 var rng := RandomNumberGenerator.new()
@@ -145,6 +147,7 @@ func set_active_outer_loop(loop: PackedVector2Array) -> void:
 		return
 
 	active_outer_loop = sanitized_loop
+	active_outer_loop_metrics = PlayfieldBoundary.build_loop_metrics(active_outer_loop)
 	_rebuild_active_inner_loop()
 	_reset_corner_stuck_state()
 
@@ -317,19 +320,26 @@ func _has_active_inner_loop() -> bool:
 
 func _ensure_position_inside_active_boundary(point: Vector2, radius: float, epsilon: float) -> Vector2:
 	if _has_active_inner_loop():
-		return PlayfieldBoundary.ensure_point_inside(active_inner_loop, point, epsilon)
+		return PlayfieldBoundary.ensure_point_inside_with_metrics(
+			active_inner_loop,
+			point,
+			epsilon,
+			active_inner_loop_metrics
+		)
 	return PlayfieldBoundary.ensure_circle_center_inside(
 		active_outer_loop,
 		point,
 		radius,
 		epsilon,
 		active_inner_loop,
-		active_inner_loop_cache_ready
+		active_inner_loop_cache_ready,
+		active_inner_loop_metrics
 	)
 
 
 func _rebuild_active_inner_loop() -> void:
 	active_inner_loop = PackedVector2Array()
+	active_inner_loop_metrics = {}
 	active_inner_loop_total_length = 0.0
 	active_inner_loop_cache_ready = false
 	if active_outer_loop.size() < 3:
@@ -343,10 +353,11 @@ func _rebuild_active_inner_loop() -> void:
 	)
 	active_inner_loop_cache_ready = true
 	if active_inner_loop.size() < 3:
+		active_inner_loop_metrics = {}
 		return
 
-	var inner_loop_metrics := PlayfieldBoundary.build_loop_metrics(active_inner_loop)
-	active_inner_loop_total_length = float(inner_loop_metrics.get("total_length", 0.0))
+	active_inner_loop_metrics = PlayfieldBoundary.build_loop_metrics(active_inner_loop)
+	active_inner_loop_total_length = float(active_inner_loop_metrics.get("total_length", 0.0))
 
 
 func _reset_corner_stuck_state() -> void:
@@ -399,6 +410,7 @@ func _perform_corner_escape(safe_radius: float, safe_epsilon: float) -> void:
 	var best_point := Vector2(INF, INF)
 	var best_direction := Vector2.ZERO
 	var best_score := -INF
+	var escape_loop_metrics: Dictionary = active_inner_loop_metrics if _has_active_inner_loop() else active_outer_loop_metrics
 	for direction in candidate_directions:
 		if direction == Vector2.ZERO:
 			continue
@@ -410,7 +422,7 @@ func _perform_corner_escape(safe_radius: float, safe_epsilon: float) -> void:
 
 		var score := 0.0
 		if escape_loop.size() >= 3:
-			score = float(PlayfieldBoundary.project_point_to_loop(escape_loop, resolved_point).get("distance", 0.0))
+			score = float(PlayfieldBoundary.project_point_to_loop(escape_loop, resolved_point, escape_loop_metrics).get("distance", 0.0))
 		if score > best_score + 0.001:
 			best_score = score
 			best_point = resolved_point
