@@ -4,6 +4,7 @@ const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const MAX_REFLECTIONS_PER_FRAME := 2
 const VIEWPORT_BASE_DIAMETER_RATIO := 0.5
 const MIN_BOSS_REGION_DIAMETER_RATIO := 0.1
+const COLLISION_INSET_RATIO := 0.75
 
 signal position_changed(world_position: Vector2)
 
@@ -232,13 +233,14 @@ func _sync_boss_region_size() -> void:
 	var diameter_ratio := maxf(MIN_BOSS_REGION_DIAMETER_RATIO, boss_region_ratio)
 	var target_diameter := base_diameter * diameter_ratio
 	var visual_scale := target_diameter / initial_visual_diameter
+	var collision_scale := visual_scale * COLLISION_INSET_RATIO
 	scale = base_scale
 	if is_instance_valid(body):
 		body.scale = body_base_scale * visual_scale
 	if is_instance_valid(pick_area):
-		pick_area.scale = pick_collision_base_scale * visual_scale
-	collision_radius = maxf(base_collision_radius * visual_scale, base_min_collision_radius * visual_scale)
-	min_collision_radius = base_min_collision_radius * visual_scale
+		pick_area.scale = pick_collision_base_scale * collision_scale
+	collision_radius = maxf(base_collision_radius * collision_scale, base_min_collision_radius * collision_scale)
+	min_collision_radius = base_min_collision_radius * collision_scale
 	logical_capture_radius = collision_radius
 	_rebuild_active_inner_loop()
 
