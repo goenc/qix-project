@@ -147,11 +147,11 @@ func sync_run_progress_labels() -> void:
 	if _main == null:
 		return
 	var snapshot: Dictionary = _main.get_run_progress_hud_snapshot()
-	_main.shards_label.text = "シャード: %d  領域値: %d" % [
+	_main.shards_label.text = "得点: %d  陣取り点: %d" % [
 		int(snapshot.get("shards", 0)),
 		int(snapshot.get("territory", 0))
 	]
-	_main.growth_label.text = "成長: Lv.%d  %.1f / %.1f" % [
+	_main.growth_label.text = "経験値: Lv.%d  %.1f / %.1f" % [
 		int(snapshot.get("run_level", 0)),
 		float(snapshot.get("growth_progress", 0.0)),
 		float(snapshot.get("next_growth_threshold", 0.0))
@@ -160,7 +160,7 @@ func sync_run_progress_labels() -> void:
 	_main.objective_optional_1_label.text = "任意目標: %s" % str(snapshot.get("optional_objective_1", "未達成: 3分以内にクリアする"))
 	_main.objective_optional_2_label.text = "任意目標: %s" % str(snapshot.get("optional_objective_2", "未達成: 単発15%以上の大取りを決める"))
 	_main.build_label.text = str(snapshot.get("build_summary", "ビルド: バランス型"))
-	_main.meta_label.text = "%s" % str(snapshot.get("meta_summary", "恒久強化: コア 0  ガード 0  再抽選 0"))
+	_main.meta_label.text = "%s" % str(snapshot.get("meta_summary", "恒久強化: 恒久ポイント 0  ガード 0  再抽選 0"))
 	_main.quest_label.text = "課題: %s" % str(snapshot.get("quest_summary", ""))
 
 

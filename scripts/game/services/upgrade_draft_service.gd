@@ -4,56 +4,56 @@ class_name UpgradeDraftService
 const UPGRADE_POOL := [
 	{
 		"id": "fast_speed",
-		"title": "速攻ルート",
-		"description": "ファスト描画速度が12%上がり、シャード獲得量が10%増えます。",
+		"title": "速描き強化",
+		"description": "速描き速度+12%、得点+10%",
 		"max_rank": 3
 	},
 	{
 		"id": "slow_power",
-		"title": "重圧ライン",
-		"description": "スロー描画速度が8%上がり、ボス圧縮報酬が20%増えます。",
+		"title": "遅描き強化",
+		"description": "遅描き速度+8%、ボス領域を削った時の得点+20%、遅描き得点+5%",
 		"max_rank": 3
 	},
 	{
 		"id": "guard_charge",
-		"title": "ラインガード",
-		"description": "ボスの接触を1回だけ防ぐガードを1つ得ます。",
+		"title": "接触ガード",
+		"description": "ボス接触を1回だけ防ぐガード+1",
 		"max_rank": 3
 	},
 	{
 		"id": "growth_discount",
-		"title": "集中維持",
-		"description": "次回以降の成長に必要な量が10%軽くなります。",
+		"title": "必要経験値軽減",
+		"description": "次のレベルアップに必要な経験値-10%",
 		"max_rank": 2
 	},
 	{
 		"id": "top_outline_boost",
-		"title": "上辺猶予",
-		"description": "上辺の安全時間が4秒伸びます。",
+		"title": "外周上辺タイマー延長",
+		"description": "外周上辺にいる時の安全時間+4秒",
 		"max_rank": 3
 	},
 	{
 		"id": "small_chain_bonus",
-		"title": "連続小取り",
-		"description": "小さく安全な確保で得られるシャードと成長量が増えます。",
+		"title": "小取り強化",
+		"description": "小さい確保で得る得点と経験値が増加",
 		"max_rank": 3
 	},
 	{
 		"id": "large_cut_bonus",
-		"title": "大取り報酬",
-		"description": "大きな確保で得られるシャードと領域値が増えます。",
+		"title": "大取り強化",
+		"description": "大きい確保で得る得点と陣取り点が増加",
 		"max_rank": 3
 	},
 	{
 		"id": "reroll_charge",
-		"title": "再抽選",
-		"description": "次回以降の強化選択で使える再抽選回数を1つ得ます。",
+		"title": "再抽選追加",
+		"description": "強化選択の再抽選回数+1",
 		"max_rank": 2
 	},
 	{
 		"id": "streak_bonus",
-		"title": "無傷テンポ",
-		"description": "無傷での連続確保時に成長量とシャード獲得量が増えます。",
+		"title": "無傷連続ボーナス",
+		"description": "無傷で連続確保した時の得点と経験値が増加",
 		"max_rank": 3
 	}
 ]

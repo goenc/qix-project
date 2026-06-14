@@ -359,7 +359,7 @@ func _build_summary_text() -> String:
 
 
 func _build_meta_summary_text() -> String:
-	return "恒久強化: コア %d  ガード %d  再抽選 %d" % [core_data_total, guard_charges, reroll_charges]
+	return "恒久強化: 恒久ポイント %d  ガード %d  再抽選 %d" % [core_data_total, guard_charges, reroll_charges]
 
 
 func _build_quest_summary_text() -> String:
@@ -421,22 +421,22 @@ func _join_summary_lines(lines: Array[String]) -> String:
 func _get_upgrade_display_name(upgrade_id: String) -> String:
 	match upgrade_id:
 		"fast_speed":
-			return "速攻ルート"
+			return "速描き強化"
 		"slow_power":
-			return "重圧ライン"
+			return "遅描き強化"
 		"guard_charge":
-			return "ラインガード"
+			return "接触ガード"
 		"growth_discount":
-			return "集中維持"
+			return "必要経験値軽減"
 		"top_outline_boost":
-			return "上辺猶予"
+			return "外周上辺タイマー延長"
 		"small_chain_bonus":
-			return "連続小取り"
+			return "小取り強化"
 		"large_cut_bonus":
-			return "大取り報酬"
+			return "大取り強化"
 		"reroll_charge":
-			return "再抽選"
+			return "再抽選追加"
 		"streak_bonus":
-			return "無傷テンポ"
+			return "無傷連続ボーナス"
 		_:
 			return "強化"

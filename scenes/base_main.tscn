@@ -149,7 +149,7 @@ offset_left = -264.0
 offset_top = 340.0
 offset_right = -24.0
 offset_bottom = 368.0
-text = "シャード: 0  領域値: 0"
+text = "得点: 0  陣取り点: 0"
 
 [node name="GrowthLabel" type="Label" parent="Ui/Root"]
 anchor_left = 1.0
@@ -158,7 +158,7 @@ offset_left = -264.0
 offset_top = 376.0
 offset_right = -24.0
 offset_bottom = 404.0
-text = "成長: Lv.0  0.0 / 12.0"
+text = "経験値: Lv.0  0.0 / 12.0"
 
 [node name="ObjectivePrimaryLabel" type="Label" parent="Ui/Root"]
 anchor_left = 1.0
@@ -207,7 +207,7 @@ offset_left = -264.0
 offset_top = 580.0
 offset_right = -24.0
 offset_bottom = 608.0
-text = "恒久強化: コア 0  ガード 0  再抽選 0"
+text = "恒久強化: 恒久ポイント 0  ガード 0  再抽選 0"
 
 [node name="QuestLabel" type="Label" parent="Ui/Root"]
 anchor_left = 1.0
@@ -276,7 +276,7 @@ offset_right = 744.0
 offset_bottom = 228.0
 autowrap_mode = 3
 theme_override_font_sizes/font_size = 22
-text = "1. 速攻ルート"
+text = "1. 速描き強化"
 
 [node name="UpgradeChoice2Label" type="Label" parent="Ui/Root/UpgradeOverlay"]
 offset_left = 56.0
@@ -285,7 +285,7 @@ offset_right = 744.0
 offset_bottom = 332.0
 autowrap_mode = 3
 theme_override_font_sizes/font_size = 22
-text = "2. 重圧ライン"
+text = "2. 遅描き強化"
 
 [node name="UpgradeChoice3Label" type="Label" parent="Ui/Root/UpgradeOverlay"]
 offset_left = 56.0
@@ -294,7 +294,7 @@ offset_right = 744.0
 offset_bottom = 436.0
 autowrap_mode = 3
 theme_override_font_sizes/font_size = 22
-text = "3. ラインガード"
+text = "3. 接触ガード"
 
 [node name="UpgradeMetaLabel" type="Label" parent="Ui/Root/UpgradeOverlay"]
 offset_left = 56.0
