@@ -37,6 +37,7 @@ var last_corner_hit_position := Vector2(INF, INF)
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
+	add_to_group(&"minor_enemies")
 	rng.randomize()
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
@@ -61,19 +62,27 @@ func _process(delta: float) -> void:
 
 	var safe_radius := _get_effective_collision_radius()
 	var safe_epsilon := maxf(bounce_epsilon, 0.001)
+	var use_inner_loop := _has_active_inner_loop()
 	var remaining_time := delta
 	var reflection_count := 0
 	while remaining_time > 0.0 and reflection_count < MAX_REFLECTIONS_PER_FRAME:
 		var segment_start := position
 		var next_position := position + velocity * remaining_time
-		var boundary_hit := PlayfieldBoundary.find_first_boundary_hit(
-			position,
-			next_position,
-			active_inner_loop,
-			safe_epsilon
+		var boundary_hit := (
+			PlayfieldBoundary.find_first_boundary_hit(position, next_position, active_inner_loop, safe_epsilon)
+			if use_inner_loop
+			else PlayfieldBoundary.find_first_boundary_hit_for_circle(
+				position,
+				next_position,
+				active_outer_loop,
+				safe_radius,
+				safe_epsilon,
+				active_inner_loop,
+				active_inner_loop_cache_ready
+			)
 		)
 		if !bool(boundary_hit.get("hit", false)):
-			position = _ensure_position_inside_active_boundary(next_position, safe_epsilon)
+			position = _ensure_position_inside_active_boundary(next_position, safe_radius, safe_epsilon)
 			_attempt_player_hit(segment_start, position, safe_radius)
 			return
 
@@ -85,14 +94,14 @@ func _process(delta: float) -> void:
 			break
 		velocity = _reflect_velocity(velocity, Vector2(boundary_hit.get("normal", Vector2.ZERO)))
 		position += Vector2(boundary_hit.get("normal", Vector2.ZERO)) * maxf(bounce_epsilon, 0.05)
-		position = _ensure_position_inside_active_boundary(position, safe_epsilon)
+		position = _ensure_position_inside_active_boundary(position, safe_radius, safe_epsilon)
 		var travel_ratio := clampf(float(boundary_hit.get("travel_ratio", 1.0)), 0.0, 1.0)
 		remaining_time *= maxf(0.0, 1.0 - travel_ratio)
 		reflection_count += 1
 
 	if remaining_time > 0.0:
 		var segment_start := position
-		position = _ensure_position_inside_active_boundary(position + velocity * remaining_time, safe_epsilon)
+		position = _ensure_position_inside_active_boundary(position + velocity * remaining_time, safe_radius, safe_epsilon)
 		_attempt_player_hit(segment_start, position, safe_radius)
 
 
@@ -121,6 +130,7 @@ func set_active_outer_loop(loop: PackedVector2Array) -> void:
 	if has_spawned:
 		position = _ensure_position_inside_active_boundary(
 			position,
+			_get_effective_collision_radius(),
 			maxf(bounce_epsilon, 0.001)
 		)
 
@@ -202,13 +212,25 @@ func _get_effective_collision_radius() -> float:
 	return maxf(collision_radius, maxf(min_collision_radius, 0.0))
 
 
-func _ensure_position_inside_active_boundary(point: Vector2, epsilon: float) -> Vector2:
-	if active_inner_loop.size() < 3:
-		return point
-	return PlayfieldBoundary.ensure_point_inside_with_metrics(
-		active_inner_loop,
+func _has_active_inner_loop() -> bool:
+	return active_inner_loop_cache_ready and active_inner_loop.size() >= 3 and active_inner_loop_total_length > 0.0
+
+
+func _ensure_position_inside_active_boundary(point: Vector2, radius: float, epsilon: float) -> Vector2:
+	if _has_active_inner_loop():
+		return PlayfieldBoundary.ensure_point_inside_with_metrics(
+			active_inner_loop,
+			point,
+			epsilon,
+			active_inner_loop_metrics
+		)
+	return PlayfieldBoundary.ensure_circle_center_inside(
+		active_outer_loop,
 		point,
+		radius,
 		epsilon,
+		active_inner_loop,
+		active_inner_loop_cache_ready,
 		active_inner_loop_metrics
 	)
 
@@ -228,6 +250,8 @@ func _rebuild_active_inner_loop() -> void:
 	)
 	active_inner_loop_cache_ready = true
 	if active_inner_loop.size() < 3:
+		active_inner_loop_metrics = {}
+		active_inner_loop_total_length = 0.0
 		return
 	active_inner_loop_metrics = PlayfieldBoundary.build_loop_metrics(active_inner_loop)
 	active_inner_loop_total_length = float(active_inner_loop_metrics.get("total_length", 0.0))
@@ -280,7 +304,7 @@ func _perform_corner_escape(safe_radius: float, safe_epsilon: float) -> void:
 		if direction == Vector2.ZERO:
 			continue
 		var candidate_point := position + direction * escape_distance
-		var resolved_point := _ensure_position_inside_active_boundary(candidate_point, safe_epsilon)
+		var resolved_point := _ensure_position_inside_active_boundary(candidate_point, safe_radius, safe_epsilon)
 		if resolved_point.distance_to(position) <= safe_epsilon:
 			continue
 		var resolved_direction := (resolved_point - position).normalized()

@@ -986,7 +986,7 @@ func _remove_captured_minor_enemies(capture_context: Dictionary) -> void:
 			continue
 		if enemy == minor_enemy_a:
 			minor_enemy_a = null
-		elif enemy == minor_enemy_b:
+		if enemy == minor_enemy_b:
 			minor_enemy_b = null
 		enemy.queue_free()
 
@@ -1009,11 +1009,27 @@ func _is_minor_enemy_captured(enemy: Node2D, captured_polygons: Array, epsilon: 
 
 func _get_minor_enemies() -> Array[Node2D]:
 	var enemies: Array[Node2D] = []
-	if is_instance_valid(minor_enemy_a):
-		enemies.append(minor_enemy_a)
-	if is_instance_valid(minor_enemy_b):
-		enemies.append(minor_enemy_b)
+	_append_minor_enemy_if_valid(enemies, minor_enemy_a)
+	_append_minor_enemy_if_valid(enemies, minor_enemy_b)
+	var tree := get_tree()
+	if !is_instance_valid(tree):
+		return enemies
+	for node in tree.get_nodes_in_group(&"minor_enemies"):
+		_append_minor_enemy_if_valid(enemies, node)
 	return enemies
+
+
+func _append_minor_enemy_if_valid(enemies: Array[Node2D], node: Node) -> void:
+	if !is_instance_valid(node):
+		return
+	if !(node is Node2D):
+		return
+	if node != self and !is_ancestor_of(node):
+		return
+	var enemy := node as Node2D
+	if enemies.has(enemy):
+		return
+	enemies.append(enemy)
 
 
 func _on_bbos_position_changed(_world_position: Vector2) -> void:
