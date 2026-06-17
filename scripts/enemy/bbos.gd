@@ -105,15 +105,7 @@ func _process(delta: float) -> void:
 		var boundary_hit := (
 			PlayfieldBoundary.find_first_boundary_hit(position, next_position, active_inner_loop, safe_epsilon)
 			if use_inner_loop
-			else PlayfieldBoundary.find_first_boundary_hit_for_circle(
-				position,
-				next_position,
-				active_outer_loop,
-				safe_radius,
-				safe_epsilon,
-				active_inner_loop,
-				active_inner_loop_cache_ready
-			)
+			else PlayfieldBoundary.find_first_boundary_hit(position, next_position, active_outer_loop, safe_epsilon)
 		)
 		if !bool(boundary_hit.get("hit", false)):
 			position = _ensure_position_inside_active_boundary(next_position, safe_radius, safe_epsilon)
@@ -353,6 +345,15 @@ func _ensure_position_inside_active_boundary(point: Vector2, radius: float, epsi
 			epsilon,
 			active_inner_loop_metrics
 		)
+
+	if active_outer_loop.size() >= 3:
+		return PlayfieldBoundary.ensure_point_inside_with_metrics(
+			active_outer_loop,
+			point,
+			epsilon,
+			active_outer_loop_metrics
+		)
+
 	return PlayfieldBoundary.ensure_circle_center_inside(
 		active_outer_loop,
 		point,
