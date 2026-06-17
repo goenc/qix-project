@@ -5,6 +5,8 @@ const MAX_REFLECTIONS_PER_FRAME := 2
 const VIEWPORT_BASE_DIAMETER_RATIO := 0.5
 const MIN_BOSS_REGION_DIAMETER_RATIO := 0.1
 const COLLISION_INSET_RATIO := 0.75
+const STUCK_MOVE_THRESHOLD := 2.0
+const STUCK_TIME_THRESHOLD := 1.0
 
 signal position_changed(world_position: Vector2)
 
@@ -45,6 +47,9 @@ var corner_stuck_score := 0.0
 var corner_escape_cooldown := 0.0
 var last_corner_hit_position := Vector2(INF, INF)
 var logical_capture_radius := 0.0
+var stuck_watch_position := Vector2.ZERO
+var stuck_watch_time := 0.0
+var is_stuck_debug := false
 
 
 func _ready() -> void:
@@ -68,6 +73,7 @@ func _ready() -> void:
 		viewport.size_changed.connect(_on_viewport_size_changed)
 	_reset_direction_change_timer()
 	_pick_new_velocity()
+	_reset_stuck_debug_watch()
 	_emit_position_changed_if_needed(true)
 
 
@@ -92,6 +98,7 @@ func _process(delta: float) -> void:
 	var use_inner_loop := _has_active_inner_loop()
 	var remaining_time := delta
 	var reflection_count := 0
+	var did_escape_corner := false
 	while remaining_time > 0.0 and reflection_count < MAX_REFLECTIONS_PER_FRAME:
 		var segment_start := position
 		var next_position := position + velocity * remaining_time
@@ -111,6 +118,7 @@ func _process(delta: float) -> void:
 		if !bool(boundary_hit.get("hit", false)):
 			position = _ensure_position_inside_active_boundary(next_position, safe_radius, safe_epsilon)
 			_attempt_player_hit(segment_start, position, safe_radius)
+			_update_stuck_debug_watch(delta)
 			_emit_position_changed_if_needed()
 			return
 
@@ -118,6 +126,7 @@ func _process(delta: float) -> void:
 		_attempt_player_hit(segment_start, position, safe_radius)
 		if _should_escape_corner(boundary_hit, safe_epsilon):
 			_perform_corner_escape(safe_radius, safe_epsilon)
+			did_escape_corner = true
 			remaining_time = 0.0
 			break
 		velocity = _reflect_velocity(velocity, Vector2(boundary_hit.get("normal", Vector2.ZERO)))
@@ -131,6 +140,8 @@ func _process(delta: float) -> void:
 		var segment_start := position
 		position = _ensure_position_inside_active_boundary(position + velocity * remaining_time, safe_radius, safe_epsilon)
 		_attempt_player_hit(segment_start, position, safe_radius)
+	if !did_escape_corner:
+		_update_stuck_debug_watch(delta)
 	_emit_position_changed_if_needed()
 
 
@@ -380,6 +391,33 @@ func _reset_corner_stuck_state() -> void:
 	corner_stuck_score = 0.0
 	corner_escape_cooldown = 0.0
 	last_corner_hit_position = Vector2(INF, INF)
+	_reset_stuck_debug_watch()
+
+
+func _update_stuck_debug_watch(delta: float) -> void:
+	var moved_distance := position.distance_to(stuck_watch_position)
+	if moved_distance >= STUCK_MOVE_THRESHOLD:
+		stuck_watch_position = position
+		stuck_watch_time = 0.0
+		_set_stuck_debug(false)
+		return
+
+	stuck_watch_time += delta
+	if stuck_watch_time >= STUCK_TIME_THRESHOLD:
+		_set_stuck_debug(true)
+
+
+func _reset_stuck_debug_watch() -> void:
+	stuck_watch_position = position
+	stuck_watch_time = 0.0
+	_set_stuck_debug(false)
+
+
+func _set_stuck_debug(enabled: bool) -> void:
+	is_stuck_debug = enabled
+	if !is_instance_valid(body):
+		return
+	body.modulate = Color(1.0, 0.15, 0.15, 1.0) if is_stuck_debug else Color.WHITE
 
 
 func _should_escape_corner(hit: Dictionary, safe_epsilon: float) -> bool:
@@ -453,6 +491,7 @@ func _perform_corner_escape(safe_radius: float, safe_epsilon: float) -> void:
 	corner_stuck_score = 0.0
 	corner_escape_cooldown = 0.15
 	last_corner_hit_position = Vector2(INF, INF)
+	_reset_stuck_debug_watch()
 	_reset_direction_change_timer()
 
 
