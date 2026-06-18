@@ -103,18 +103,34 @@ func update_hp_label() -> void:
 	if _main == null or !is_instance_valid(_main.hp_label):
 		return
 
+	_main.hp_label.text = "HP"
+	if !is_instance_valid(_main.hp_icon_container):
+		return
+
 	if !is_instance_valid(_main.base_player):
-		_main.hp_label.text = "HP: -/-"
+		_update_hp_icons(0, 0)
 		return
 
-	if _main.base_player.has_method("get_current_hp") and _main.base_player.has_method("get_max_hp"):
-		_main.hp_label.text = "HP: %d/%d" % [
-			_main.base_player.get_current_hp(),
-			_main.base_player.get_max_hp()
-		]
+	if !_main.base_player.has_method("get_current_hp") or !_main.base_player.has_method("get_max_hp"):
+		_update_hp_icons(0, 0)
 		return
 
-	_main.hp_label.text = "HP: -/-"
+	_update_hp_icons(
+		int(_main.base_player.get_current_hp()),
+		int(_main.base_player.get_max_hp())
+	)
+
+
+func _update_hp_icons(current_hp: int, max_hp: int) -> void:
+	var safe_max_hp := maxi(0, max_hp)
+	var safe_current_hp := clampi(current_hp, 0, safe_max_hp)
+	var icons := _main.hp_icon_container.get_children()
+	for index in range(icons.size()):
+		var icon := icons[index] as TextureRect
+		if icon == null:
+			continue
+		icon.visible = index < safe_max_hp
+		icon.modulate.a = 1.0 if index < safe_current_hp else 0.35
 
 
 func sync_status(status: Dictionary) -> void:
