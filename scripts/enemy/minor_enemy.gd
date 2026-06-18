@@ -17,6 +17,7 @@ const MAX_REFLECTIONS_PER_FRAME := 2
 @onready var body: Sprite2D = $Body
 @onready var pick_area: Area2D = $PickArea
 @onready var base_player: Node = get_node_or_null("../BasePlayer")
+@onready var base_boss: Node = get_node_or_null("../BBOS")
 
 var playfield_rect: Rect2 = Rect2()
 var active_outer_loop: PackedVector2Array = PackedVector2Array()
@@ -83,6 +84,7 @@ func _process(delta: float) -> void:
 		)
 		if !bool(boundary_hit.get("hit", false)):
 			position = _ensure_position_inside_active_boundary(next_position, safe_radius, safe_epsilon)
+			_resolve_boss_collision(safe_radius, safe_epsilon)
 			_attempt_player_hit(segment_start, position, safe_radius)
 			return
 
@@ -95,6 +97,7 @@ func _process(delta: float) -> void:
 		velocity = _reflect_velocity(velocity, Vector2(boundary_hit.get("normal", Vector2.ZERO)))
 		position += Vector2(boundary_hit.get("normal", Vector2.ZERO)) * maxf(bounce_epsilon, 0.05)
 		position = _ensure_position_inside_active_boundary(position, safe_radius, safe_epsilon)
+		_resolve_boss_collision(safe_radius, safe_epsilon)
 		var travel_ratio := clampf(float(boundary_hit.get("travel_ratio", 1.0)), 0.0, 1.0)
 		remaining_time *= maxf(0.0, 1.0 - travel_ratio)
 		reflection_count += 1
@@ -102,6 +105,7 @@ func _process(delta: float) -> void:
 	if remaining_time > 0.0:
 		var segment_start := position
 		position = _ensure_position_inside_active_boundary(position + velocity * remaining_time, safe_radius, safe_epsilon)
+		_resolve_boss_collision(safe_radius, safe_epsilon)
 		_attempt_player_hit(segment_start, position, safe_radius)
 
 
@@ -363,6 +367,47 @@ func _get_base_player() -> Node:
 		return base_player
 	base_player = get_node_or_null("../BasePlayer")
 	return base_player
+
+
+func _get_base_boss() -> Node:
+	if is_instance_valid(base_boss):
+		return base_boss
+	base_boss = get_node_or_null("../BBOS")
+	return base_boss
+
+
+func _resolve_boss_collision(safe_radius: float, safe_epsilon: float) -> void:
+	var boss := _get_base_boss()
+	if !is_instance_valid(boss):
+		return
+
+	var minor_radius := _get_effective_collision_radius()
+	var boss_radius := 32.0
+	if boss.has_method("get_enemy_collision_radius"):
+		boss_radius = maxf(float(boss.call("get_enemy_collision_radius")), 0.0)
+	elif boss.has_method("get_logical_capture_radius"):
+		boss_radius = maxf(float(boss.call("get_logical_capture_radius")), 0.0)
+
+	var boss_position := boss.position
+	var offset := position - boss_position
+	var distance := offset.length()
+	var contact_distance := minor_radius + boss_radius
+	if distance >= contact_distance:
+		return
+
+	var normal := Vector2.ZERO
+	if distance <= 0.0001:
+		if velocity.length_squared() > 0.0001:
+			normal = -velocity.normalized()
+		else:
+			normal = Vector2.RIGHT
+	else:
+		normal = offset / distance
+
+	position = boss_position + normal * contact_distance
+	position = _ensure_position_inside_active_boundary(position, safe_radius, safe_epsilon)
+	velocity = _reflect_velocity(velocity, normal)
+	_reset_direction_change_timer()
 
 
 func _find_trail_hit(
