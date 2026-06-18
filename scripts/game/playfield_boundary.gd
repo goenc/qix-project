@@ -755,6 +755,11 @@ static func build_inset_loop(
 		var intersection_point: Vector2 = intersection.get("point", Vector2.ZERO)
 		inset_loop.append(intersection_point)
 
+	# An inset that crosses through itself can become a reversed but otherwise
+	# plausible loop after sanitizing. Reject it before orientation is normalized.
+	if signed_area(inset_loop) >= -safe_epsilon:
+		return PackedVector2Array()
+
 	inset_loop = _simplify_orthogonal_loop(sanitize_loop(inset_loop), safe_epsilon)
 	if inset_loop.size() < 3 or polygon_area(inset_loop) <= safe_epsilon:
 		return PackedVector2Array()
@@ -767,6 +772,10 @@ static func build_inset_loop(
 		if !_is_point_inside_or_on_loop(sanitized_loop, current_point, safe_epsilon):
 			return PackedVector2Array()
 		if !_is_point_inside_or_on_loop(sanitized_loop, current_point.lerp(next_point, 0.5), safe_epsilon):
+			return PackedVector2Array()
+		if !can_circle_center_fit(sanitized_loop, current_point, inset, safe_epsilon):
+			return PackedVector2Array()
+		if !can_circle_center_fit(sanitized_loop, current_point.lerp(next_point, 0.5), inset, safe_epsilon):
 			return PackedVector2Array()
 
 	return inset_loop
@@ -1076,7 +1085,9 @@ static func _ensure_circle_center_inside_without_inset(
 			return adjusted_point
 
 		var boundary_distance := float(blocking_boundary.get("distance", 0.0))
-		var push_distance := maxf(radius - boundary_distance, 0.0) + maxf(epsilon * 4.0, 1.0)
+		var push_distance := maxf(radius - boundary_distance - maxf(epsilon, DEFAULT_EPSILON) * 0.5, 0.0)
+		if push_distance <= DEFAULT_EPSILON:
+			return adjusted_point
 		adjusted_point += inward_normal * push_distance
 		adjusted_point = ensure_point_inside(loop, adjusted_point, epsilon)
 

@@ -2,7 +2,6 @@ extends Node2D
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const EnemyPlayerHitService = preload("res://scripts/enemy/services/enemy_player_hit_service.gd")
-const MAX_REFLECTIONS_PER_FRAME := 2
 const VIEWPORT_BASE_DIAMETER_RATIO := 0.5
 const MIN_BOSS_REGION_DIAMETER_RATIO := 0.1
 const COLLISION_INSET_RATIO := 0.75
@@ -14,6 +13,8 @@ signal position_changed(world_position: Vector2)
 @export var move_speed: float = 140.0
 @export var direction_change_interval_min: float = 1.5
 @export var direction_change_interval_max: float = 3.0
+@export_range(1, 32, 1) var max_reflections_per_frame: int = 8
+@export_range(0.001, 1.0, 0.001) var boundary_epsilon: float = 0.05
 @export var bounce_epsilon: float = 0.5
 @export var collision_radius: float = 32.0
 @export var min_collision_radius: float = 8.0
@@ -95,18 +96,27 @@ func _process(delta: float) -> void:
 		_reset_direction_change_timer()
 
 	var safe_radius := _get_effective_collision_radius()
-	var safe_epsilon := maxf(bounce_epsilon, 0.001)
+	var safe_epsilon := _get_boundary_epsilon()
 	var use_inner_loop := _has_active_inner_loop()
+	var reflection_limit := maxi(max_reflections_per_frame, 1)
 	var remaining_time := delta
 	var reflection_count := 0
 	var did_escape_corner := false
-	while remaining_time > 0.0 and reflection_count < MAX_REFLECTIONS_PER_FRAME:
+	while remaining_time > 0.0 and reflection_count < reflection_limit:
 		var segment_start := position
 		var next_position := position + velocity * remaining_time
 		var boundary_hit := (
 			PlayfieldBoundary.find_first_boundary_hit(position, next_position, active_inner_loop, safe_epsilon)
 			if use_inner_loop
-			else PlayfieldBoundary.find_first_boundary_hit(position, next_position, active_outer_loop, safe_epsilon)
+			else PlayfieldBoundary.find_first_boundary_hit_for_circle(
+				position,
+				next_position,
+				active_outer_loop,
+				safe_radius,
+				safe_epsilon,
+				active_inner_loop,
+				active_inner_loop_cache_ready
+			)
 		)
 		if !bool(boundary_hit.get("hit", false)):
 			position = _ensure_position_inside_active_boundary(next_position, safe_radius, safe_epsilon)
@@ -129,10 +139,8 @@ func _process(delta: float) -> void:
 		remaining_time *= maxf(0.0, 1.0 - travel_ratio)
 		reflection_count += 1
 
-	if remaining_time > 0.0:
-		var segment_start := position
-		position = _ensure_position_inside_active_boundary(position + velocity * remaining_time, safe_radius, safe_epsilon)
-		_attempt_player_hit(segment_start, position, safe_radius)
+	# Keep the last verified position when the reflection budget is exhausted.
+	# Advancing the leftover time without another hit test causes visible snaps.
 	if !did_escape_corner:
 		_update_stuck_debug_watch(delta)
 	_emit_position_changed_if_needed()
@@ -171,7 +179,7 @@ func set_active_outer_loop(loop: PackedVector2Array) -> void:
 		position = _ensure_position_inside_active_boundary(
 			position,
 			_get_effective_collision_radius(),
-			maxf(bounce_epsilon, 0.001)
+			_get_boundary_epsilon()
 		)
 	_emit_position_changed_if_needed()
 
@@ -189,7 +197,7 @@ func set_collision_radius(radius: float) -> void:
 		position = _ensure_position_inside_active_boundary(
 			position,
 			collision_radius,
-			maxf(bounce_epsilon, 0.001)
+			_get_boundary_epsilon()
 		)
 	elif playfield_rect.size.x > 0.0 and playfield_rect.size.y > 0.0:
 		position = _clamp_point_to_rect(position, _get_spawnable_rect(playfield_rect))
@@ -334,6 +342,10 @@ func _get_effective_collision_radius() -> float:
 	return maxf(collision_radius, maxf(min_collision_radius, 0.0))
 
 
+func _get_boundary_epsilon() -> float:
+	return maxf(boundary_epsilon, 0.001)
+
+
 func _has_active_inner_loop() -> bool:
 	return active_inner_loop_cache_ready and active_inner_loop.size() >= 3 and active_inner_loop_total_length > 0.0
 
@@ -345,14 +357,6 @@ func _ensure_position_inside_active_boundary(point: Vector2, radius: float, epsi
 			point,
 			epsilon,
 			active_inner_loop_metrics
-		)
-
-	if active_outer_loop.size() >= 3:
-		return PlayfieldBoundary.ensure_point_inside_with_metrics(
-			active_outer_loop,
-			point,
-			epsilon,
-			active_outer_loop_metrics
 		)
 
 	return PlayfieldBoundary.ensure_circle_center_inside(
@@ -378,7 +382,7 @@ func _rebuild_active_inner_loop() -> void:
 	active_inner_loop = PlayfieldBoundary.build_inset_loop(
 		active_outer_loop,
 		_get_effective_collision_radius(),
-		maxf(bounce_epsilon, 0.001)
+		_get_boundary_epsilon()
 	)
 	active_inner_loop_cache_ready = true
 	if active_inner_loop.size() < 3:
