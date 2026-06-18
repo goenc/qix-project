@@ -3,6 +3,7 @@ class_name BaseMainGuidePartitionFillPolygonService
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const BaseMainGuidePartitionFillEntryService = preload("res://scripts/game/services/base_main_guide_partition_fill_entry_service.gd")
+const TypedArrayUtils = preload("res://scripts/common/typed_array_utils.gd")
 
 var _entry_service := BaseMainGuidePartitionFillEntryService.new()
 
@@ -10,7 +11,7 @@ var _entry_service := BaseMainGuidePartitionFillEntryService.new()
 func collect_guide_partition_rects(state: Dictionary) -> Array[PackedVector2Array]:
 	var polygons: Array[PackedVector2Array] = []
 	var epsilon := float(state.get("guide_epsilon", 0.0))
-	var guide_partition_fill_entries: Array[Dictionary] = state.get("guide_partition_fill_entries", [])
+	var guide_partition_fill_entries := TypedArrayUtils.dictionaries(state.get("guide_partition_fill_entries", []))
 	var guide_partition_fill_polygons_by_key: Dictionary = state.get("guide_partition_fill_polygons_by_key", {})
 	for entry in guide_partition_fill_entries:
 		var entry_key := _entry_service.extract_entry_storage_key(entry)
@@ -30,7 +31,9 @@ func collect_guide_partition_rects(state: Dictionary) -> Array[PackedVector2Arra
 func rebuild_partition_fill_polygons(partition_state: Dictionary) -> void:
 	var guide_partition_fill_polygons_by_key: Dictionary = partition_state.get("guide_partition_fill_polygons_by_key", {})
 	guide_partition_fill_polygons_by_key.clear()
-	var guide_partition_fill_entries: Array[Dictionary] = partition_state.get("guide_partition_fill_entries", [])
+	var guide_partition_fill_entries := TypedArrayUtils.dictionaries(
+		partition_state.get("guide_partition_fill_entries", [])
+	)
 	var epsilon := float(partition_state.get("guide_epsilon", 0.0))
 	for entry in guide_partition_fill_entries:
 		_refresh_guide_partition_fill_result_for_entry(partition_state, entry, epsilon)

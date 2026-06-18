@@ -5,6 +5,7 @@ const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const BaseMainGuideResolutionService = preload("res://scripts/game/services/base_main_guide_resolution_service.gd")
 const BaseMainGuideCaptureService = preload("res://scripts/game/services/base_main_guide_capture_service.gd")
 const BaseMainGuidePartitionFillService = preload("res://scripts/game/services/base_main_guide_partition_fill_service.gd")
+const TypedArrayUtils = preload("res://scripts/common/typed_array_utils.gd")
 
 var _main
 var _resolution_service := BaseMainGuideResolutionService.new()
@@ -171,7 +172,9 @@ func _apply_axis_state(axis_state: Dictionary) -> void:
 
 
 func _apply_partition_fill_state(partition_fill_state: Dictionary) -> void:
-	_main.guide_partition_fill_entries = partition_fill_state.get("guide_partition_fill_entries", [])
+	_main.guide_partition_fill_entries = TypedArrayUtils.dictionaries(
+		partition_fill_state.get("guide_partition_fill_entries", [])
+	)
 	_main.guide_partition_fill_polygons_by_key = partition_fill_state.get("guide_partition_fill_polygons_by_key", {})
 	_main.guide_partition_fill_entry_key_sequence = int(
 		partition_fill_state.get("guide_partition_fill_entry_key_sequence", 0)

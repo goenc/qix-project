@@ -7,6 +7,7 @@ const BaseMainGuidePartitionFillEntryService = preload(
 const BaseMainGuidePartitionFillPolygonService = preload(
 	"res://scripts/game/services/base_main_guide_partition_fill_polygon_service.gd"
 )
+const TypedArrayUtils = preload("res://scripts/common/typed_array_utils.gd")
 
 var _entry_service := BaseMainGuidePartitionFillEntryService.new()
 var _polygon_service := BaseMainGuidePartitionFillPolygonService.new()
@@ -26,17 +27,21 @@ func sync_guide_partition_fill_entries_after_capture(
 		"partition_fill_target_boss_diameter": float(state.get("partition_fill_target_boss_diameter", 0.0)),
 		"current_outer_loop": state.get("current_outer_loop", PackedVector2Array()),
 		"remaining_polygon": state.get("remaining_polygon", PackedVector2Array()),
-		"guide_segments": state.get("guide_segments", []),
+		"guide_segments": TypedArrayUtils.dictionaries(state.get("guide_segments", [])),
 		"vertical_guide_indices_by_x": state.get("vertical_guide_indices_by_x", {}),
-		"vertical_guide_axis_keys": state.get("vertical_guide_axis_keys", []),
-		"guide_partition_fill_entries": state.get("guide_partition_fill_entries", []).duplicate(true),
+		"vertical_guide_axis_keys": TypedArrayUtils.integers(state.get("vertical_guide_axis_keys", [])),
+		"guide_partition_fill_entries": TypedArrayUtils.dictionaries(
+			state.get("guide_partition_fill_entries", [])
+		).duplicate(true),
 		"guide_partition_fill_polygons_by_key": state.get("guide_partition_fill_polygons_by_key", {}).duplicate(true),
 		"guide_partition_fill_entry_key_sequence": int(state.get("guide_partition_fill_entry_key_sequence", 0))
 	}
 	_entry_service.sync_entries_after_capture(partition_state, affected_vertical_guide_keys, capture_delta)
 	_polygon_service.rebuild_partition_fill_polygons(partition_state)
 	return {
-		"guide_partition_fill_entries": partition_state.get("guide_partition_fill_entries", []),
+		"guide_partition_fill_entries": TypedArrayUtils.dictionaries(
+			partition_state.get("guide_partition_fill_entries", [])
+		),
 		"guide_partition_fill_polygons_by_key": partition_state.get("guide_partition_fill_polygons_by_key", {}),
 		"guide_partition_fill_entry_key_sequence": int(
 			partition_state.get("guide_partition_fill_entry_key_sequence", 0)

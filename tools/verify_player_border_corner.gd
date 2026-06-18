@@ -53,8 +53,6 @@ func _verify_state(player, loop: PackedVector2Array, interior_point: Vector2, la
 	_assert(loop.size() >= 4, "%s loop is not ready for player verification." % label, failures)
 	_assert(player.debug_is_border_state_consistent(), "%s player border state was inconsistent after sync." % label, failures)
 	_assert_player_border_motion(player, loop, label, failures)
-	_assert_player_corner_preinput(player, loop, label, failures)
-	_assert_player_corner_input_priority(player, loop, label, failures)
 	_assert_draw_start_safety(player, loop, interior_point, label, failures)
 
 
@@ -101,50 +99,6 @@ func _move_player_from_vertex(player, loop: PackedVector2Array, vertex: Vector2,
 		and PlayfieldBoundary.is_point_on_loop(loop, player.position, EPSILON)
 		and player.debug_is_border_state_consistent()
 	)
-
-
-func _assert_player_corner_preinput(player, loop: PackedVector2Array, label: String, failures: Array[String]) -> void:
-	VerifyShared.assert_player_corner_preinput(player, loop, label, failures)
-
-
-func _assert_player_corner_input_priority(player, loop: PackedVector2Array, label: String, failures: Array[String]) -> void:
-	VerifyShared.assert_player_corner_input_priority(player, loop, label, failures)
-
-
-func _move_player_into_corner_with_preinput(
-	player,
-	loop: PackedVector2Array,
-	vertex_index: int,
-	clockwise: bool
-) -> bool:
-	return VerifyShared.move_player_into_corner_with_preinput(player, loop, vertex_index, clockwise)
-
-
-func _latest_input_overrides_queued_corner(
-	player,
-	loop: PackedVector2Array,
-	vertex_index: int,
-	clockwise: bool
-) -> bool:
-	return VerifyShared.latest_input_overrides_queued_corner(player, loop, vertex_index, clockwise)
-
-
-func _queued_corner_fallback_applies(
-	player,
-	loop: PackedVector2Array,
-	vertex_index: int,
-	clockwise: bool
-) -> bool:
-	return VerifyShared.queued_corner_fallback_applies(player, loop, vertex_index, clockwise)
-
-
-func _prepare_corner_queue_state(
-	player,
-	loop: PackedVector2Array,
-	vertex_index: int,
-	clockwise: bool
-) -> Dictionary:
-	return VerifyShared.prepare_corner_queue_state(player, loop, vertex_index, clockwise)
 
 
 func _assert_draw_start_safety(

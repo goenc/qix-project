@@ -2,6 +2,7 @@ extends Node2D
 class_name BasePlayer
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
+const PlayerBorderInputService = preload("res://scripts/player/services/player_border_input_service.gd")
 const ACTION_QIX_DRAW := &"qix_draw"
 const ACTION_QIX_DRAW_FAST := &"qix_draw_fast"
 const ACTION_QIX_DRAW_SLOW := &"qix_draw_slow"
@@ -1068,66 +1069,44 @@ func _move_along_border(direction: Vector2, delta: float) -> void:
 
 
 func _get_border_move_input(direction: Vector2, point: Vector2) -> Vector2:
-	if direction == Vector2.ZERO or !_is_on_border(point):
-		return Vector2.ZERO
-
-	var connected_border_directions := _get_connected_border_direction_vectors(point)
-	for candidate in _get_border_input_direction_candidates(direction):
-		for connected_direction in connected_border_directions:
-			if connected_direction.is_equal_approx(candidate):
-				return candidate
-
-	return Vector2.ZERO
+	return PlayerBorderInputService.resolve_move_input(
+		direction,
+		point,
+		active_outer_loop,
+		_get_border_connection_epsilon(),
+		outer_loop_metrics
+	)
 
 
 func _get_border_input_direction_candidates(direction: Vector2) -> Array[Vector2]:
-	var candidates: Array[Vector2] = []
-	var safe_epsilon := 0.01
-	var horizontal_direction := Vector2.ZERO
-	var vertical_direction := Vector2.ZERO
-	if absf(direction.x) > safe_epsilon:
-		horizontal_direction = Vector2(signf(direction.x), 0.0)
-	if absf(direction.y) > safe_epsilon:
-		vertical_direction = Vector2(0.0, signf(direction.y))
-
-	if horizontal_direction != Vector2.ZERO and vertical_direction != Vector2.ZERO:
-		if absf(direction.x) >= absf(direction.y):
-			candidates.append(horizontal_direction)
-			candidates.append(vertical_direction)
-		else:
-			candidates.append(vertical_direction)
-			candidates.append(horizontal_direction)
-	elif horizontal_direction != Vector2.ZERO:
-		candidates.append(horizontal_direction)
-	elif vertical_direction != Vector2.ZERO:
-		candidates.append(vertical_direction)
-
-	return candidates
+	return PlayerBorderInputService.build_input_direction_candidates(direction)
 
 
 func _get_connected_border_connections(point: Vector2) -> Array[Dictionary]:
-	if !_is_on_border(point):
-		var empty_connections: Array[Dictionary] = []
-		return empty_connections
-	return PlayfieldBoundary.get_connected_directions_at_point(active_outer_loop, point, _get_border_connection_epsilon())
+	return PlayerBorderInputService.get_connected_directions(
+		point,
+		active_outer_loop,
+		_get_border_connection_epsilon(),
+		outer_loop_metrics
+	)
 
 
 func _get_connected_border_direction_vectors(point: Vector2) -> Array[Vector2]:
-	var directions: Array[Vector2] = []
-	for connection in _get_connected_border_connections(point):
-		var connection_direction: Vector2 = connection.get("direction", Vector2.ZERO)
-		if connection_direction != Vector2.ZERO:
-			directions.append(connection_direction)
-	return directions
+	return PlayerBorderInputService.get_connected_direction_vectors(
+		point,
+		active_outer_loop,
+		_get_border_connection_epsilon(),
+		outer_loop_metrics
+	)
 
 
 func _get_connected_border_direction_names(point: Vector2) -> Array[String]:
-	var directions: Array[String] = []
-	for connection in _get_connected_border_connections(point):
-		var direction_name := _get_border_direction_name(connection.get("direction", Vector2.ZERO))
-		if !direction_name.is_empty():
-			directions.append(direction_name)
-	return directions
+	return PlayerBorderInputService.get_connected_direction_names(
+		point,
+		active_outer_loop,
+		_get_border_connection_epsilon(),
+		outer_loop_metrics
+	)
 
 
 func _get_connected_border_connection_for_direction(point: Vector2, direction: Vector2) -> Dictionary:
@@ -1144,21 +1123,11 @@ func _get_connected_border_connection_for_direction(point: Vector2, direction: V
 
 
 func _is_corner_from_connected_directions(directions: Array[String]) -> bool:
-	var has_horizontal := directions.has("left") or directions.has("right")
-	var has_vertical := directions.has("up") or directions.has("down")
-	return has_horizontal and has_vertical
+	return PlayerBorderInputService.is_corner(directions)
 
 
 func _get_border_direction_name(direction: Vector2) -> String:
-	if direction == Vector2.LEFT:
-		return "left"
-	if direction == Vector2.RIGHT:
-		return "right"
-	if direction == Vector2.UP:
-		return "up"
-	if direction == Vector2.DOWN:
-		return "down"
-	return ""
+	return PlayerBorderInputService.get_direction_name(direction)
 
 
 func _get_border_connection_epsilon() -> float:

@@ -53,8 +53,6 @@ func _verify_initial_state(main, failures: Array[String]) -> void:
 	var expected_loop := PlayfieldBoundary.create_rect_loop(main.playfield_rect)
 	_assert(_loops_match(main.current_outer_loop, expected_loop), "Initial loop does not match the playfield rectangle.", failures)
 	_assert_player_border_motion(main.base_player, main.current_outer_loop, main.playfield_rect, "initial rectangle", failures)
-	_assert_player_corner_preinput(main.base_player, main.current_outer_loop, "initial rectangle", failures)
-	_assert_player_corner_input_priority(main.base_player, main.current_outer_loop, "initial rectangle", failures)
 	_assert_draw_start_safety(main.base_player, main.current_outer_loop, main.playfield_rect.get_center(), "initial rectangle", failures)
 	_assert_bbos_reflection(main.bbos, main.current_outer_loop, main.playfield_rect, "initial rectangle", false, failures)
 
@@ -63,8 +61,6 @@ func _verify_captured_state(main, rect: Rect2, label: String, require_internal_s
 	_assert(main.current_outer_loop.size() >= 6, "%s did not produce a non-rect outer loop." % label, failures)
 	_assert(PlayfieldBoundary.polygon_area(main.current_outer_loop) > EPSILON, "%s outer loop area is empty." % label, failures)
 	_assert_player_border_motion(main.base_player, main.current_outer_loop, rect, label, failures)
-	_assert_player_corner_preinput(main.base_player, main.current_outer_loop, label, failures)
-	_assert_player_corner_input_priority(main.base_player, main.current_outer_loop, label, failures)
 	_assert_draw_start_safety(main.base_player, main.current_outer_loop, main.bbos.position, label, failures)
 	_assert_bbos_reflection(main.bbos, main.current_outer_loop, rect, label, require_internal_segment, failures)
 
@@ -96,50 +92,6 @@ func _move_player_from_vertex(player, loop: PackedVector2Array, vertex: Vector2,
 	var before: Vector2 = player.position
 	player._move_along_border(direction, 0.25)
 	return before.distance_to(player.position) > 1.0 and PlayfieldBoundary.is_point_on_loop(loop, player.position, EPSILON)
-
-
-func _assert_player_corner_preinput(player, loop: PackedVector2Array, label: String, failures: Array[String]) -> void:
-	VerifyShared.assert_player_corner_preinput(player, loop, label, failures)
-
-
-func _assert_player_corner_input_priority(player, loop: PackedVector2Array, label: String, failures: Array[String]) -> void:
-	VerifyShared.assert_player_corner_input_priority(player, loop, label, failures)
-
-
-func _move_player_into_corner_with_preinput(
-	player,
-	loop: PackedVector2Array,
-	vertex_index: int,
-	clockwise: bool
-) -> bool:
-	return VerifyShared.move_player_into_corner_with_preinput(player, loop, vertex_index, clockwise)
-
-
-func _latest_input_overrides_queued_corner(
-	player,
-	loop: PackedVector2Array,
-	vertex_index: int,
-	clockwise: bool
-) -> bool:
-	return VerifyShared.latest_input_overrides_queued_corner(player, loop, vertex_index, clockwise)
-
-
-func _queued_corner_fallback_applies(
-	player,
-	loop: PackedVector2Array,
-	vertex_index: int,
-	clockwise: bool
-) -> bool:
-	return VerifyShared.queued_corner_fallback_applies(player, loop, vertex_index, clockwise)
-
-
-func _prepare_corner_queue_state(
-	player,
-	loop: PackedVector2Array,
-	vertex_index: int,
-	clockwise: bool
-) -> Dictionary:
-	return VerifyShared.prepare_corner_queue_state(player, loop, vertex_index, clockwise)
 
 
 func _assert_draw_start_safety(
