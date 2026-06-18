@@ -17,7 +17,7 @@ const MAX_REFLECTIONS_PER_FRAME := 2
 @onready var body: Sprite2D = $Body
 @onready var pick_area: Area2D = $PickArea
 @onready var base_player: Node = get_node_or_null("../BasePlayer")
-@onready var base_boss: Node = get_node_or_null("../BBOS")
+@onready var base_boss: Node2D = get_node_or_null("../BBOS") as Node2D
 
 var playfield_rect: Rect2 = Rect2()
 var active_outer_loop: PackedVector2Array = PackedVector2Array()
@@ -369,10 +369,10 @@ func _get_base_player() -> Node:
 	return base_player
 
 
-func _get_base_boss() -> Node:
+func _get_base_boss() -> Node2D:
 	if is_instance_valid(base_boss):
 		return base_boss
-	base_boss = get_node_or_null("../BBOS")
+	base_boss = get_node_or_null("../BBOS") as Node2D
 	return base_boss
 
 
