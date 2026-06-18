@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=3]
+[gd_scene load_steps=7 format=3]
 
 [ext_resource type="Script" path="res://scripts/game/base_main.gd" id="1_script"]
 [ext_resource type="PackedScene" path="res://scenes/player/base_player.tscn" id="2_player_scene"]
 [ext_resource type="PackedScene" path="res://scenes/enemy/bbos.tscn" id="3_bbos_scene"]
 [ext_resource type="PackedScene" path="res://scenes/enemy/minor_enemy.tscn" id="4_minor_enemy_scene"]
 [ext_resource type="Texture2D" path="res://assets/backgrounds/common/game_background_1280x720.png" id="5_background"]
+[ext_resource type="Texture2D" path="res://assets/player/Soldier 01-1.png" id="6_player_icon"]
 
 [node name="BaseMain" type="Node2D"]
 script = ExtResource("1_script")
@@ -174,9 +175,49 @@ anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -264.0
 offset_top = 448.0
-offset_right = -24.0
-offset_bottom = 476.0
-text = "HP: 3/3"
+offset_right = -232.0
+offset_bottom = 480.0
+vertical_alignment = 1
+text = "HP"
+
+[node name="HpIconContainer" type="Control" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -224.0
+offset_top = 448.0
+offset_right = -80.0
+offset_bottom = 480.0
+
+[node name="HpIcon1" type="TextureRect" parent="Ui/Root/HpIconContainer"]
+offset_right = 32.0
+offset_bottom = 32.0
+texture = ExtResource("6_player_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="HpIcon2" type="TextureRect" parent="Ui/Root/HpIconContainer"]
+offset_left = 36.0
+offset_right = 68.0
+offset_bottom = 32.0
+texture = ExtResource("6_player_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="HpIcon3" type="TextureRect" parent="Ui/Root/HpIconContainer"]
+offset_left = 72.0
+offset_right = 104.0
+offset_bottom = 32.0
+texture = ExtResource("6_player_icon")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="HpIcon4" type="TextureRect" parent="Ui/Root/HpIconContainer"]
+offset_left = 108.0
+offset_right = 140.0
+offset_bottom = 32.0
+texture = ExtResource("6_player_icon")
+expand_mode = 1
+stretch_mode = 5
 
 [node name="ResultLabel" type="Label" parent="Ui/Root"]
 anchor_left = 1.0
