@@ -124,7 +124,7 @@ func update_hp_label() -> void:
 func _update_hp_icons(current_hp: int, max_hp: int) -> void:
 	var safe_max_hp := maxi(0, max_hp)
 	var safe_current_hp := clampi(current_hp, 0, safe_max_hp)
-	var icons := _main.hp_icon_container.get_children()
+	var icons: Array[Node] = _main.hp_icon_container.get_children()
 	for index in range(icons.size()):
 		var icon := icons[index] as TextureRect
 		if icon == null:
