@@ -5,7 +5,6 @@ const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
 const PlayerBorderInputService = preload("res://scripts/player/services/player_border_input_service.gd")
 const ACTION_QIX_DRAW := &"qix_draw"
 const ACTION_QIX_DRAW_FAST := &"qix_draw_fast"
-const ACTION_QIX_DRAW_SLOW := &"qix_draw_slow"
 const ACTION_MOVE_LEFT := &"move_left"
 const ACTION_MOVE_RIGHT := &"move_right"
 const ACTION_MOVE_UP := &"move_up"
@@ -30,8 +29,7 @@ signal debug_position_changed(world_position: Vector2)
 signal capture_preview_changed(active: bool)
 
 @export var move_speed := 240.0
-@export var fast_draw_speed := 240.0
-@export var slow_draw_speed := 160.0
+@export var draw_speed := 240.0
 @export var border_epsilon := 2.0
 @export var trail_min_point_distance := 8.0
 @export var border_color := Color(1.0, 1.0, 1.0, 1.0)
@@ -51,11 +49,6 @@ enum PlayerState {
 	BORDER,
 	DRAWING,
 	REWINDING
-}
-
-enum DrawMode {
-	FAST,
-	SLOW
 }
 
 enum BossHitRisk {
@@ -104,21 +97,21 @@ var last_visible_trail_cache_points: PackedVector2Array = PackedVector2Array()
 var body_facing_row := BODY_ROW_DOWN
 var walk_animation_time := 0.0
 var top_outline_countdown_remaining := TOP_OUTLINE_COUNTDOWN_SECONDS
-var current_draw_mode: int = DrawMode.FAST
 var current_capture_draw_duration := 0.0
+var base_move_speed := 240.0
 
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_PAUSABLE
 	base_max_hp = max_hp
 	current_hp = get_max_hp()
+	base_move_speed = move_speed
 	is_draw_action_configured = (
 		InputMap.has_action(ACTION_QIX_DRAW)
 		or InputMap.has_action(ACTION_QIX_DRAW_FAST)
-		or InputMap.has_action(ACTION_QIX_DRAW_SLOW)
 	)
 	if !is_draw_action_configured:
-		push_error("Missing QIX draw input actions. Register qix_draw or qix_draw_fast/qix_draw_slow before starting gameplay.")
+		push_error("Missing QIX draw input actions. Register qix_draw or qix_draw_fast before starting gameplay.")
 		set_process(false)
 	if is_instance_valid(pick_area):
 		pick_area.set_meta(&"debug_pick_owner", self)
@@ -293,7 +286,6 @@ func get_debug_status() -> Dictionary:
 	return {
 		"mode_text": get_state_text(),
 		"state": get_state_text(),
-		"draw_mode": get_current_draw_mode_name(),
 		"position": position,
 		"is_on_border": _is_on_border(position),
 		"is_on_corner": _is_corner_from_connected_directions(connected_border_directions),
@@ -315,21 +307,16 @@ func get_max_hp() -> int:
 	return max(1, max_hp)
 
 
-func get_current_draw_mode_name() -> String:
-	return "SLOW" if current_draw_mode == DrawMode.SLOW else "FAST"
-
-
-func is_drawing_interior() -> bool:
-	return state == PlayerState.DRAWING and has_left_border
-
-
 func build_capture_snapshot() -> Dictionary:
 	return {
-		"draw_mode": get_current_draw_mode_name(),
 		"draw_duration": current_capture_draw_duration,
 		"trail_point_count": trail_points.size(),
 		"top_outline_remaining": top_outline_countdown_remaining
 	}
+
+
+func is_drawing_interior() -> bool:
+	return state == PlayerState.DRAWING and has_left_border
 
 
 func apply_run_configuration(config: Dictionary) -> void:
@@ -337,6 +324,8 @@ func apply_run_configuration(config: Dictionary) -> void:
 	var max_hp_bonus: int = max(0, int(config.get("max_hp_bonus", 0)))
 	max_hp = base_max_hp + max_hp_bonus
 	current_hp = get_max_hp()
+	var move_speed_multiplier := maxf(0.5, float(config.get("move_speed_multiplier", 1.0)))
+	move_speed = base_move_speed * move_speed_multiplier
 	top_outline_countdown_remaining = _get_top_outline_countdown_total_seconds()
 	_update_top_outline_countdown_label()
 	hp_changed.emit(current_hp, get_max_hp())
@@ -478,7 +467,7 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 	var current_position := position
 	var next_position := _limit_drawing_position(
 		current_position,
-		current_position + drawing_direction * _get_current_draw_speed() * delta
+		current_position + drawing_direction * draw_speed * delta
 	)
 	var is_waiting_to_leave_border := !has_left_border and _is_on_border(current_position)
 	var should_block_border_movement := is_waiting_to_leave_border and _is_on_border(next_position)
@@ -504,7 +493,6 @@ func _process_drawing(direction: Vector2, delta: float) -> void:
 
 func _start_drawing() -> void:
 	state = PlayerState.DRAWING
-	current_draw_mode = _resolve_requested_draw_mode()
 	current_capture_draw_duration = 0.0
 	has_left_border = false
 	rewind_index = -1
@@ -537,7 +525,7 @@ func _finish_drawing() -> void:
 
 
 func _start_rewinding() -> void:
-	rewind_speed = _get_current_draw_speed()
+	rewind_speed = draw_speed
 	_ensure_trail_endpoint(position)
 
 	drawing_move_direction = Vector2.ZERO
@@ -1297,27 +1285,12 @@ func _is_damage_blocked() -> bool:
 	return is_defeated or invincibility_timer > 0.0
 
 
-func _resolve_requested_draw_mode() -> int:
-	if _is_action_pressed_safe(ACTION_QIX_DRAW_SLOW):
-		return DrawMode.SLOW
-	return DrawMode.FAST
-
-
-func _get_current_draw_speed() -> float:
-	var base_speed := slow_draw_speed if current_draw_mode == DrawMode.SLOW else fast_draw_speed
-	var owner := get_parent()
-	if is_instance_valid(owner) and owner.has_method("get_draw_speed_multiplier"):
-		return base_speed * float(owner.call("get_draw_speed_multiplier", get_current_draw_mode_name()))
-	return base_speed
-
-
 func _is_draw_action_pressed() -> bool:
 	return (
 		is_draw_action_configured
 		and (
 			(InputMap.has_action(ACTION_QIX_DRAW) and Input.is_action_pressed(ACTION_QIX_DRAW))
 			or (InputMap.has_action(ACTION_QIX_DRAW_FAST) and Input.is_action_pressed(ACTION_QIX_DRAW_FAST))
-			or (InputMap.has_action(ACTION_QIX_DRAW_SLOW) and Input.is_action_pressed(ACTION_QIX_DRAW_SLOW))
 		)
 	)
 
@@ -1328,7 +1301,6 @@ func _is_draw_action_just_pressed() -> bool:
 		and (
 			(InputMap.has_action(ACTION_QIX_DRAW) and Input.is_action_just_pressed(ACTION_QIX_DRAW))
 			or (InputMap.has_action(ACTION_QIX_DRAW_FAST) and Input.is_action_just_pressed(ACTION_QIX_DRAW_FAST))
-			or (InputMap.has_action(ACTION_QIX_DRAW_SLOW) and Input.is_action_just_pressed(ACTION_QIX_DRAW_SLOW))
 		)
 	)
 
@@ -1413,7 +1385,6 @@ func _build_debug_status_snapshot() -> Dictionary:
 	var connected_border_directions := _get_connected_border_direction_names(position)
 	return {
 		"mode_text": get_state_text(),
-		"draw_mode": get_current_draw_mode_name(),
 		"is_on_corner": _is_corner_from_connected_directions(connected_border_directions),
 		"border_move_input": _get_border_move_input(_get_move_input_vector(), position),
 		"connected_border_directions": connected_border_directions,

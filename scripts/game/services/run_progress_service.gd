@@ -6,7 +6,7 @@ const DEFAULT_PRIMARY_OBJECTIVE := "ボス領域を20%未満まで圧縮する"
 const DEFAULT_OPTIONAL_OBJECTIVE_TIME := "3分以内にクリアする"
 const DEFAULT_OPTIONAL_OBJECTIVE_BIG_CUT := "単発15%以上の大取りを決める"
 const DEFAULT_QUEST_THIRTY := "確保率30%に一度到達する"
-const DEFAULT_QUEST_FAST_ONLY := "スロー描画を使わずに1回クリアする"
+const DEFAULT_QUEST_NO_DAMAGE_CLEAR := "ダメージを受けずにクリアする"
 const DEFAULT_QUEST_STREAK := "無傷で3回連続帰還する"
 const GROWTH_THRESHOLDS := [12.0, 28.0, 48.0, 72.0, 100.0, 132.0, 168.0]
 
@@ -25,15 +25,12 @@ var reroll_charges := 0
 var guard_charges := 0
 var no_damage_capture_streak := 0
 var risk_line_time := 0.0
-var used_slow_draw := false
+var took_damage_this_run := false
 
 var current_build_summary: Array[String] = []
 var applied_upgrade_ranks: Dictionary = {}
 var run_modifiers := {
-	"fast_draw_speed": 1.0,
-	"slow_draw_speed": 1.0,
-	"fast_shard_bonus": 0.0,
-	"slow_shard_bonus": 0.0,
+	"move_speed": 1.0,
 	"boss_squeeze_bonus": 0.0,
 	"small_capture_bonus": 0.0,
 	"large_capture_bonus": 0.0,
@@ -46,7 +43,7 @@ var primary_objective_completed := false
 var optional_time_completed := false
 var optional_big_cut_completed := false
 var quest_claimed_thirty_completed := false
-var quest_fast_only_completed := false
+var quest_no_damage_clear_completed := false
 var quest_streak_completed := false
 
 var core_data_total := 0
@@ -55,7 +52,6 @@ var total_shards_earned := 0
 var meta_hp_bonus := 0
 var meta_shard_bonus := 0.0
 var meta_top_outline_bonus_seconds := 0.0
-var meta_draw_speed_bonus := 0.0
 var meta_reroll_bonus := 0
 
 
@@ -77,14 +73,11 @@ func begin_run() -> void:
 	guard_charges = 0
 	no_damage_capture_streak = 0
 	risk_line_time = 0.0
-	used_slow_draw = false
+	took_damage_this_run = false
 	current_build_summary.clear()
 	applied_upgrade_ranks.clear()
 	run_modifiers = {
-		"fast_draw_speed": 1.0,
-		"slow_draw_speed": 1.0,
-		"fast_shard_bonus": 0.0,
-		"slow_shard_bonus": 0.0,
+		"move_speed": 1.0,
 		"boss_squeeze_bonus": 0.0,
 		"small_capture_bonus": 0.0,
 		"large_capture_bonus": 0.0,
@@ -96,7 +89,7 @@ func begin_run() -> void:
 	optional_time_completed = false
 	optional_big_cut_completed = false
 	quest_claimed_thirty_completed = false
-	quest_fast_only_completed = false
+	quest_no_damage_clear_completed = false
 	quest_streak_completed = false
 
 
@@ -112,9 +105,8 @@ func tick(delta: float) -> void:
 func register_capture(capture_context: Dictionary) -> Dictionary:
 	var single_capture_percent := float(capture_context.get("single_capture_percent", 0.0))
 	var claimed_ratio := float(capture_context.get("claimed_ratio", 0.0))
-	var draw_mode := str(capture_context.get("draw_mode", "FAST"))
 	var streak_before_damage := no_damage_capture_streak
-	var shards_gained := _calculate_shards(single_capture_percent, draw_mode, capture_context)
+	var shards_gained := _calculate_shards(single_capture_percent, capture_context)
 	var territory_gained := maxf(1.0, single_capture_percent * 10.0)
 	var growth_gained := _calculate_growth(single_capture_percent, capture_context, streak_before_damage)
 	var boss_region_ratio := float(capture_context.get("post_boss_region_ratio", 1.0))
@@ -124,8 +116,6 @@ func register_capture(capture_context: Dictionary) -> Dictionary:
 	total_shards_earned += shards_gained
 	growth_progress += growth_gained
 	no_damage_capture_streak += 1
-	if draw_mode == "SLOW":
-		used_slow_draw = true
 
 	if claimed_ratio >= 0.30 and !quest_claimed_thirty_completed:
 		quest_claimed_thirty_completed = true
@@ -155,6 +145,7 @@ func register_capture(capture_context: Dictionary) -> Dictionary:
 
 func register_damage_taken() -> void:
 	no_damage_capture_streak = 0
+	took_damage_this_run = true
 
 
 func register_stage_clear() -> void:
@@ -162,8 +153,8 @@ func register_stage_clear() -> void:
 	if elapsed_time <= 180.0 and !optional_time_completed:
 		optional_time_completed = true
 		_award_core_data(1)
-	if !used_slow_draw and !quest_fast_only_completed:
-		quest_fast_only_completed = true
+	if !took_damage_this_run and !quest_no_damage_clear_completed:
+		quest_no_damage_clear_completed = true
 		_award_core_data(2)
 	_save_meta_progress()
 
@@ -209,15 +200,9 @@ func reroll_upgrade_choices() -> bool:
 
 func build_player_run_configuration() -> Dictionary:
 	return {
-		"max_hp_bonus": meta_hp_bonus
+		"max_hp_bonus": meta_hp_bonus,
+		"move_speed_multiplier": maxf(0.5, float(run_modifiers.get("move_speed", 1.0)))
 	}
-
-
-func get_draw_speed_multiplier(draw_mode_name: String) -> float:
-	var bonus := meta_draw_speed_bonus
-	if draw_mode_name == "SLOW":
-		return maxf(0.5, float(run_modifiers.get("slow_draw_speed", 1.0)) + bonus)
-	return maxf(0.5, float(run_modifiers.get("fast_draw_speed", 1.0)) + bonus)
 
 
 func get_top_outline_countdown_bonus_seconds() -> float:
@@ -244,16 +229,11 @@ func get_hud_snapshot() -> Dictionary:
 	}
 
 
-func _calculate_shards(single_capture_percent: float, draw_mode: String, capture_context: Dictionary) -> int:
+func _calculate_shards(single_capture_percent: float, capture_context: Dictionary) -> int:
 	var base_amount := maxf(1.0, floorf(single_capture_percent * 0.55))
 	var risk_grade := str(capture_context.get("risk_grade", "safe"))
 	var size_band := str(capture_context.get("capture_size_band", "small"))
 	var bonus := meta_shard_bonus
-
-	if draw_mode == "FAST":
-		bonus += float(run_modifiers.get("fast_shard_bonus", 0.0))
-	else:
-		bonus += float(run_modifiers.get("slow_shard_bonus", 0.0))
 
 	if size_band == "small":
 		bonus += float(run_modifiers.get("small_capture_bonus", 0.0))
@@ -316,13 +296,8 @@ func _apply_upgrade(upgrade_id: String) -> void:
 	var next_rank := int(applied_upgrade_ranks.get(upgrade_id, 0)) + 1
 	applied_upgrade_ranks[upgrade_id] = next_rank
 	match upgrade_id:
-		"fast_speed":
-			run_modifiers["fast_draw_speed"] = float(run_modifiers.get("fast_draw_speed", 1.0)) + 0.12
-			run_modifiers["fast_shard_bonus"] = float(run_modifiers.get("fast_shard_bonus", 0.0)) + 0.10
-		"slow_power":
-			run_modifiers["slow_draw_speed"] = float(run_modifiers.get("slow_draw_speed", 1.0)) + 0.08
-			run_modifiers["boss_squeeze_bonus"] = float(run_modifiers.get("boss_squeeze_bonus", 0.0)) + 0.20
-			run_modifiers["slow_shard_bonus"] = float(run_modifiers.get("slow_shard_bonus", 0.0)) + 0.05
+		"move_speed":
+			run_modifiers["move_speed"] = float(run_modifiers.get("move_speed", 1.0)) + 0.12
 		"guard_charge":
 			guard_charges += 1
 		"growth_discount":
@@ -364,9 +339,9 @@ func _build_meta_summary_text() -> String:
 
 func _build_quest_summary_text() -> String:
 	var streak_text := _format_objective_text(quest_streak_completed, DEFAULT_QUEST_STREAK)
-	var fast_only_text := _format_objective_text(quest_fast_only_completed, DEFAULT_QUEST_FAST_ONLY)
+	var no_damage_clear_text := _format_objective_text(quest_no_damage_clear_completed, DEFAULT_QUEST_NO_DAMAGE_CLEAR)
 	var claim_text := _format_objective_text(quest_claimed_thirty_completed, DEFAULT_QUEST_THIRTY)
-	return "%s / %s / %s" % [claim_text, fast_only_text, streak_text]
+	return "%s / %s / %s" % [claim_text, no_damage_clear_text, streak_text]
 
 
 func _format_objective_text(completed: bool, label: String) -> String:
@@ -405,7 +380,6 @@ func _apply_meta_unlocks() -> void:
 	meta_hp_bonus = 1 if core_data_total >= 5 else 0
 	meta_shard_bonus = 0.10 if core_data_total >= 10 else 0.0
 	meta_top_outline_bonus_seconds = 3.0 if core_data_total >= 15 else 0.0
-	meta_draw_speed_bonus = 0.05 if core_data_total >= 20 else 0.0
 	meta_reroll_bonus = 1 if core_data_total >= 25 else 0
 
 
@@ -420,10 +394,8 @@ func _join_summary_lines(lines: Array[String]) -> String:
 
 func _get_upgrade_display_name(upgrade_id: String) -> String:
 	match upgrade_id:
-		"fast_speed":
-			return "速描き強化"
-		"slow_power":
-			return "遅描き強化"
+		"move_speed":
+			return "移動速度アップ"
 		"guard_charge":
 			return "接触ガード"
 		"growth_discount":

@@ -108,7 +108,7 @@ offset_top = 84.0
 offset_right = -24.0
 offset_bottom = 144.0
 autowrap_mode = 3
-text = "移動: 矢印/WASD 速描: Shift/A 遅描: Ctrl/X Esc: タイトル"
+text = "移動: 矢印/WASD 線引き: Shift/A Esc: タイトル"
 
 [node name="StateLabel" type="Label" parent="Ui/Root"]
 anchor_left = 1.0
@@ -341,7 +341,7 @@ offset_right = 744.0
 offset_bottom = 228.0
 autowrap_mode = 3
 theme_override_font_sizes/font_size = 22
-text = "1. 速描き強化"
+text = "1. 移動速度アップ"
 
 [node name="UpgradeChoice2Label" type="Label" parent="Ui/Root/UpgradeOverlay"]
 offset_left = 56.0
@@ -350,7 +350,7 @@ offset_right = 744.0
 offset_bottom = 332.0
 autowrap_mode = 3
 theme_override_font_sizes/font_size = 22
-text = "2. 遅描き強化"
+text = "2. 接触ガード"
 
 [node name="UpgradeChoice3Label" type="Label" parent="Ui/Root/UpgradeOverlay"]
 offset_left = 56.0

@@ -2,6 +2,8 @@ extends RefCounted
 class_name BaseMainHudService
 
 const BaseMainCutRatingService = preload("res://scripts/game/services/base_main_cut_rating_service.gd")
+const HELP_TEXT_BASE := "移動: 矢印/WASD 線引き: Shift/A Esc: タイトル"
+const HELP_TEXT_UPGRADE := "移動: 矢印/WASD 線引き: Shift/A 1-3: 決定 R: 再抽選 Esc: タイトル"
 
 var _main
 
@@ -44,7 +46,7 @@ func sync() -> void:
 	if _main.is_upgrade_draft_active():
 		_main.state_label.text = "状態: 強化選択"
 		_main.result_label.text = "強化を1つ選択"
-		_main.help_label.text = "移動: 矢印/WASD 速描: Shift/A 遅描: Ctrl/X 1-3: 決定 R: 再抽選 Esc: タイトル"
+		_main.help_label.text = HELP_TEXT_UPGRADE
 		if is_instance_valid(_main.base_player):
 			sync_position(_main.base_player.position)
 		else:
@@ -55,14 +57,14 @@ func sync() -> void:
 		_main.state_label.text = "状態: 一時停止"
 		_main.position_label.text = "座標: (-, -)"
 		_main.result_label.text = ""
-		_main.help_label.text = "移動: 矢印/WASD 速描: Shift/A 遅描: Ctrl/X Esc: タイトル"
+		_main.help_label.text = HELP_TEXT_BASE
 		return
 
 	if !is_instance_valid(_main.base_player):
 		_main.state_label.text = "状態: 外周"
 		_main.position_label.text = "座標: (-, -)"
 		_main.result_label.text = ""
-		_main.help_label.text = "移動: 矢印/WASD 速描: Shift/A 遅描: Ctrl/X Esc: タイトル"
+		_main.help_label.text = HELP_TEXT_BASE
 		return
 
 	var status: Dictionary = _main.base_player.get_debug_status()
@@ -145,10 +147,9 @@ func sync_status(status: Dictionary) -> void:
 		return
 
 	var mode_text := _localize_mode_text(str(status.get("mode_text", "BORDER")))
-	var draw_mode := _localize_draw_mode_text(str(status.get("draw_mode", "FAST")))
-	_main.state_label.text = "状態: %s / %s" % [mode_text, draw_mode]
+	_main.state_label.text = "状態: %s" % mode_text
 	_main.result_label.text = ""
-	_main.help_label.text = "移動: 矢印/WASD 速描: Shift/A 遅描: Ctrl/X Esc: タイトル"
+	_main.help_label.text = HELP_TEXT_BASE
 
 
 func sync_position(current_position: Vector2) -> void:
@@ -244,10 +245,6 @@ func _localize_mode_text(mode_text: String) -> String:
 			return "巻き戻し"
 		_:
 			return "外周移動"
-
-
-func _localize_draw_mode_text(draw_mode: String) -> String:
-	return "遅描き" if draw_mode == "SLOW" else "速描き"
 
 
 func _format_cut_rating_delta(delta: int) -> String:

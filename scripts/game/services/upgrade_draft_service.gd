@@ -3,15 +3,9 @@ class_name UpgradeDraftService
 
 const UPGRADE_POOL := [
 	{
-		"id": "fast_speed",
-		"title": "速描き強化",
-		"description": "速描き速度+12%、得点+10%",
-		"max_rank": 3
-	},
-	{
-		"id": "slow_power",
-		"title": "遅描き強化",
-		"description": "遅描き速度+8%、ボス領域を削った時の得点+20%、遅描き得点+5%",
+		"id": "move_speed",
+		"title": "移動速度アップ",
+		"description": "移動速度を上げる",
 		"max_rank": 3
 	},
 	{

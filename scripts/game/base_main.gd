@@ -12,7 +12,6 @@ const RunProgressService = preload("res://scripts/game/services/run_progress_ser
 const UpgradeDraftService = preload("res://scripts/game/services/upgrade_draft_service.gd")
 const ACTION_QIX_DRAW := &"qix_draw"
 const ACTION_QIX_DRAW_FAST := &"qix_draw_fast"
-const ACTION_QIX_DRAW_SLOW := &"qix_draw_slow"
 const PLAYFIELD_SIZE := Vector2(904.0, 640.0)
 const STAGE_REMAINING_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/stage_001/claimed_background_904x640.png")
 const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/stage_001/cover_background_904x640.png")
@@ -330,12 +329,6 @@ func _handle_objectives_quest_detail_input(_event: InputEvent) -> bool:
 	return false
 
 
-func get_draw_speed_multiplier(draw_mode_name: String) -> float:
-	if run_progress_service == null:
-		return 1.0
-	return run_progress_service.get_draw_speed_multiplier(draw_mode_name)
-
-
 func get_top_outline_countdown_bonus_seconds() -> float:
 	if run_progress_service == null:
 		return 0.0
@@ -358,7 +351,6 @@ func _register_input_map() -> void:
 	_ensure_action("move_down", [_key_event(KEY_DOWN), _key_event(KEY_S), _joypad_button(JOY_BUTTON_DPAD_DOWN)])
 	_sync_draw_action_events([_key_event(KEY_SHIFT), _joypad_button(JOY_BUTTON_A)])
 	_ensure_action(String(ACTION_QIX_DRAW_FAST), [_key_event(KEY_SHIFT), _joypad_button(JOY_BUTTON_A)])
-	_ensure_action(String(ACTION_QIX_DRAW_SLOW), [_key_event(KEY_CTRL), _joypad_button(JOY_BUTTON_X)])
 	_ensure_action("ui_cancel", [_key_event(KEY_ESCAPE), _joypad_button(JOY_BUTTON_B), _joypad_button(JOY_BUTTON_BACK)])
 	_ensure_action("pause", [_key_event(KEY_P), _joypad_button(JOY_BUTTON_START)])
 
@@ -958,7 +950,6 @@ func _register_run_capture(capture_context: Dictionary, capture_snapshot: Dictio
 	enriched_context["pre_boss_region_ratio"] = pre_boss_region_ratio
 	enriched_context["post_boss_region_ratio"] = boss_region_ratio_cached
 	enriched_context["boss_region_reduction_percent"] = maxf(0.0, (pre_boss_region_ratio - boss_region_ratio_cached) * 100.0)
-	enriched_context["draw_mode"] = str(capture_snapshot.get("draw_mode", "FAST"))
 	enriched_context["draw_duration"] = float(capture_snapshot.get("draw_duration", 0.0))
 	enriched_context["trail_point_count"] = int(capture_snapshot.get("trail_point_count", 0))
 	enriched_context["top_outline_remaining"] = float(capture_snapshot.get("top_outline_remaining", 0.0))
@@ -1010,6 +1001,8 @@ func _handle_upgrade_overlay_input(event: InputEvent) -> bool:
 func _apply_upgrade_choice(index: int) -> bool:
 	if run_progress_service == null or !run_progress_service.apply_upgrade_choice(index):
 		return false
+	if is_instance_valid(base_player) and base_player.has_method("apply_run_configuration"):
+		base_player.call("apply_run_configuration", run_progress_service.build_player_run_configuration())
 	get_tree().paused = false
 	_sync_hud()
 	return true
