@@ -17,6 +17,7 @@ func sync() -> void:
 	sync_cut_rating_bar()
 	sync_area_labels()
 	sync_run_progress_labels()
+	sync_objectives_quest_detail()
 	sync_upgrade_overlay()
 	update_hp_label()
 
@@ -151,17 +152,25 @@ func sync_run_progress_labels() -> void:
 		int(snapshot.get("shards", 0)),
 		int(snapshot.get("territory", 0))
 	]
-	_main.growth_label.text = "経験値: Lv.%d  %.1f / %.1f" % [
+	_main.growth_label.text = "Lv.%d" % int(snapshot.get("run_level", 0))
+
+
+func sync_objectives_quest_detail(snapshot: Dictionary = {}) -> void:
+	if _main == null or !_main.is_objectives_quest_detail_open():
+		return
+	if snapshot.is_empty():
+		snapshot = _main.get_run_progress_hud_snapshot()
+	_main.detail_growth_label.text = "経験値: Lv.%d  %.1f / %.1f" % [
 		int(snapshot.get("run_level", 0)),
 		float(snapshot.get("growth_progress", 0.0)),
 		float(snapshot.get("next_growth_threshold", 0.0))
 	]
-	_main.objective_primary_label.text = "主目標: %s" % str(snapshot.get("primary_objective", "未達成: ボス領域を20%未満まで圧縮する"))
-	_main.objective_optional_1_label.text = "任意目標: %s" % str(snapshot.get("optional_objective_1", "未達成: 3分以内にクリアする"))
-	_main.objective_optional_2_label.text = "任意目標: %s" % str(snapshot.get("optional_objective_2", "未達成: 単発15%以上の大取りを決める"))
-	_main.build_label.text = str(snapshot.get("build_summary", "ビルド: バランス型"))
-	_main.meta_label.text = "%s" % str(snapshot.get("meta_summary", "恒久強化: 恒久ポイント 0  ガード 0  再抽選 0"))
-	_main.quest_label.text = "課題: %s" % str(snapshot.get("quest_summary", ""))
+	_main.detail_objective_primary_label.text = "主目標: %s" % str(snapshot.get("primary_objective", "未達成: ボス領域を20%未満まで圧縮する"))
+	_main.detail_objective_optional_1_label.text = "任意目標: %s" % str(snapshot.get("optional_objective_1", "未達成: 3分以内にクリアする"))
+	_main.detail_objective_optional_2_label.text = "任意目標: %s" % str(snapshot.get("optional_objective_2", "未達成: 単発15%以上の大取りを決める"))
+	_main.detail_build_label.text = str(snapshot.get("build_summary", "ビルド: バランス型"))
+	_main.detail_meta_label.text = "%s" % str(snapshot.get("meta_summary", "恒久強化: 恒久ポイント 0  ガード 0  再抽選 0"))
+	_main.detail_quest_label.text = "課題: %s" % str(snapshot.get("quest_summary", ""))
 
 
 func sync_upgrade_overlay() -> void:

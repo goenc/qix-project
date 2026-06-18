@@ -158,86 +158,110 @@ offset_left = -264.0
 offset_top = 376.0
 offset_right = -24.0
 offset_bottom = 404.0
-text = "経験値: Lv.0  0.0 / 12.0"
+text = "Lv.0"
 
-[node name="ObjectivePrimaryLabel" type="Label" parent="Ui/Root"]
+[node name="ObjectivesQuestsButton" type="Button" parent="Ui/Root"]
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -264.0
-offset_top = 416.0
+offset_top = 408.0
 offset_right = -24.0
-offset_bottom = 452.0
-autowrap_mode = 3
-text = "主目標: 未達成: ボス領域を20%未満まで圧縮する"
-
-[node name="ObjectiveOptional1Label" type="Label" parent="Ui/Root"]
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -264.0
-offset_top = 456.0
-offset_right = -24.0
-offset_bottom = 492.0
-autowrap_mode = 3
-text = "任意目標: 未達成: 3分以内にクリアする"
-
-[node name="ObjectiveOptional2Label" type="Label" parent="Ui/Root"]
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -264.0
-offset_top = 496.0
-offset_right = -24.0
-offset_bottom = 532.0
-autowrap_mode = 3
-text = "任意目標: 未達成: 単発15%以上の大取りを決める"
-
-[node name="BuildLabel" type="Label" parent="Ui/Root"]
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -264.0
-offset_top = 540.0
-offset_right = -24.0
-offset_bottom = 576.0
-autowrap_mode = 3
-text = "ビルド: バランス型"
-
-[node name="MetaLabel" type="Label" parent="Ui/Root"]
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -264.0
-offset_top = 580.0
-offset_right = -24.0
-offset_bottom = 608.0
-text = "恒久強化: 恒久ポイント 0  ガード 0  再抽選 0"
-
-[node name="QuestLabel" type="Label" parent="Ui/Root"]
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -264.0
-offset_top = 616.0
-offset_right = -24.0
-offset_bottom = 680.0
-autowrap_mode = 3
-text = "課題:"
+offset_bottom = 440.0
+text = "目標・課題"
 
 [node name="HpLabel" type="Label" parent="Ui/Root"]
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -264.0
-offset_top = 688.0
+offset_top = 448.0
 offset_right = -24.0
-offset_bottom = 716.0
+offset_bottom = 476.0
 text = "HP: 3/3"
 
 [node name="ResultLabel" type="Label" parent="Ui/Root"]
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -264.0
-offset_top = 724.0
+offset_top = 484.0
 offset_right = -24.0
-offset_bottom = 766.0
+offset_bottom = 526.0
 theme_override_font_sizes/font_size = 28
 horizontal_alignment = 2
 text = ""
+
+[node name="ObjectivesQuestDetailOverlay" type="Control" parent="Ui/Root"]
+visible = false
+offset_left = 188.0
+offset_top = 80.0
+offset_right = 988.0
+offset_bottom = 660.0
+mouse_filter = 2
+
+[node name="DetailBackdrop" type="ColorRect" parent="Ui/Root/ObjectivesQuestDetailOverlay"]
+offset_right = 800.0
+offset_bottom = 580.0
+color = Color(0.03, 0.03, 0.06, 0.88)
+
+[node name="DetailGrowthLabel" type="Label" parent="Ui/Root/ObjectivesQuestDetailOverlay"]
+offset_left = 48.0
+offset_top = 20.0
+offset_right = 752.0
+offset_bottom = 48.0
+text = "経験値: Lv.0  0.0 / 12.0"
+
+[node name="DetailObjectivePrimaryLabel" type="Label" parent="Ui/Root/ObjectivesQuestDetailOverlay"]
+offset_left = 48.0
+offset_top = 56.0
+offset_right = 752.0
+offset_bottom = 92.0
+autowrap_mode = 3
+text = "主目標: 未達成: ボス領域を20%未満まで圧縮する"
+
+[node name="DetailObjectiveOptional1Label" type="Label" parent="Ui/Root/ObjectivesQuestDetailOverlay"]
+offset_left = 48.0
+offset_top = 100.0
+offset_right = 752.0
+offset_bottom = 136.0
+autowrap_mode = 3
+text = "任意目標: 未達成: 3分以内にクリアする"
+
+[node name="DetailObjectiveOptional2Label" type="Label" parent="Ui/Root/ObjectivesQuestDetailOverlay"]
+offset_left = 48.0
+offset_top = 144.0
+offset_right = 752.0
+offset_bottom = 180.0
+autowrap_mode = 3
+text = "任意目標: 未達成: 単発15%以上の大取りを決める"
+
+[node name="DetailBuildLabel" type="Label" parent="Ui/Root/ObjectivesQuestDetailOverlay"]
+offset_left = 48.0
+offset_top = 188.0
+offset_right = 752.0
+offset_bottom = 224.0
+autowrap_mode = 3
+text = "ビルド: バランス型"
+
+[node name="DetailMetaLabel" type="Label" parent="Ui/Root/ObjectivesQuestDetailOverlay"]
+offset_left = 48.0
+offset_top = 232.0
+offset_right = 752.0
+offset_bottom = 260.0
+text = "恒久強化: 恒久ポイント 0  ガード 0  再抽選 0"
+
+[node name="DetailQuestLabel" type="Label" parent="Ui/Root/ObjectivesQuestDetailOverlay"]
+offset_left = 48.0
+offset_top = 268.0
+offset_right = 752.0
+offset_bottom = 332.0
+autowrap_mode = 3
+text = "課題:"
+
+[node name="DetailCloseButton" type="Button" parent="Ui/Root/ObjectivesQuestDetailOverlay"]
+offset_left = 48.0
+offset_top = 536.0
+offset_right = 752.0
+offset_bottom = 572.0
+text = "閉じる"
 
 [node name="UpgradeOverlay" type="Control" parent="Ui/Root"]
 visible = false

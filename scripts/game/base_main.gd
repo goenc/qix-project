@@ -53,12 +53,16 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 @onready var boss_region_label: Label = $Ui/Root/BossRegionLabel
 @onready var shards_label: Label = $Ui/Root/ShardsLabel
 @onready var growth_label: Label = $Ui/Root/GrowthLabel
-@onready var objective_primary_label: Label = $Ui/Root/ObjectivePrimaryLabel
-@onready var objective_optional_1_label: Label = $Ui/Root/ObjectiveOptional1Label
-@onready var objective_optional_2_label: Label = $Ui/Root/ObjectiveOptional2Label
-@onready var build_label: Label = $Ui/Root/BuildLabel
-@onready var meta_label: Label = $Ui/Root/MetaLabel
-@onready var quest_label: Label = $Ui/Root/QuestLabel
+@onready var objectives_quests_button: Button = $Ui/Root/ObjectivesQuestsButton
+@onready var objectives_quest_detail_overlay: Control = $Ui/Root/ObjectivesQuestDetailOverlay
+@onready var detail_growth_label: Label = $Ui/Root/ObjectivesQuestDetailOverlay/DetailGrowthLabel
+@onready var detail_objective_primary_label: Label = $Ui/Root/ObjectivesQuestDetailOverlay/DetailObjectivePrimaryLabel
+@onready var detail_objective_optional_1_label: Label = $Ui/Root/ObjectivesQuestDetailOverlay/DetailObjectiveOptional1Label
+@onready var detail_objective_optional_2_label: Label = $Ui/Root/ObjectivesQuestDetailOverlay/DetailObjectiveOptional2Label
+@onready var detail_build_label: Label = $Ui/Root/ObjectivesQuestDetailOverlay/DetailBuildLabel
+@onready var detail_meta_label: Label = $Ui/Root/ObjectivesQuestDetailOverlay/DetailMetaLabel
+@onready var detail_quest_label: Label = $Ui/Root/ObjectivesQuestDetailOverlay/DetailQuestLabel
+@onready var detail_close_button: Button = $Ui/Root/ObjectivesQuestDetailOverlay/DetailCloseButton
 @onready var hp_label: Label = $Ui/Root/HpLabel
 @onready var result_label: Label = $Ui/Root/ResultLabel
 @onready var upgrade_overlay: Control = $Ui/Root/UpgradeOverlay
@@ -157,10 +161,16 @@ func _ready() -> void:
 		viewport.size_changed.connect(_on_viewport_size_changed)
 	queue_redraw()
 	_sync_hud()
+	if is_instance_valid(objectives_quests_button) and !objectives_quests_button.pressed.is_connected(_on_objectives_quests_button_pressed):
+		objectives_quests_button.pressed.connect(_on_objectives_quests_button_pressed)
+	if is_instance_valid(detail_close_button) and !detail_close_button.pressed.is_connected(_close_objectives_quest_detail):
+		detail_close_button.pressed.connect(_close_objectives_quest_detail)
 
 
 func _unhandled_input(_event: InputEvent) -> void:
 	if _handle_upgrade_overlay_input(_event):
+		return
+	if _handle_objectives_quest_detail_input(_event):
 		return
 	if Input.is_action_just_pressed("ui_cancel"):
 		get_tree().paused = false
@@ -282,6 +292,42 @@ func get_upgrade_draft_choices() -> Array[Dictionary]:
 
 func is_upgrade_draft_active() -> bool:
 	return run_progress_service != null and run_progress_service.has_pending_upgrade_draft()
+
+
+func is_objectives_quest_detail_open() -> bool:
+	return (
+		is_instance_valid(objectives_quest_detail_overlay)
+		and objectives_quest_detail_overlay.visible
+	)
+
+
+func _open_objectives_quest_detail() -> void:
+	if is_upgrade_draft_active() or !is_instance_valid(objectives_quest_detail_overlay):
+		return
+	objectives_quest_detail_overlay.visible = true
+	_sync_hud()
+
+
+func _close_objectives_quest_detail() -> void:
+	if !is_instance_valid(objectives_quest_detail_overlay):
+		return
+	objectives_quest_detail_overlay.visible = false
+
+
+func _on_objectives_quests_button_pressed() -> void:
+	if is_objectives_quest_detail_open():
+		_close_objectives_quest_detail()
+		return
+	_open_objectives_quest_detail()
+
+
+func _handle_objectives_quest_detail_input(_event: InputEvent) -> bool:
+	if !is_objectives_quest_detail_open():
+		return false
+	if Input.is_action_just_pressed("ui_cancel"):
+		_close_objectives_quest_detail()
+		return true
+	return false
 
 
 func get_draw_speed_multiplier(draw_mode_name: String) -> float:
