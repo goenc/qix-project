@@ -64,7 +64,6 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 @onready var detail_quest_label: Label = $Ui/Root/ObjectivesQuestDetailOverlay/DetailQuestLabel
 @onready var detail_close_button: Button = $Ui/Root/ObjectivesQuestDetailOverlay/DetailCloseButton
 @onready var hp_label: Label = $Ui/Root/HpLabel
-@onready var hp_icon_container: Control = $Ui/Root/HpIconContainer
 @onready var result_label: Label = $Ui/Root/ResultLabel
 @onready var upgrade_overlay: Control = $Ui/Root/UpgradeOverlay
 @onready var upgrade_title_label: Label = $Ui/Root/UpgradeOverlay/UpgradeTitleLabel

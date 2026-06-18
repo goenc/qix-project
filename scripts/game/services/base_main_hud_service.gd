@@ -100,36 +100,21 @@ func sync_cut_rating_bar() -> void:
 
 
 func update_hp_label() -> void:
-	if (
-		_main == null
-		or !is_instance_valid(_main.hp_label)
-		or !is_instance_valid(_main.hp_icon_container)
-	):
+	if _main == null or !is_instance_valid(_main.hp_label):
 		return
-	_main.hp_label.text = "HP"
 
 	if !is_instance_valid(_main.base_player):
-		_set_hp_icons(0, 0)
+		_main.hp_label.text = "HP: -/-"
 		return
 
 	if _main.base_player.has_method("get_current_hp") and _main.base_player.has_method("get_max_hp"):
-		_set_hp_icons(
+		_main.hp_label.text = "HP: %d/%d" % [
 			_main.base_player.get_current_hp(),
 			_main.base_player.get_max_hp()
-		)
+		]
 		return
 
-	_set_hp_icons(0, 0)
-
-
-func _set_hp_icons(current_hp: int, max_hp: int) -> void:
-	var icons := _main.hp_icon_container.get_children()
-	for index in range(icons.size()):
-		var icon := icons[index] as TextureRect
-		if icon == null:
-			continue
-		icon.visible = index < max_hp
-		icon.modulate.a = 1.0 if index < current_hp else 0.35
+	_main.hp_label.text = "HP: -/-"
 
 
 func sync_status(status: Dictionary) -> void:
