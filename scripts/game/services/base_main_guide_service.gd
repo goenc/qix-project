@@ -6,6 +6,7 @@ const BaseMainGuideResolutionService = preload("res://scripts/game/services/base
 const BaseMainGuideCaptureService = preload("res://scripts/game/services/base_main_guide_capture_service.gd")
 const BaseMainGuidePartitionFillService = preload("res://scripts/game/services/base_main_guide_partition_fill_service.gd")
 const TypedArrayUtils = preload("res://scripts/common/typed_array_utils.gd")
+const BossMeasurementService = preload("res://scripts/game/services/boss_measurement_service.gd")
 
 var _main
 var _resolution_service := BaseMainGuideResolutionService.new()
@@ -193,15 +194,4 @@ func _get_guide_epsilon() -> float:
 
 
 func _get_partition_fill_target_boss_diameter() -> float:
-	if is_instance_valid(_main.bbos):
-		if _main.bbos.has_method("get_partition_reference_diameter"):
-			return maxf(float(_main.bbos.call("get_partition_reference_diameter")), 0.0)
-		if _main.bbos.has_method("get_logical_capture_radius"):
-			return maxf(float(_main.bbos.call("get_logical_capture_radius")), 0.0) * 2.0
-		if _main.bbos.has_method("_get_effective_collision_radius"):
-			return maxf(float(_main.bbos.call("_get_effective_collision_radius")), 0.0) * 2.0
-		if _main.bbos.has_method("get"):
-			return maxf(float(_main.bbos.get("collision_radius")), 0.0) * 2.0
-	if is_instance_valid(_main.boss) and _main.boss.has_method("get"):
-		return maxf(float(_main.boss.get("collision_radius")), 0.0) * 2.0
-	return 0.0
+	return BossMeasurementService.get_partition_diameter(_main.bbos, _main.boss)

@@ -3,8 +3,6 @@ extends Node2D
 const TITLE_SCENE_PATH := "res://scenes/title_main.tscn"
 const InputActionUtils = preload("res://scripts/common/input_action_utils.gd")
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
-const BBOS_SCENE = preload("res://scenes/enemy/bbos.tscn")
-const MINOR_ENEMY_SCENE = preload("res://scenes/enemy/minor_enemy.tscn")
 const BaseMainCaptureService = preload("res://scripts/game/services/base_main_capture_service.gd")
 const BaseMainGuideService = preload("res://scripts/game/services/base_main_guide_service.gd")
 const BaseMainBossRegionService = preload("res://scripts/game/services/base_main_boss_region_service.gd")
@@ -144,8 +142,9 @@ func _ready() -> void:
 	hud_service.setup(self)
 	run_progress_service.setup(self, upgrade_draft_service)
 	_register_input_map()
-	_ensure_bbos_node()
-	_ensure_minor_enemy_nodes()
+	if !_validate_required_game_nodes():
+		set_process(false)
+		return
 	_recalculate_playfield_rect()
 	_initialize_outer_loop_from_rect()
 	_connect_player_signal()
@@ -156,7 +155,7 @@ func _ready() -> void:
 		base_player.call("apply_run_configuration", run_progress_service.build_player_run_configuration())
 	run_progress_service.begin_run()
 	_sync_debug_guide_visibility()
-	_sync_boss_marker()
+	sync_boss_marker()
 	var viewport := get_viewport()
 	if is_instance_valid(viewport) and !viewport.size_changed.is_connected(_on_viewport_size_changed):
 		viewport.size_changed.connect(_on_viewport_size_changed)
@@ -237,11 +236,11 @@ func set_show_area_percent_labels_from_debug(enabled: bool) -> void:
 
 func _refresh_playfield_area_cache() -> void:
 	playfield_area_cached = maxf(0.0, playfield_rect.size.x * playfield_rect.size.y)
-	_refresh_claimed_ratio_cache()
+	refresh_claimed_ratio_cache()
 	_refresh_boss_region_ratio_cache()
 
 
-func _refresh_claimed_ratio_cache() -> void:
+func refresh_claimed_ratio_cache() -> void:
 	claimed_ratio_cached = 0.0
 	if playfield_area_cached > 0.0:
 		claimed_ratio_cached = clampf(claimed_area / playfield_area_cached, 0.0, 1.0)
@@ -419,7 +418,7 @@ func _on_viewport_size_changed() -> void:
 		_initialize_outer_loop_from_rect()
 	_apply_playfield_to_player()
 	_apply_playfield_to_bbos()
-	_sync_boss_marker()
+	sync_boss_marker()
 	_recalculate_claimed_area()
 	queue_redraw()
 	_sync_hud()
@@ -432,27 +431,20 @@ func _recalculate_playfield_rect() -> void:
 		_rebuild_stage_cover_uvs()
 
 
-func _ensure_bbos_node() -> void:
-	if is_instance_valid(bbos):
-		return
-
-	var bbos_instance := BBOS_SCENE.instantiate()
-	bbos_instance.name = "BBOS"
-	add_child(bbos_instance)
-	bbos = bbos_instance as Node2D
-
-
-func _ensure_minor_enemy_nodes() -> void:
+func _validate_required_game_nodes() -> bool:
+	var missing_nodes: Array[String] = []
+	if !is_instance_valid(base_player):
+		missing_nodes.append("BasePlayer")
+	if !is_instance_valid(bbos):
+		missing_nodes.append("BBOS")
 	if !is_instance_valid(minor_enemy_a):
-		var enemy_a := MINOR_ENEMY_SCENE.instantiate()
-		enemy_a.name = "MinorEnemyA"
-		add_child(enemy_a)
-		minor_enemy_a = enemy_a as Node2D
+		missing_nodes.append("MinorEnemyA")
 	if !is_instance_valid(minor_enemy_b):
-		var enemy_b := MINOR_ENEMY_SCENE.instantiate()
-		enemy_b.name = "MinorEnemyB"
-		add_child(enemy_b)
-		minor_enemy_b = enemy_b as Node2D
+		missing_nodes.append("MinorEnemyB")
+	if missing_nodes.is_empty():
+		return true
+	push_error("BaseMain is missing required scene nodes: %s" % ", ".join(missing_nodes))
+	return false
 
 
 func _connect_player_signal() -> void:
@@ -487,10 +479,10 @@ func _connect_bbos_signal() -> void:
 
 func _initialize_outer_loop_from_rect() -> void:
 	current_outer_loop = PlayfieldBoundary.create_rect_loop(playfield_rect)
-	_refresh_current_outer_loop_metrics()
+	refresh_current_outer_loop_metrics()
 	remaining_polygon = _create_playfield_cover_polygon()
 	var initial_stage_cover_source := remaining_polygon if remaining_polygon.size() >= 3 else _create_playfield_cover_polygon()
-	_rebuild_stage_cover_polygon_from_polygon(initial_stage_cover_source)
+	rebuild_stage_cover_polygon_from_polygon(initial_stage_cover_source)
 	guide_partition_fill_entries.clear()
 	guide_partition_fill_polygons_by_key.clear()
 	guide_partition_fill_entry_key_sequence = 0
@@ -503,7 +495,7 @@ func _initialize_outer_loop_from_rect() -> void:
 	capture_preview_active = false
 	if claimed_polygons.is_empty():
 		claimed_area = 0.0
-		_refresh_claimed_ratio_cache()
+		refresh_claimed_ratio_cache()
 	if guide_service != null:
 		guide_service.reset_after_outer_loop_initialized()
 
@@ -567,7 +559,7 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 	_apply_playfield_to_bbos()
 	if guide_service != null:
 		guide_service.handle_capture_context(capture_context)
-	_sync_boss_marker()
+	sync_boss_marker()
 	_recalculate_boss_region_polygon_after_capture()
 	_register_run_capture(capture_context, capture_snapshot, pre_boss_region_ratio)
 	_sync_hud()
@@ -768,10 +760,10 @@ func _recalculate_claimed_area() -> void:
 		total_area += PlayfieldBoundary.polygon_area(polygon)
 
 	claimed_area = minf(total_area, playfield_area_cached) if playfield_area_cached > 0.0 else total_area
-	_refresh_claimed_ratio_cache()
+	refresh_claimed_ratio_cache()
 
 
-func _refresh_current_outer_loop_metrics() -> void:
+func refresh_current_outer_loop_metrics() -> void:
 	if current_outer_loop.size() < 3:
 		current_outer_loop_metrics = {}
 		return
@@ -779,7 +771,7 @@ func _refresh_current_outer_loop_metrics() -> void:
 	current_outer_loop_metrics = PlayfieldBoundary.build_loop_metrics(current_outer_loop)
 
 
-func _sync_boss_marker() -> void:
+func sync_boss_marker() -> void:
 	if !is_instance_valid(boss):
 		return
 
@@ -841,7 +833,7 @@ func _create_playfield_cover_polygon() -> PackedVector2Array:
 	return polygon
 
 
-func _rebuild_stage_cover_polygon_from_polygon(source_polygon: PackedVector2Array) -> void:
+func rebuild_stage_cover_polygon_from_polygon(source_polygon: PackedVector2Array) -> void:
 	if source_polygon.size() < 3:
 		return
 
@@ -1080,4 +1072,4 @@ func _append_minor_enemy_if_valid(enemies: Array[Node2D], node: Node) -> void:
 
 
 func _on_bbos_position_changed(_world_position: Vector2) -> void:
-	_sync_boss_marker()
+	sync_boss_marker()

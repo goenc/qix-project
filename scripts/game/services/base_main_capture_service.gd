@@ -2,6 +2,7 @@ extends RefCounted
 class_name BaseMainCaptureService
 
 const PlayfieldBoundary = preload("res://scripts/game/playfield_boundary.gd")
+const BossMeasurementService = preload("res://scripts/game/services/boss_measurement_service.gd")
 
 var _main
 
@@ -62,16 +63,7 @@ func _get_boss_selection_point() -> Vector2:
 
 
 func _get_boss_selection_radius() -> float:
-	if is_instance_valid(_main.bbos):
-		if _main.bbos.has_method("get_logical_capture_radius"):
-			return maxf(float(_main.bbos.call("get_logical_capture_radius")), 0.0)
-		if _main.bbos.has_method("_get_effective_collision_radius"):
-			return maxf(float(_main.bbos.call("_get_effective_collision_radius")), 0.0)
-		if _main.bbos.has_method("get"):
-			return maxf(float(_main.bbos.get("collision_radius")), 0.0)
-	if is_instance_valid(_main.boss) and _main.boss.has_method("get"):
-		return maxf(float(_main.boss.get("collision_radius")), 0.0)
-	return 0.0
+	return BossMeasurementService.get_capture_radius(_main.bbos, _main.boss)
 
 
 func _build_capture_candidate_loops(trail_points: PackedVector2Array, epsilon: float) -> Array[Dictionary]:
@@ -84,7 +76,7 @@ func _build_capture_candidate_loops(trail_points: PackedVector2Array, epsilon: f
 
 
 func _select_boss_side_loop(candidate_loops: Array[Dictionary], epsilon: float) -> int:
-	_main._sync_boss_marker()
+	_main.sync_boss_marker()
 	var selection_point := _get_boss_selection_point()
 	var selection_radius := _get_boss_selection_radius()
 	var selected_index := -1
@@ -159,12 +151,12 @@ func _select_boss_side_loop(candidate_loops: Array[Dictionary], epsilon: float) 
 
 func _apply_retained_capture_loop(retained_candidate: Dictionary) -> void:
 	_main.current_outer_loop = retained_candidate.get("loop", PackedVector2Array())
-	_main._refresh_current_outer_loop_metrics()
+	_main.refresh_current_outer_loop_metrics()
 	var retained_polygon: PackedVector2Array = retained_candidate.get("polygon", PackedVector2Array())
 	if retained_polygon.size() >= 3:
 		_main.remaining_polygon = retained_polygon
 	var stage_cover_source: PackedVector2Array = retained_polygon if retained_polygon.size() >= 3 else _main.remaining_polygon
-	_main._rebuild_stage_cover_polygon_from_polygon(stage_cover_source)
+	_main.rebuild_stage_cover_polygon_from_polygon(stage_cover_source)
 	_main.inactive_border_segments.clear()
 	_main.inactive_border_segment_aabbs.clear()
 
@@ -221,7 +213,7 @@ func _apply_claimed_area_capture_delta(capture_context: Dictionary) -> void:
 	_main.claimed_area += float(capture_context.get("added_claimed_area", 0.0))
 	if _main.playfield_area_cached > 0.0:
 		_main.claimed_area = minf(_main.claimed_area, _main.playfield_area_cached)
-	_main._refresh_claimed_ratio_cache()
+	_main.refresh_claimed_ratio_cache()
 
 
 func _extract_capture_delta_rects(capture_delta: Dictionary, key: String) -> Array[Rect2]:
