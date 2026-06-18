@@ -1,6 +1,7 @@
 extends RefCounted
 class_name PlayfieldBoundary
 
+const BoundarySpatialIndex = preload("res://scripts/game/boundary_spatial_index.gd")
 const DEFAULT_EPSILON := 0.001
 
 
@@ -66,11 +67,14 @@ static func build_loop_metrics(loop: PackedVector2Array) -> Dictionary:
 		segment_lengths.append(segment_length)
 		total_length += segment_length
 
-	return {
+	var metrics := {
+		"segment_count": loop.size(),
 		"segment_lengths": segment_lengths,
 		"segment_starts": segment_starts,
 		"total_length": total_length
 	}
+	BoundarySpatialIndex.populate(loop, metrics)
+	return metrics
 
 
 static func get_segment_count(loop: PackedVector2Array) -> int:
@@ -632,6 +636,30 @@ static func point_overlaps_rect(point: Vector2, rect: Rect2, epsilon: float) -> 
 	)
 
 
+static func query_segment_indices(metrics: Dictionary, query_rect: Rect2) -> PackedInt32Array:
+	return BoundarySpatialIndex.query(metrics, query_rect)
+
+
+static func _metrics_match_loop(metrics: Dictionary, loop: PackedVector2Array) -> bool:
+	return !metrics.is_empty() and int(metrics.get("segment_count", -1)) == loop.size()
+
+
+static func _resolve_cached_loop(loop: PackedVector2Array, metrics: Dictionary) -> PackedVector2Array:
+	if _metrics_match_loop(metrics, loop):
+		return loop
+	return sanitize_loop(loop)
+
+
+static func _get_segment_candidates(
+	metrics: Dictionary,
+	loop: PackedVector2Array,
+	query_rect: Rect2
+) -> Variant:
+	if _metrics_match_loop(metrics, loop) and BoundarySpatialIndex.has_index(metrics):
+		return query_segment_indices(metrics, query_rect)
+	return range(loop.size())
+
+
 static func is_point_on_segment(point: Vector2, segment_start: Vector2, segment_end: Vector2, epsilon: float) -> bool:
 	var segment := segment_end - segment_start
 	var segment_length_squared := segment.length_squared()
@@ -670,9 +698,10 @@ static func find_first_boundary_hit(
 	current_pos: Vector2,
 	next_pos: Vector2,
 	loop: PackedVector2Array,
-	epsilon: float
+	epsilon: float,
+	metrics: Dictionary = {}
 ) -> Dictionary:
-	var sanitized_loop := sanitize_loop(loop)
+	var sanitized_loop := _resolve_cached_loop(loop, metrics)
 	if sanitized_loop.size() < 2:
 		return {"hit": false}
 
@@ -682,7 +711,9 @@ static func find_first_boundary_hit(
 
 	var best_hit := {"hit": false}
 	var best_t := INF
-	for index in range(sanitized_loop.size()):
+	var query_rect := Rect2(current_pos, movement).abs().grow(maxf(epsilon, DEFAULT_EPSILON))
+	var candidate_indices = _get_segment_candidates(metrics, sanitized_loop, query_rect)
+	for index in candidate_indices:
 		var segment_start: Vector2 = sanitized_loop[index]
 		var segment_end: Vector2 = sanitized_loop[(index + 1) % sanitized_loop.size()]
 		var hit := _intersect_motion_with_axis_segment(current_pos, movement, segment_start, segment_end, epsilon)
@@ -785,16 +816,31 @@ static func can_circle_center_fit(
 	loop: PackedVector2Array,
 	point: Vector2,
 	radius: float,
-	epsilon: float
+	epsilon: float,
+	metrics: Dictionary = {}
 ) -> bool:
-	var sanitized_loop := sanitize_loop(loop)
+	var sanitized_loop := _resolve_cached_loop(loop, metrics)
 	if sanitized_loop.size() < 3:
 		return false
 	if !_is_point_inside_or_on_loop(sanitized_loop, point, epsilon):
 		return false
 
-	var projection := project_point_to_loop(sanitized_loop, point)
-	return float(projection.get("distance", INF)) + epsilon >= maxf(radius, 0.0)
+	var safe_radius := maxf(radius, 0.0)
+	var search_distance := safe_radius + maxf(epsilon, DEFAULT_EPSILON)
+	var query_rect := Rect2(
+		point - Vector2.ONE * search_distance,
+		Vector2.ONE * search_distance * 2.0
+	)
+	var candidate_indices = _get_segment_candidates(metrics, sanitized_loop, query_rect)
+	for index in candidate_indices:
+		var projected_point := Geometry2D.get_closest_point_to_segment(
+			point,
+			sanitized_loop[index],
+			sanitized_loop[(index + 1) % sanitized_loop.size()]
+		)
+		if point.distance_to(projected_point) + epsilon < safe_radius:
+			return false
+	return true
 
 
 static func find_first_boundary_hit_for_circle(
@@ -804,19 +850,22 @@ static func find_first_boundary_hit_for_circle(
 	radius: float,
 	epsilon: float,
 	cached_inset_loop: PackedVector2Array = PackedVector2Array(),
-	has_cached_inset_loop: bool = false
+	has_cached_inset_loop: bool = false,
+	cached_inset_metrics: Dictionary = {},
+	loop_metrics: Dictionary = {}
 ) -> Dictionary:
-	var sanitized_loop := sanitize_loop(loop)
+	var sanitized_loop := _resolve_cached_loop(loop, loop_metrics)
 	var safe_radius := maxf(radius, 0.0)
 	if has_cached_inset_loop:
 		if cached_inset_loop.size() >= 3:
-			return find_first_boundary_hit(current_pos, next_pos, cached_inset_loop, epsilon)
+			return find_first_boundary_hit(current_pos, next_pos, cached_inset_loop, epsilon, cached_inset_metrics)
 		return _find_first_boundary_hit_for_circle_without_inset(
 			current_pos,
 			next_pos,
 			sanitized_loop,
 			safe_radius,
-			epsilon
+			epsilon,
+			loop_metrics
 		)
 	var inset_loop := build_inset_loop(sanitized_loop, safe_radius, epsilon)
 	if inset_loop.size() < 3:
@@ -825,9 +874,11 @@ static func find_first_boundary_hit_for_circle(
 			next_pos,
 			sanitized_loop,
 			safe_radius,
-			epsilon
+			epsilon,
+			loop_metrics
 		)
-	return find_first_boundary_hit(current_pos, next_pos, inset_loop, epsilon)
+	var inset_metrics := build_loop_metrics(inset_loop)
+	return find_first_boundary_hit(current_pos, next_pos, inset_loop, epsilon, inset_metrics)
 
 
 static func ensure_point_inside(loop: PackedVector2Array, point: Vector2, epsilon: float) -> Vector2:
@@ -870,9 +921,10 @@ static func ensure_circle_center_inside(
 	epsilon: float,
 	cached_inset_loop: PackedVector2Array = PackedVector2Array(),
 	has_cached_inset_loop: bool = false,
-	cached_inset_metrics: Dictionary = {}
+	cached_inset_metrics: Dictionary = {},
+	loop_metrics: Dictionary = {}
 ) -> Vector2:
-	var sanitized_loop := sanitize_loop(loop)
+	var sanitized_loop := _resolve_cached_loop(loop, loop_metrics)
 	var safe_radius := maxf(radius, 0.0)
 	if has_cached_inset_loop:
 		if cached_inset_loop.size() >= 3:
@@ -884,7 +936,8 @@ static func ensure_circle_center_inside(
 			sanitized_loop,
 			point,
 			safe_radius,
-			epsilon
+			epsilon,
+			loop_metrics
 		)
 	var inset_loop := build_inset_loop(sanitized_loop, safe_radius, epsilon)
 	if inset_loop.size() < 3:
@@ -892,7 +945,8 @@ static func ensure_circle_center_inside(
 			sanitized_loop,
 			point,
 			safe_radius,
-			epsilon
+			epsilon,
+			loop_metrics
 		)
 	return ensure_point_inside(inset_loop, point, epsilon)
 
@@ -1010,7 +1064,8 @@ static func _find_first_boundary_hit_for_circle_without_inset(
 	next_pos: Vector2,
 	loop: PackedVector2Array,
 	radius: float,
-	epsilon: float
+	epsilon: float,
+	metrics: Dictionary = {}
 ) -> Dictionary:
 	if loop.size() < 3:
 		return {"hit": false}
@@ -1018,13 +1073,13 @@ static func _find_first_boundary_hit_for_circle_without_inset(
 	var movement := next_pos - current_pos
 	if movement.length_squared() <= epsilon * epsilon:
 		return {"hit": false}
-	if can_circle_center_fit(loop, next_pos, radius, epsilon):
+	if can_circle_center_fit(loop, next_pos, radius, epsilon, metrics):
 		return {"hit": false}
 
 	var safe_current_pos := current_pos
-	if !can_circle_center_fit(loop, safe_current_pos, radius, epsilon):
-		safe_current_pos = _ensure_circle_center_inside_without_inset(loop, safe_current_pos, radius, epsilon)
-		if !can_circle_center_fit(loop, safe_current_pos, radius, epsilon):
+	if !can_circle_center_fit(loop, safe_current_pos, radius, epsilon, metrics):
+		safe_current_pos = _ensure_circle_center_inside_without_inset(loop, safe_current_pos, radius, epsilon, metrics)
+		if !can_circle_center_fit(loop, safe_current_pos, radius, epsilon, metrics):
 			return {"hit": false}
 		movement = next_pos - safe_current_pos
 		if movement.length_squared() <= epsilon * epsilon:
@@ -1035,16 +1090,16 @@ static func _find_first_boundary_hit_for_circle_without_inset(
 	for _index in range(12):
 		var mid := (low + high) * 0.5
 		var sample_point := safe_current_pos.lerp(next_pos, mid)
-		if can_circle_center_fit(loop, sample_point, radius, epsilon):
+		if can_circle_center_fit(loop, sample_point, radius, epsilon, metrics):
 			low = mid
 		else:
 			high = mid
 
 	var hit_point := safe_current_pos.lerp(next_pos, low)
 	var blocked_point := safe_current_pos.lerp(next_pos, high)
-	var blocking_boundary := _find_circle_blocking_boundary(loop, blocked_point, movement, epsilon)
+	var blocking_boundary := _find_circle_blocking_boundary(loop, blocked_point, movement, epsilon, radius, metrics)
 	var hit_normal := Vector2(blocking_boundary.get("normal", Vector2.ZERO))
-	hit_normal = _resolve_circle_hit_normal(loop, blocked_point, radius, movement, epsilon, hit_normal)
+	hit_normal = _resolve_circle_hit_normal(loop, blocked_point, radius, movement, epsilon, hit_normal, metrics)
 	if hit_normal == Vector2.ZERO:
 		hit_normal = _fallback_normal_for_motion(movement)
 
@@ -1064,19 +1119,21 @@ static func _ensure_circle_center_inside_without_inset(
 	loop: PackedVector2Array,
 	point: Vector2,
 	radius: float,
-	epsilon: float
+	epsilon: float,
+	metrics: Dictionary = {}
 ) -> Vector2:
 	if loop.size() < 3:
 		return point
-	if can_circle_center_fit(loop, point, radius, epsilon):
+	if can_circle_center_fit(loop, point, radius, epsilon, metrics):
 		return point
 
-	var adjusted_point := ensure_point_inside(loop, point, epsilon)
+	var resolved_metrics := metrics if _metrics_match_loop(metrics, loop) else build_loop_metrics(loop)
+	var adjusted_point := ensure_point_inside_with_metrics(loop, point, epsilon, resolved_metrics)
 	for _index in range(6):
-		if can_circle_center_fit(loop, adjusted_point, radius, epsilon):
+		if can_circle_center_fit(loop, adjusted_point, radius, epsilon, resolved_metrics):
 			return adjusted_point
 
-		var blocking_boundary := _find_circle_blocking_boundary(loop, adjusted_point, Vector2.ZERO, epsilon)
+		var blocking_boundary := _find_circle_blocking_boundary(loop, adjusted_point, Vector2.ZERO, epsilon, radius, resolved_metrics)
 		if !bool(blocking_boundary.get("valid", false)):
 			return adjusted_point
 
@@ -1089,7 +1146,7 @@ static func _ensure_circle_center_inside_without_inset(
 		if push_distance <= DEFAULT_EPSILON:
 			return adjusted_point
 		adjusted_point += inward_normal * push_distance
-		adjusted_point = ensure_point_inside(loop, adjusted_point, epsilon)
+		adjusted_point = ensure_point_inside_with_metrics(loop, adjusted_point, epsilon, resolved_metrics)
 
 	return adjusted_point
 
@@ -1098,7 +1155,9 @@ static func _find_circle_blocking_boundary(
 	loop: PackedVector2Array,
 	point: Vector2,
 	movement: Vector2,
-	epsilon: float
+	epsilon: float,
+	search_radius: float = INF,
+	metrics: Dictionary = {}
 ) -> Dictionary:
 	if loop.size() < 2:
 		return {"valid": false}
@@ -1107,7 +1166,16 @@ static func _find_circle_blocking_boundary(
 	var best_distance := INF
 	var best_alignment := -INF
 	var best_boundary := {"valid": false}
-	for index in range(loop.size()):
+	var candidate_indices: Variant = range(loop.size())
+	if is_finite(search_radius) and _metrics_match_loop(metrics, loop):
+		var search_distance := maxf(search_radius + epsilon, DEFAULT_EPSILON)
+		candidate_indices = _get_segment_candidates(metrics, loop, Rect2(
+			point - Vector2.ONE * search_distance,
+			Vector2.ONE * search_distance * 2.0
+		))
+		if candidate_indices.is_empty():
+			candidate_indices = range(loop.size())
+	for index in candidate_indices:
 		var segment_start: Vector2 = loop[index]
 		var segment_end: Vector2 = loop[(index + 1) % loop.size()]
 		var projected_point := Geometry2D.get_closest_point_to_segment(point, segment_start, segment_end)
@@ -1136,7 +1204,8 @@ static func _resolve_circle_hit_normal(
 	radius: float,
 	movement: Vector2,
 	epsilon: float,
-	fallback_normal: Vector2
+	fallback_normal: Vector2,
+	metrics: Dictionary = {}
 ) -> Vector2:
 	var resolved_normal := fallback_normal
 	if resolved_normal.length_squared() > DEFAULT_EPSILON * DEFAULT_EPSILON:
@@ -1148,7 +1217,12 @@ static func _resolve_circle_hit_normal(
 	var has_right_blocker := false
 	var has_up_blocker := false
 	var has_down_blocker := false
-	for index in range(loop.size()):
+	var search_distance := radius + maxf(epsilon, DEFAULT_EPSILON)
+	var candidate_indices = _get_segment_candidates(metrics, loop, Rect2(
+		point - Vector2.ONE * search_distance,
+		Vector2.ONE * search_distance * 2.0
+	))
+	for index in candidate_indices:
 		var segment_start: Vector2 = loop[index]
 		var segment_end: Vector2 = loop[(index + 1) % loop.size()]
 		var projected_point := Geometry2D.get_closest_point_to_segment(point, segment_start, segment_end)
