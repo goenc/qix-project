@@ -651,6 +651,69 @@ func _draw_stage_cover() -> void:
 	for _index in range(cover_polygon.size()):
 		cover_colors.append(Color.WHITE)
 	draw_polygon(cover_polygon, cover_colors, cover_uvs, STAGE_COVER_BACKGROUND_TEXTURE)
+	if game_clear and clear_reveal_progress > 0.0 and clear_reveal_progress < 1.0:
+		_draw_clear_reveal_curtain_edge(_get_clear_reveal_cutoff_y())
+
+
+func _draw_clear_reveal_curtain_edge(cutoff_y: float) -> void:
+	var pf_left := playfield_rect.position.x
+	var pf_right := playfield_rect.end.x
+	var pf_top := playfield_rect.position.y
+	var pf_bottom := playfield_rect.end.y
+	var pf_width := playfield_rect.size.x
+
+	var fold_height := 18.0
+	var shadow_height := 28.0
+
+	cutoff_y = clampf(cutoff_y, pf_top, pf_bottom)
+
+	var fold_bottom := cutoff_y
+	var fold_top := fold_bottom - fold_height
+	if fold_top < pf_top:
+		fold_height = fold_bottom - pf_top
+		fold_top = pf_top
+	if fold_height <= 0.0:
+		return
+
+	var shadow_end_y := minf(fold_bottom + shadow_height, pf_bottom)
+	var shadow_span := shadow_end_y - fold_bottom
+	if shadow_span > 0.0:
+		const SHADOW_STEPS := 6
+		var step_height := shadow_span / float(SHADOW_STEPS)
+		for step_index in range(SHADOW_STEPS):
+			var step_y := fold_bottom + step_height * float(step_index)
+			var alpha := lerpf(
+				0.38,
+				0.06,
+				float(step_index) / maxf(float(SHADOW_STEPS - 1), 1.0)
+			)
+			draw_rect(Rect2(pf_left, step_y, pf_width, step_height + 0.5), Color(0.0, 0.0, 0.0, alpha), true)
+
+	const WAVE_SEGMENTS := 16
+	const WAVE_AMPLITUDE := 2.5
+	var fold_points := PackedVector2Array()
+	fold_points.append(Vector2(pf_left, fold_top))
+	fold_points.append(Vector2(pf_right, fold_top))
+	var segment_width := pf_width / float(WAVE_SEGMENTS)
+	for segment_index in range(WAVE_SEGMENTS, -1, -1):
+		var x := pf_left + segment_width * float(segment_index)
+		var wave := sin(float(segment_index) * 1.15) * WAVE_AMPLITUDE
+		var y := clampf(fold_bottom + wave, pf_top, pf_bottom)
+		fold_points.append(Vector2(x, y))
+	draw_colored_polygon(fold_points, Color(0.06, 0.02, 0.10, 0.62))
+
+	draw_line(
+		Vector2(pf_left, fold_top),
+		Vector2(pf_right, fold_top),
+		Color(1.0, 1.0, 1.0, 0.50),
+		1.5
+	)
+	draw_line(
+		Vector2(pf_left, fold_bottom),
+		Vector2(pf_right, fold_bottom),
+		Color(0.0, 0.0, 0.0, 0.78),
+		1.0
+	)
 
 
 func _get_clear_reveal_cutoff_y() -> float:
