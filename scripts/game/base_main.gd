@@ -8,11 +8,13 @@ const BaseMainGuideService = preload("res://scripts/game/services/base_main_guid
 const BaseMainBossRegionService = preload("res://scripts/game/services/base_main_boss_region_service.gd")
 const BaseMainHudService = preload("res://scripts/game/services/base_main_hud_service.gd")
 const BaseMainCutRatingService = preload("res://scripts/game/services/base_main_cut_rating_service.gd")
+const BossMeasurementService = preload("res://scripts/game/services/boss_measurement_service.gd")
 const RunProgressService = preload("res://scripts/game/services/run_progress_service.gd")
 const UpgradeDraftService = preload("res://scripts/game/services/upgrade_draft_service.gd")
 const ACTION_QIX_DRAW := &"qix_draw"
 const ACTION_QIX_DRAW_FAST := &"qix_draw_fast"
 const PLAYFIELD_SIZE := Vector2(904.0, 640.0)
+const BOSS_REGION_ROOM_MIN_AXIS_RATIO := 0.9
 const STAGE_REMAINING_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/stage_001/claimed_background_904x640.png")
 const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/stage_001/cover_background_904x640.png")
 
@@ -273,12 +275,50 @@ func _is_valid_boss_region_polygon(polygon: PackedVector2Array) -> bool:
 	return polygon.size() >= 3 and PlayfieldBoundary.polygon_area(polygon) > 0.0
 
 
+func _can_adopt_boss_region_polygon(polygon: PackedVector2Array) -> bool:
+	if !_is_valid_boss_region_polygon(polygon):
+		return false
+	var selection_point := _get_boss_region_selection_point()
+	var epsilon := _get_boss_region_validation_epsilon()
+	if !(
+		Geometry2D.is_point_in_polygon(selection_point, polygon)
+		or PlayfieldBoundary.is_point_on_loop(polygon, selection_point, epsilon)
+	):
+		return false
+	return !_is_boss_region_corridor_polygon(polygon, epsilon)
+
+
 func _resolve_fallback_boss_region_polygon() -> PackedVector2Array:
 	if _is_valid_boss_region_polygon(remaining_polygon):
 		return remaining_polygon
 	if _is_valid_boss_region_polygon(current_outer_loop):
 		return current_outer_loop
 	return PackedVector2Array()
+
+
+func _get_boss_region_selection_point() -> Vector2:
+	if is_instance_valid(bbos):
+		return bbos.global_position
+	if is_instance_valid(boss):
+		return boss.global_position
+	if current_outer_loop.size() >= 1:
+		return current_outer_loop[0]
+	return Vector2.ZERO
+
+
+func _get_boss_region_validation_epsilon() -> float:
+	if is_instance_valid(base_player):
+		return maxf(float(base_player.border_epsilon), PlayfieldBoundary.DEFAULT_EPSILON)
+	return PlayfieldBoundary.DEFAULT_EPSILON
+
+
+func _is_boss_region_corridor_polygon(polygon: PackedVector2Array, epsilon: float) -> bool:
+	var partition_diameter := BossMeasurementService.get_partition_diameter(bbos, boss)
+	if partition_diameter <= epsilon:
+		return false
+	var polygon_aabb := PlayfieldBoundary.build_points_aabb(polygon)
+	var short_axis := minf(polygon_aabb.size.x, polygon_aabb.size.y)
+	return short_axis + epsilon < partition_diameter * BOSS_REGION_ROOM_MIN_AXIS_RATIO
 
 
 func _warn_boss_region_recalculation_failure(message: String) -> void:
@@ -660,7 +700,7 @@ func _recalculate_boss_region_polygon_after_capture() -> void:
 		"remaining_area_ratio": -1.0
 	}
 	var recalculated_polygon: PackedVector2Array = boss_region_result.get("polygon", PackedVector2Array())
-	if _is_valid_boss_region_polygon(recalculated_polygon):
+	if _can_adopt_boss_region_polygon(recalculated_polygon):
 		_set_boss_region_polygon(recalculated_polygon)
 		boss_region_recalculation_warning_active = false
 	else:

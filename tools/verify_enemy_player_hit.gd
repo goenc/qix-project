@@ -2,6 +2,7 @@ extends SceneTree
 
 const EnemyPlayerHitService = preload("res://scripts/enemy/services/enemy_player_hit_service.gd")
 const BossMeasurementService = preload("res://scripts/game/services/boss_measurement_service.gd")
+const BbosScript = preload("res://scripts/enemy/bbos.gd")
 
 
 class FakePlayer:
@@ -110,6 +111,20 @@ func _initialize() -> void:
 		"Missing collision radius did not resolve to zero.",
 		failures
 	)
+	var bbos := BbosScript.new()
+	bbos.initial_collision_radius = 32.0
+	bbos.logical_capture_radius = 12.0
+	_assert(
+		is_equal_approx(bbos.get_partition_reference_diameter(), 64.0),
+		"BBOS partition reference diameter followed the shrunken logical radius.",
+		failures
+	)
+	_assert(
+		is_equal_approx(bbos.get_logical_capture_radius(), 12.0),
+		"BBOS logical capture radius stopped reflecting the current size.",
+		failures
+	)
+	bbos.free()
 
 	if failures.is_empty():
 		print("Enemy hit and boss measurement verification passed.")

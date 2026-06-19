@@ -228,7 +228,7 @@ func get_logical_capture_radius() -> float:
 
 
 func get_partition_reference_diameter() -> float:
-	return get_logical_capture_radius() * 2.0
+	return maxf(initial_collision_radius, 0.0) * 2.0
 
 
 func _on_viewport_size_changed() -> void:
