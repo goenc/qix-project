@@ -10,6 +10,8 @@ func _initialize() -> void:
 	_verify_previous_polygon_is_preserved(failures)
 	_verify_fallback_polygon_is_restored(failures)
 	_verify_remaining_area_ratio_still_drives_clear(failures)
+	_verify_non_boss_capture_skips_recalculation(failures)
+	_verify_boss_capture_requires_recalculation(failures)
 
 	if failures.is_empty():
 		print("Boss region recalculation guard verification passed.")
@@ -79,6 +81,64 @@ func _verify_remaining_area_ratio_still_drives_clear(failures: Array[String]) ->
 	_assert(main.game_clear,
 		"Game clear no longer followed the remaining-area ratio after an invalid boss-region recalculation.", failures)
 	main.free()
+
+
+func _verify_non_boss_capture_skips_recalculation(failures: Array[String]) -> void:
+	var main: Variant = _build_main()
+	var previous_polygon := Boundary.build_rect_polygon(Rect2(10.0, 10.0, 30.0, 30.0))
+	var captured_polygon := Boundary.build_rect_polygon(Rect2(60.0, 60.0, 20.0, 20.0))
+	var capture_context := _build_capture_context(captured_polygon)
+	main._set_boss_region_polygon(previous_polygon)
+	var previous_ratio: float = main.boss_region_ratio_cached
+	var service := BossRegionServiceStub.new()
+	service.responses = [{
+		"polygon": Boundary.build_rect_polygon(Rect2(0.0, 0.0, 10.0, 10.0)),
+		"remaining_area_ratio": 1.0
+	}]
+	main.boss_region_service = service
+
+	_assert(!main._should_recalculate_boss_region_after_capture(capture_context, previous_polygon),
+		"A capture outside the boss region incorrectly requested recalculation.", failures)
+	main._update_boss_region_after_capture(capture_context, previous_polygon)
+	_assert(service.call_count == 0,
+		"A capture outside the boss region called the recalculation service.", failures)
+	_assert(_loops_equal(main.boss_region_polygon, previous_polygon),
+		"A capture outside the boss region changed the boss-region polygon.", failures)
+	_assert(is_equal_approx(main.boss_region_ratio_cached, previous_ratio),
+		"A capture outside the boss region changed the cached ratio.", failures)
+	main.free()
+
+
+func _verify_boss_capture_requires_recalculation(failures: Array[String]) -> void:
+	var main: Variant = _build_main()
+	var previous_polygon := Boundary.build_rect_polygon(Rect2(10.0, 10.0, 30.0, 30.0))
+	var captured_polygon := Boundary.build_rect_polygon(Rect2(25.0, 25.0, 30.0, 30.0))
+	var capture_context := _build_capture_context(captured_polygon)
+	var recalculated_polygon := Boundary.build_rect_polygon(Rect2(10.0, 10.0, 20.0, 20.0))
+	main._set_boss_region_polygon(previous_polygon)
+	var service := BossRegionServiceStub.new()
+	service.responses = [{
+		"polygon": recalculated_polygon,
+		"remaining_area_ratio": 1.0
+	}]
+	main.boss_region_service = service
+
+	_assert(main._should_recalculate_boss_region_after_capture(capture_context, previous_polygon),
+		"A capture overlapping the boss region did not request recalculation.", failures)
+	main._update_boss_region_after_capture(capture_context, previous_polygon)
+	_assert(service.call_count == 1,
+		"A capture overlapping the boss region skipped the recalculation service.", failures)
+	_assert(_loops_equal(main.boss_region_polygon, recalculated_polygon),
+		"A capture overlapping the boss region did not apply the recalculated polygon.", failures)
+	main.free()
+
+
+func _build_capture_context(captured_polygon: PackedVector2Array) -> Dictionary:
+	return {
+		"captured_polygons": [captured_polygon],
+		"captured_polygon_aabbs": [Boundary.build_points_aabb(captured_polygon)],
+		"guide_epsilon": 0.5
+	}
 
 
 func _build_main() -> Variant:

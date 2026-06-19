@@ -288,6 +288,46 @@ func _warn_boss_region_recalculation_failure(message: String) -> void:
 	push_warning(message)
 
 
+func _should_recalculate_boss_region_after_capture(
+	capture_context: Dictionary,
+	previous_boss_region_polygon: PackedVector2Array
+) -> bool:
+	if !_is_valid_boss_region_polygon(previous_boss_region_polygon):
+		return true
+	var captured_polygons: Array = capture_context.get("captured_polygons", [])
+	if captured_polygons.is_empty():
+		return true
+
+	var captured_polygon_aabbs: Array = capture_context.get("captured_polygon_aabbs", [])
+	var boss_region_aabb := PlayfieldBoundary.build_points_aabb(previous_boss_region_polygon)
+	var epsilon := maxf(
+		PlayfieldBoundary.DEFAULT_EPSILON,
+		float(capture_context.get("guide_epsilon", PlayfieldBoundary.DEFAULT_EPSILON))
+	)
+	var has_valid_captured_polygon := false
+	for index in range(captured_polygons.size()):
+		if typeof(captured_polygons[index]) != TYPE_PACKED_VECTOR2_ARRAY:
+			continue
+		var captured_polygon: PackedVector2Array = captured_polygons[index]
+		if captured_polygon.size() < 3:
+			continue
+		has_valid_captured_polygon = true
+		var captured_aabb: Rect2 = (
+			captured_polygon_aabbs[index]
+			if index < captured_polygon_aabbs.size() and typeof(captured_polygon_aabbs[index]) == TYPE_RECT2
+			else PlayfieldBoundary.build_points_aabb(captured_polygon)
+		)
+		if !PlayfieldBoundary.rects_overlap(boss_region_aabb, captured_aabb, epsilon):
+			continue
+		for overlap_variant in Geometry2D.intersect_polygons(previous_boss_region_polygon, captured_polygon):
+			if typeof(overlap_variant) != TYPE_PACKED_VECTOR2_ARRAY:
+				continue
+			var overlap: PackedVector2Array = overlap_variant
+			if PlayfieldBoundary.polygon_area(overlap) > epsilon * epsilon:
+				return true
+	return !has_valid_captured_polygon
+
+
 func _sync_hud_area_labels() -> void:
 	if hud_service == null:
 		return
@@ -567,6 +607,7 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 	var capture_snapshot := {}
 	if is_instance_valid(base_player) and base_player.has_method("build_capture_snapshot"):
 		capture_snapshot = base_player.call("build_capture_snapshot")
+	var previous_boss_region_polygon := boss_region_polygon.duplicate()
 	var pre_boss_region_ratio := boss_region_ratio_cached
 	var capture_result := capture_service.resolve_capture_closed(trail_points)
 	if !bool(capture_result.get("success", false)):
@@ -581,10 +622,21 @@ func _on_player_capture_closed(trail_points: PackedVector2Array) -> void:
 	if guide_service != null:
 		guide_service.handle_capture_context(capture_context)
 	sync_boss_marker()
-	_recalculate_boss_region_polygon_after_capture()
+	_update_boss_region_after_capture(capture_context, previous_boss_region_polygon)
 	_register_run_capture(capture_context, capture_snapshot, pre_boss_region_ratio)
 	_sync_hud()
 	queue_redraw()
+
+
+func _update_boss_region_after_capture(
+	capture_context: Dictionary,
+	previous_boss_region_polygon: PackedVector2Array
+) -> void:
+	if _should_recalculate_boss_region_after_capture(capture_context, previous_boss_region_polygon):
+		_recalculate_boss_region_polygon_after_capture()
+		return
+	_apply_boss_region_ratio_to_bbos()
+	_check_game_clear_after_remaining_area_update()
 
 
 func _on_player_guide_turn_created(
