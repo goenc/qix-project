@@ -4,18 +4,6 @@ const BaseMain = preload("res://tools/test_support/verify_base_main_boss_region_
 const Boundary = preload("res://scripts/game/playfield_boundary.gd")
 const BossRegionServiceStub = preload("res://tools/test_support/verify_boss_region_service_stub.gd")
 
-class FakeBossRegionOwner:
-	extends Node2D
-
-	var partition_diameter := 40.0
-	var capture_radius := 12.0
-
-	func get_partition_reference_diameter() -> float:
-		return partition_diameter
-
-	func get_logical_capture_radius() -> float:
-		return capture_radius
-
 
 func _initialize() -> void:
 	var failures: Array[String] = []
@@ -24,8 +12,6 @@ func _initialize() -> void:
 	_verify_remaining_area_ratio_still_drives_clear(failures)
 	_verify_non_boss_capture_skips_recalculation(failures)
 	_verify_boss_capture_requires_recalculation(failures)
-	_verify_corridor_polygon_is_rejected(failures)
-	_verify_room_polygon_is_adopted_after_switch(failures)
 
 	if failures.is_empty():
 		print("Boss region recalculation guard verification passed.")
@@ -125,11 +111,6 @@ func _verify_non_boss_capture_skips_recalculation(failures: Array[String]) -> vo
 
 func _verify_boss_capture_requires_recalculation(failures: Array[String]) -> void:
 	var main: Variant = _build_main()
-	var boss_owner := FakeBossRegionOwner.new()
-	main.add_child(boss_owner)
-	main.bbos = boss_owner
-	boss_owner.partition_diameter = 20.0
-	boss_owner.global_position = Vector2(18.0, 18.0)
 	var previous_polygon := Boundary.build_rect_polygon(Rect2(10.0, 10.0, 30.0, 30.0))
 	var captured_polygon := Boundary.build_rect_polygon(Rect2(25.0, 25.0, 30.0, 30.0))
 	var capture_context := _build_capture_context(captured_polygon)
@@ -149,55 +130,6 @@ func _verify_boss_capture_requires_recalculation(failures: Array[String]) -> voi
 		"A capture overlapping the boss region skipped the recalculation service.", failures)
 	_assert(_loops_equal(main.boss_region_polygon, recalculated_polygon),
 		"A capture overlapping the boss region did not apply the recalculated polygon.", failures)
-	main.free()
-
-
-func _verify_corridor_polygon_is_rejected(failures: Array[String]) -> void:
-	var main: Variant = _build_main()
-	var boss_owner := FakeBossRegionOwner.new()
-	main.add_child(boss_owner)
-	main.bbos = boss_owner
-	boss_owner.global_position = Vector2(70.0, 25.0)
-	var previous_polygon := Boundary.build_rect_polygon(Rect2(10.0, 10.0, 30.0, 30.0))
-	var corridor_polygon := Boundary.build_rect_polygon(Rect2(60.0, 10.0, 20.0, 30.0))
-	main._set_boss_region_polygon(previous_polygon)
-	var previous_ratio: float = main.boss_region_ratio_cached
-
-	var service := BossRegionServiceStub.new()
-	service.responses = [{
-		"polygon": corridor_polygon,
-		"remaining_area_ratio": 1.0
-	}]
-	main.boss_region_service = service
-	main._recalculate_boss_region_polygon_after_capture()
-
-	_assert(_loops_equal(main.boss_region_polygon, previous_polygon),
-		"A corridor-only boss-region polygon was adopted.", failures)
-	_assert(is_equal_approx(main.boss_region_ratio_cached, previous_ratio),
-		"A corridor-only boss-region polygon changed the cached ratio.", failures)
-	main.free()
-
-
-func _verify_room_polygon_is_adopted_after_switch(failures: Array[String]) -> void:
-	var main: Variant = _build_main()
-	var boss_owner := FakeBossRegionOwner.new()
-	main.add_child(boss_owner)
-	main.bbos = boss_owner
-	boss_owner.global_position = Vector2(90.0, 40.0)
-	var previous_polygon := Boundary.build_rect_polygon(Rect2(10.0, 10.0, 30.0, 30.0))
-	var switched_room_polygon := Boundary.build_rect_polygon(Rect2(60.0, 10.0, 60.0, 60.0))
-	main._set_boss_region_polygon(previous_polygon)
-
-	var service := BossRegionServiceStub.new()
-	service.responses = [{
-		"polygon": switched_room_polygon,
-		"remaining_area_ratio": 1.0
-	}]
-	main.boss_region_service = service
-	main._recalculate_boss_region_polygon_after_capture()
-
-	_assert(_loops_equal(main.boss_region_polygon, switched_room_polygon),
-		"A room polygon containing the moved boss was not adopted.", failures)
 	main.free()
 
 

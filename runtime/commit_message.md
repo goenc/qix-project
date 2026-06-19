@@ -1,12 +1,8 @@
-ボス領域の通路拡大判定を固定基準径へ分離
+ボス領域通路判定の固定基準径変更をロールバック
 
-・BBOSの区画判定用基準径を初期衝突径固定へ変更
-・再計算したボス領域がボスを含む広い部屋かを検証し、通路形状は採用しないよう修正
-・ボス領域ガード検証とBBOS基準径検証を追加
+・直前コミット 5705d91 の差分を逆適用し、ボス領域通路判定の固定基準径変更を取り消し
+・BBOSの区画判定用基準径変更と通路polygon採用拒否ロジックを元に戻し、追加した検証コードも巻き戻し
 ・godot_console --headless --path . --script tools/verify_boss_region_recalculation_guard.gd で成功を確認
-・godot_console --headless --path . --script tools/verify_enemy_player_hit.gd で成功を確認
-・godot_console --headless --path . --script tools/verify_bbos_narrow_region.gd で成功を確認
 ・godot_console --headless --path . --script tools/verify_outer_loop.gd で成功を確認
-・godot_console --headless --path . --quit-after 3 で起動確認
-・godot --path . --quit-after 3 で非headless起動確認
-・git diff --check で差分整合を確認
+・git diff --check --cached で差分整合を確認
+
