@@ -1,9 +1,10 @@
-境界衝突に空間索引を導入
+ボス領域再計算失敗時の表示崩れを防止
 
-・複雑な残存領域で全線分を毎回走査する負荷を抑えるため空間索引を追加
-・境界メトリクスへ索引を統合しボスと雑魚敵で外周と内周のキャッシュを共有
-・単純形状では索引と線分範囲を構築せず従来の直列走査を維持
-・円衝突の収容判定と補正と反射判定を候補線分だけの処理へ変更
-・索引処理を独立ファイルへ分離し境界本体との責務混在を回避
-・索引ありと全走査の一致検証と速度比較を追加
-・狭所と外周と角移動と敵接触の回帰および画面起動を確認
+・ボス領域ポリゴンの妥当性判定を追加し 再計算結果が3点未満または面積0の場合は空ポリゴンで上書きしないよう修正
+・直前の有効なボス領域を維持し 有効値がない初期状態では remaining_polygon と current_outer_loop からのみ復旧する分岐を追加
+・再計算失敗時の警告を連続抑止し 専用 verify で表示維持 復旧 クリア条件維持を確認
+・godot_console --headless --path . --script tools/verify_boss_region_recalculation_guard.gd
+・godot_console --headless --path . --script tools/verify_bbos_narrow_region.gd
+・godot_console --headless --path . --quit-after 3
+・godot --path . --quit-after 3
+・git diff --check

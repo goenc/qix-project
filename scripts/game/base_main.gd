@@ -104,6 +104,7 @@ var last_cut_rating_delta := 0
 var has_cut_rating_update := false
 var boss_region_area_cached := 0.0
 var boss_region_ratio_cached := 0.0
+var boss_region_recalculation_warning_active := false
 var inactive_border_color := Color(1.0, 1.0, 1.0, 0.1)
 var game_over := false
 var game_clear := false
@@ -266,6 +267,25 @@ func _set_boss_region_polygon(polygon: PackedVector2Array) -> void:
 	if boss_region_polygon.size() >= 3:
 		boss_region_area_cached = PlayfieldBoundary.polygon_area(boss_region_polygon)
 	_refresh_boss_region_ratio_cache()
+
+
+func _is_valid_boss_region_polygon(polygon: PackedVector2Array) -> bool:
+	return polygon.size() >= 3 and PlayfieldBoundary.polygon_area(polygon) > 0.0
+
+
+func _resolve_fallback_boss_region_polygon() -> PackedVector2Array:
+	if _is_valid_boss_region_polygon(remaining_polygon):
+		return remaining_polygon
+	if _is_valid_boss_region_polygon(current_outer_loop):
+		return current_outer_loop
+	return PackedVector2Array()
+
+
+func _warn_boss_region_recalculation_failure(message: String) -> void:
+	if boss_region_recalculation_warning_active:
+		return
+	boss_region_recalculation_warning_active = true
+	push_warning(message)
 
 
 func _sync_hud_area_labels() -> void:
@@ -587,7 +607,21 @@ func _recalculate_boss_region_polygon_after_capture() -> void:
 		"polygon": PackedVector2Array(),
 		"remaining_area_ratio": -1.0
 	}
-	_set_boss_region_polygon(boss_region_result.get("polygon", PackedVector2Array()))
+	var recalculated_polygon: PackedVector2Array = boss_region_result.get("polygon", PackedVector2Array())
+	if _is_valid_boss_region_polygon(recalculated_polygon):
+		_set_boss_region_polygon(recalculated_polygon)
+		boss_region_recalculation_warning_active = false
+	else:
+		if _is_valid_boss_region_polygon(boss_region_polygon):
+			_warn_boss_region_recalculation_failure("Boss region recalculation failed; keeping previous polygon.")
+		else:
+			var fallback_polygon := _resolve_fallback_boss_region_polygon()
+			if _is_valid_boss_region_polygon(fallback_polygon):
+				_set_boss_region_polygon(fallback_polygon)
+				_warn_boss_region_recalculation_failure("Boss region recalculation failed; restored fallback polygon.")
+			else:
+				_set_boss_region_polygon(PackedVector2Array())
+				_warn_boss_region_recalculation_failure("Boss region recalculation failed; no valid polygon was available.")
 	_apply_boss_region_ratio_to_bbos()
 	_check_game_clear_after_remaining_area_update(float(boss_region_result.get("remaining_area_ratio", -1.0)))
 
