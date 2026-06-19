@@ -51,6 +51,7 @@ const STAGE_COVER_BACKGROUND_TEXTURE = preload("res://assets/backgrounds/stages/
 @onready var shards_label: Label = $Ui/Root/ShardsLabel
 @onready var growth_label: Label = $Ui/Root/GrowthLabel
 @onready var objectives_quests_button: Button = $Ui/Root/ObjectivesQuestsButton
+@onready var debug_clear_button: Button = $Ui/Root/DebugClearButton
 @onready var objectives_quest_detail_overlay: Control = $Ui/Root/ObjectivesQuestDetailOverlay
 @onready var detail_growth_label: Label = $Ui/Root/ObjectivesQuestDetailOverlay/DetailGrowthLabel
 @onready var detail_objective_primary_label: Label = $Ui/Root/ObjectivesQuestDetailOverlay/DetailObjectivePrimaryLabel
@@ -162,6 +163,8 @@ func _ready() -> void:
 	_sync_hud()
 	if is_instance_valid(objectives_quests_button) and !objectives_quests_button.pressed.is_connected(_on_objectives_quests_button_pressed):
 		objectives_quests_button.pressed.connect(_on_objectives_quests_button_pressed)
+	if is_instance_valid(debug_clear_button) and !debug_clear_button.pressed.is_connected(_on_debug_clear_button_pressed):
+		debug_clear_button.pressed.connect(_on_debug_clear_button_pressed)
 	if is_instance_valid(detail_close_button) and !detail_close_button.pressed.is_connected(_close_objectives_quest_detail):
 		detail_close_button.pressed.connect(_close_objectives_quest_detail)
 
@@ -318,6 +321,12 @@ func _on_objectives_quests_button_pressed() -> void:
 		_close_objectives_quest_detail()
 		return
 	_open_objectives_quest_detail()
+
+
+func _on_debug_clear_button_pressed() -> void:
+	if game_over or game_clear:
+		return
+	_begin_game_clear_reveal()
 
 
 func _handle_objectives_quest_detail_input(_event: InputEvent) -> bool:

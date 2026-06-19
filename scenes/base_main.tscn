@@ -230,6 +230,15 @@ theme_override_font_sizes/font_size = 28
 horizontal_alignment = 2
 text = ""
 
+[node name="DebugClearButton" type="Button" parent="Ui/Root"]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -264.0
+offset_top = 534.0
+offset_right = -24.0
+offset_bottom = 566.0
+text = "DEBUG CLEAR"
+
 [node name="ObjectivesQuestDetailOverlay" type="Control" parent="Ui/Root"]
 visible = false
 offset_left = 188.0
